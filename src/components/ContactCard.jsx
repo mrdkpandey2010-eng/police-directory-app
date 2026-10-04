@@ -41,8 +41,39 @@ export default function ContactCard({
   return (
     <div className="officer-card">
       <div className="card-top">
-        <div className="avatar-badge">
-          {getInitial(contact.name)}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <div className="avatar-badge" style={{
+            overflow: 'hidden',
+            padding: 0,
+            border: contact.uniformPhoto ? '2px solid var(--gold-primary)' : '2px solid rgba(255,255,255,0.2)'
+          }}>
+            {contact.uniformPhoto ? (
+              <img 
+                src={contact.uniformPhoto} 
+                alt={contact.name} 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+              />
+            ) : (
+              getInitial(contact.name)
+            )}
+          </div>
+          {contact.uniformPhoto && (
+            <span 
+              title="वर्दी फोटो सत्यापित (Uniform Verified)"
+              style={{
+                position: 'absolute',
+                bottom: -2,
+                right: -2,
+                background: '#10b981',
+                borderRadius: '50%',
+                padding: '2px',
+                display: 'flex',
+                border: '2px solid #0f172a'
+              }}
+            >
+              <ShieldCheck size={11} color="#fff" />
+            </span>
+          )}
         </div>
         <div className="officer-details">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
@@ -123,11 +154,11 @@ export default function ContactCard({
         <button 
           onClick={() => onOpenChatWithContact && onOpenChatWithContact(contact)}
           className="btn btn-primary"
-          title={`${contact.name} को पुलिस आंतरिक चैट भेजें (SHO, CO, SP दृश्यता सहित)`}
+          title={`${contact.name} को सीधा मैसेज भेजें (Direct P2P Message)`}
           style={{ padding: '0.5rem 0.4rem', fontSize: '0.8rem' }}
         >
-          <MessageSquare size={14} />
-          <span>आंतरिक चैट</span>
+          <Mail size={14} />
+          <span>मैसेज भेजें</span>
         </button>
       </div>
 

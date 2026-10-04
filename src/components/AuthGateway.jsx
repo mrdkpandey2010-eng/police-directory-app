@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { 
   Shield, Lock, User, UserPlus, KeyRound, Building, ArrowRight, 
-  AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin 
+  AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload, Sparkles 
 } from 'lucide-react';
+import { DEFAULT_UNIFORM_PHOTO } from '../data/mockContacts';
 
 export default function AuthGateway({ 
   onLoginSuccess, 
@@ -32,7 +33,8 @@ export default function AuthGateway({
     whatsapp: '',
     email: '',
     password: '1234',
-    registrationNotes: ''
+    registrationNotes: '',
+    uniformPhoto: null
   });
   const [regSuccess, setRegSuccess] = useState(false);
 
@@ -123,6 +125,33 @@ export default function AuthGateway({
     }
   };
 
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('कृपया केवल इमेज (JPG / PNG) फ़ाइल ही चुनें।');
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      setErrorMsg('कृपया 3 MB से छोटी फ़ोटो अपलोड करें।');
+      return;
+    }
+
+    setErrorMsg('');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setRegForm(prev => ({ ...prev, uniformPhoto: event.target.result }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUseDemoPhoto = () => {
+    setErrorMsg('');
+    setRegForm(prev => ({ ...prev, uniformPhoto: DEFAULT_UNIFORM_PHOTO }));
+  };
+
   // Self Registration Handler
   const handleRegisterSubmit = (e) => {
     e.preventDefault();
@@ -133,6 +162,12 @@ export default function AuthGateway({
 
     if (regForm.phone.trim().length < 10) {
       setErrorMsg('कृपया सही 10 अंकों का मोबाइल नंबर दर्ज करें।');
+      return;
+    }
+
+    // MANDATORY UNIFORM PHOTO CHECK
+    if (!regForm.uniformPhoto) {
+      setErrorMsg('⚠️ सुरक्षा नीति: वर्दी (यूनिफॉर्म) वाली फोटो अपलोड करना अनिवार्य है। इसके बिना ऐप का संचालन संभव नहीं होगा।');
       return;
     }
 
@@ -418,6 +453,92 @@ export default function AuthGateway({
                       onChange={e => setRegForm({ ...regForm, password: e.target.value })}
                     />
                   </div>
+
+                  {/* MANDATORY UNIFORM PHOTO FIELD */}
+                  <div className="form-group full-width" style={{
+                    background: 'rgba(245, 158, 11, 0.08)',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    padding: '0.75rem',
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                      <label className="form-label" style={{ margin: 0, color: 'var(--gold-light)', fontWeight: 700, fontSize: '0.8rem' }}>
+                        👮 वर्दी (यूनिफॉर्म) वाली फोटो * (अनिवार्य / Mandatory)
+                      </label>
+                      {regForm.uniformPhoto ? (
+                        <span style={{ fontSize: '0.7rem', color: 'var(--success-emerald)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                          <CheckCircle2 size={12} />
+                          फोटो संलग्न
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.7rem', color: '#fca5a5', fontWeight: 600 }}>
+                          * अपलोड अनिवार्य
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{
+                        width: '55px',
+                        height: '55px',
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        border: regForm.uniformPhoto ? '2px solid var(--gold-primary)' : '2px dashed rgba(255,255,255,0.3)',
+                        background: 'rgba(0,0,0,0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}>
+                        {regForm.uniformPhoto ? (
+                          <img src={regForm.uniformPhoto} alt="Uniform" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <Camera size={20} color="rgba(255,255,255,0.4)" />
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <label style={{
+                          background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
+                          color: '#fff',
+                          padding: '5px 10px',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          <Upload size={12} />
+                          <span>गैलरी से चुनें</span>
+                          <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={handleUseDemoPhoto}
+                          style={{
+                            background: 'rgba(255,255,255,0.08)',
+                            border: '1px solid rgba(229,184,66,0.4)',
+                            color: 'var(--gold-light)',
+                            padding: '5px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title="आधिकारिक वर्दी डेमो फोटो"
+                        >
+                          <Sparkles size={12} />
+                          <span>डेमो वर्दी फोटो</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.4rem' }}>
@@ -550,6 +671,16 @@ export default function AuthGateway({
               style={{ fontSize: '0.78rem', padding: '6px 8px', justifyContent: 'flex-start' }}
             >
               👮 <strong>राकेश कुमार (कानपुर)</strong>
+            </button>
+
+            <button 
+              type="button" 
+              className="btn btn-secondary" 
+              onClick={() => triggerQuick('user', 'pol-115')}
+              style={{ fontSize: '0.78rem', padding: '6px 8px', justifyContent: 'flex-start', borderColor: 'rgba(245,158,11,0.5)', color: '#fde047' }}
+              title="परीक्षण हेतु बिना फोटो वाला खाता: इसे क्लिक करने पर अनिवार्य वर्दी फोटो गेट खुलेगा"
+            >
+              ⚠️ <strong>विकास यादव (फोटो गेट टेस्ट)</strong>
             </button>
           </div>
         </div>

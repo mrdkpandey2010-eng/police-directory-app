@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   Shield, UserPlus, Lock, RefreshCw, Bell, MessageSquare, 
-  User, LogOut, CheckCircle, Clock, ShieldCheck, KeyRound, MessageCircle 
+  User, LogOut, CheckCircle, Clock, ShieldCheck, KeyRound, MessageCircle, Mail 
 } from 'lucide-react';
 
 export default function Header({ 
@@ -80,12 +80,21 @@ export default function Header({
           </button>
 
           <button 
-            className={`btn ${isUser ? 'btn-primary' : 'btn-secondary'}`}
+            className={`btn ${isUser && currentUser?.id === 'pol-103' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ padding: '2px 8px', fontSize: '0.74rem' }}
             onClick={() => onQuickRoleSwitch('user')}
             title="Employee User - प्रिया वर्मा"
           >
             👮 User (प्रिया वर्मा)
+          </button>
+
+          <button 
+            className={`btn ${currentUser?.id === 'pol-115' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '2px 8px', fontSize: '0.74rem', borderColor: 'rgba(245,158,11,0.5)', color: '#fde047' }}
+            onClick={() => onQuickRoleSwitch('user_no_photo')}
+            title="परीक्षण खाता: बिना वर्दी फोटो वाला यूजर (अनिवार्य फोटो सत्यापन गेट सक्रिय होगा)"
+          >
+            ⚠️ विकास (फोटो गेट टेस्ट)
           </button>
 
           {isLoggedIn && (
@@ -113,25 +122,30 @@ export default function Header({
               <span className="dept-tag">आधिकारिक निर्देशिका</span>
             </h1>
             <p className="brand-subtitle">
-              Role-Based Directory • Direct Calling • WhatsApp • Inter-District Police Chat & Groups
+              Role-Based Directory • Direct Calling • WhatsApp • Peer-to-Peer Message Box & Groups
             </p>
           </div>
         </div>
 
         {/* Action Buttons */}
         <div className="header-actions">
-          {/* Internal Police Chat & Groups Button */}
+          {/* Peer-to-Peer Message Box Button */}
           {isLoggedIn && (
             <button 
               className="btn btn-primary"
               onClick={onOpenChat}
-              title="आंतरिक पुलिस चैट, ग्रुप्स एवं फ़ाइल साझाकरण (SHO, CO, SP दृश्यता सहित)"
-              style={{ position: 'relative', background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', color: '#fff', border: '1px solid rgba(59,130,246,0.5)' }}
+              title="पीयर-टू-पीयर मैसेज बॉक्स एवं समूह चैट (Direct P2P & Group Messages)"
+              style={{ 
+                position: 'relative', 
+                background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', 
+                color: '#fff', 
+                border: '1px solid rgba(59,130,246,0.5)' 
+              }}
             >
-              <MessageCircle size={16} />
-              <span>आंतरिक चैट & ग्रुप्स</span>
+              <Mail size={16} />
+              <span>मैसेज बॉक्स</span>
               {chatsCount > 0 && (
-                <span className="tab-badge" style={{ position: 'relative', top: 'auto', right: 'auto', background: 'var(--gold-primary)', color: '#000' }}>
+                <span className="tab-badge" style={{ position: 'relative', top: 'auto', right: 'auto', background: '#ef4444', color: '#fff' }}>
                   {chatsCount}
                 </span>
               )}

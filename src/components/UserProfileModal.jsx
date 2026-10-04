@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, User, Phone, MapPin, Building2, KeyRound, Save, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { X, User, Phone, MapPin, Building2, KeyRound, Save, AlertCircle, CheckCircle2, ShieldCheck, Camera, Upload } from 'lucide-react';
 import { OFFICES } from '../data/mockContacts';
 
 export default function UserProfileModal({ 
@@ -7,7 +7,8 @@ export default function UserProfileModal({
   isOpen, 
   onClose, 
   onUpdateProfileRequest,
-  onChangePassword 
+  onChangePassword,
+  onUpdateUniformPhoto
 }) {
   const [activeTab, setActiveTab] = useState('details'); // 'details' | 'edit' | 'password'
 
@@ -27,6 +28,30 @@ export default function UserProfileModal({
   const [notice, setNotice] = useState(null);
 
   if (!isOpen || !user) return null;
+
+  const handleUniformPhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setNotice({ type: 'error', text: 'कृपया केवल इमेज (JPG / PNG) फ़ाइल चुनें।' });
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      setNotice({ type: 'error', text: 'कृपया 3 MB से छोटी फ़ोटो चुनें।' });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (onUpdateUniformPhoto) {
+        onUpdateUniformPhoto(user.id, event.target.result);
+        setNotice({ type: 'success', text: 'वर्दी फोटो सफलतापूर्वक अपडेट की गई!' });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleEditSubmit = (e) => {
     e.preventDefault();
@@ -71,8 +96,25 @@ export default function UserProfileModal({
       <div className="modal-content" style={{ maxWidth: '580px' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div className="avatar-badge" style={{ width: '42px', height: '42px' }}>
-              {user.name.charAt(0)}
+            <div style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '50%',
+              overflow: 'hidden',
+              background: 'rgba(255,255,255,0.1)',
+              border: '2px solid var(--gold-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              {user.uniformPhoto ? (
+                <img src={user.uniformPhoto} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <span style={{ fontWeight: 700, color: 'var(--gold-primary)', fontSize: '1.1rem' }}>
+                  {user.name.charAt(0)}
+                </span>
+              )}
             </div>
             <div>
               <h2 className="modal-title" style={{ fontSize: '1.15rem' }}>
@@ -168,6 +210,70 @@ export default function UserProfileModal({
                 <Phone size={16} />
                 <span>वॉट्सऐप: <strong>{user.whatsapp || user.phone}</strong></span>
               </div>
+            </div>
+
+            {/* UNIFORM PHOTO VERIFICATION CARD */}
+            <div style={{
+              background: 'rgba(16, 185, 129, 0.08)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              borderRadius: '10px',
+              padding: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{
+                  width: '50px',
+                  height: '50px',
+                  borderRadius: '50%',
+                  overflow: 'hidden',
+                  border: '2px solid #10b981',
+                  background: 'rgba(0,0,0,0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  {user.uniformPhoto ? (
+                    <img src={user.uniformPhoto} alt="Uniform" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <Camera size={22} color="#f59e0b" />
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <ShieldCheck size={16} color="#10b981" />
+                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#34d399' }}>
+                      {user.uniformPhoto ? 'विभागीय वर्दी फोटो सत्यापित' : 'वर्दी फोटो प्रतीक्षारत'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.6)', marginTop: '2px' }}>
+                    {user.uniformPhoto ? 'यह फोटो आपके संपर्क कार्ड एवं मैसेज बॉक्स में प्रदर्शित हो रही है।' : 'ऐप संचालन हेतु वर्दी वाली फोटो अपलोड करना अनिवार्य है।'}
+                  </div>
+                </div>
+              </div>
+
+              <label style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: '#fff',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}>
+                <Upload size={13} />
+                <span>फोटो बदलें</span>
+                <input type="file" accept="image/*" onChange={handleUniformPhotoUpload} style={{ display: 'none' }} />
+              </label>
             </div>
 
             <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.82rem', color: '#fcd34d' }}>

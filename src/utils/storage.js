@@ -3,6 +3,8 @@ import {
   initialCoAdmins, 
   initialNotifications, 
   initialFeedbacks,
+  DEFAULT_UNIFORM_PHOTO,
+  DEFAULT_UNIFORM_PHOTO_FEMALE,
   POSTS as DEFAULT_POSTS,
   OFFICES as DEFAULT_OFFICES,
   DISTRICTS as DEFAULT_DISTRICTS
@@ -129,7 +131,31 @@ export const getStoredContacts = () => {
       localStorage.setItem(CONTACTS_KEY, JSON.stringify(initialContacts));
       return initialContacts;
     }
-    return JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.setItem(CONTACTS_KEY, JSON.stringify(initialContacts));
+      return initialContacts;
+    }
+    let patched = false;
+    const result = parsed.map(c => {
+      const initMatch = initialContacts.find(ic => ic.id === c.id);
+      if (initMatch && initMatch.uniformPhoto && !c.uniformPhoto && c.id !== 'pol-115') {
+        patched = true;
+        return { ...c, uniformPhoto: initMatch.uniformPhoto, uniformPhotoUploaded: true };
+      }
+      return c;
+    });
+    if (!result.some(c => c.id === 'pol-115')) {
+      const pol115 = initialContacts.find(ic => ic.id === 'pol-115');
+      if (pol115) {
+        result.push(pol115);
+        patched = true;
+      }
+    }
+    if (patched) {
+      localStorage.setItem(CONTACTS_KEY, JSON.stringify(result));
+    }
+    return result;
   } catch (err) {
     console.error('Error reading contacts', err);
     return initialContacts;
@@ -520,8 +546,8 @@ export const saveChats = (chats) => {
   }
 };
 
-// Send direct 1-on-1 message with Supervisory Notification Alert
-export const sendDirectMessage = (chats, contacts, sender, recipient, text, file = null, alertSupervisors = true) => {
+// Send direct Peer-to-Peer (1-on-1) message with instant recipient notification
+export const sendDirectMessage = (chats, contacts, sender, recipient, text, file = null) => {
   const cleanText = (text || '').trim();
   // Check if direct chat already exists between sender and recipient
   let targetChat = chats.find(c => 
@@ -540,7 +566,7 @@ export const sendDirectMessage = (chats, contacts, sender, recipient, text, file
     text: cleanText,
     file: file,
     timestamp: new Date().toISOString(),
-    supervisoryAlert: alertSupervisors
+    readBy: [sender.id]
   };
 
   let updatedChats;
@@ -560,18 +586,13 @@ export const sendDirectMessage = (chats, contacts, sender, recipient, text, file
       return c;
     });
   } else {
-    targetChatId = `chat-dir-${sender.id}-${recipient.id}`;
+    targetChatId = `chat-p2p-${sender.id}-${recipient.id}`;
     const newChatObj = {
       id: targetChatId,
       type: "direct",
       title: `${recipient.name} (${recipient.district})`,
       participants: [sender.id, recipient.id],
       district: recipient.district,
-      supervisoryChain: {
-        recipientDistrict: recipient.district,
-        recipientOffice: recipient.office,
-        roles: ["थाना प्रभारी (SHO)", "क्षेत्राधिकारी (CO)", "पुलिस अधीक्षक (SP)"]
-      },
       lastMessage: cleanText || (file ? `फ़ाइल संलग्न: ${file.name}` : 'नया संदेश'),
       lastUpdated: new Date().toISOString(),
       messages: [newMessage]
@@ -581,21 +602,17 @@ export const sendDirectMessage = (chats, contacts, sender, recipient, text, file
 
   saveChats(updatedChats);
 
-  // If alertSupervisors is true, post a notification visible to recipient's district SHO, CO, and SP
-  if (alertSupervisors) {
-    const supervisoryAlertText = `अधिकारी ${sender.name} (${sender.post}, जनपद: ${sender.district}) ने आपके जनपद के कार्मिक ${recipient.name} (${recipient.post}, ${recipient.office}) को आधिकारिक आंतरिक संदेश प्रेषित किया है।\nसंदेश: "${cleanText.substring(0, 100)}${cleanText.length > 100 ? '...' : ''}"\nपर्यवेक्षी प्रतिलिपि: संबंधित थाना प्रभारी (SHO), क्षेत्राधिकारी (CO), पुलिस अधीक्षक (${recipient.district})।`;
-
-    addNotification({
-      title: `🚨 [अंतर-जनपद संवाद] ${sender.district} ➔ ${recipient.district} (${recipient.name})`,
-      content: supervisoryAlertText,
-      district: recipient.district,
-      postedBy: `${sender.name} (${sender.district})`,
-      type: 'inter_district_alert',
-      targetUserId: recipient.id,
-      senderId: sender.id,
-      chatId: targetChatId
-    });
-  }
+  // Automatic recipient notification
+  addNotification({
+    title: `📩 नया संदेश: ${sender.name} (${sender.post || 'अधिकारी'})`,
+    content: `अधिकारी ${sender.name} (${sender.post || 'अधिकारी'}, जनपद: ${sender.district || ''}) ने आपको संदेश भेजा है: "${cleanText ? cleanText.substring(0, 80) : (file ? file.name : 'फ़ाइल संलग्न')}"`,
+    district: recipient.district || 'सभी ज़िले (All Districts)',
+    postedBy: `${sender.name} (${sender.district || ''})`,
+    type: 'direct_message',
+    targetUserId: recipient.id,
+    senderId: sender.id,
+    chatId: targetChatId
+  });
 
   return { updatedChats, targetChatId };
 };
@@ -612,7 +629,7 @@ export const createGroupChat = (chats, creator, groupTitle, participantIds, desc
     createdBy: creator.id,
     participants: allParticipantIds,
     district: creator.district || 'सभी ज़िले (All Districts)',
-    lastMessage: `ग्रुप का निर्माण ${creator.name} द्वारा किया गया।`,
+    lastMessage: `समूह का निर्माण ${creator.name} द्वारा किया गया।`,
     lastUpdated: new Date().toISOString(),
     messages: [
       {
@@ -622,10 +639,10 @@ export const createGroupChat = (chats, creator, groupTitle, participantIds, desc
         senderPost: creator.post || 'ग्रुप एडमिन',
         senderDistrict: creator.district,
         senderPno: creator.pno,
-        text: `जय हिंद। "${groupTitle.trim()}" ग्रुप का निर्माण आधिकारिक समन्वय एवं फ़ाइल साझा करने हेतु किया गया है।`,
+        text: `जय हिंद। "${groupTitle.trim()}" समूह का निर्माण विभागीय समन्वय हेतु किया गया है।`,
         file: null,
         timestamp: new Date().toISOString(),
-        supervisoryAlert: false
+        readBy: [creator.id]
       }
     ]
   };
@@ -635,8 +652,8 @@ export const createGroupChat = (chats, creator, groupTitle, participantIds, desc
   return { updatedChats, newGroupId };
 };
 
-// Append message directly to an existing active chat (Direct, Supervisory, or Group)
-export const appendMessageToChat = (chats, chatId, sender, text, file = null, alertSupervisors = false) => {
+// Append message directly to an existing active chat (Direct or Group)
+export const appendMessageToChat = (chats, chatId, sender, text, file = null) => {
   const cleanText = (text || '').trim();
   const targetChat = chats.find(c => c.id === chatId);
   if (!targetChat) return chats;
@@ -651,7 +668,7 @@ export const appendMessageToChat = (chats, chatId, sender, text, file = null, al
     text: cleanText,
     file: file,
     timestamp: new Date().toISOString(),
-    supervisoryAlert: alertSupervisors
+    readBy: [sender.id]
   };
 
   const updatedChats = chats.map(c => {
@@ -670,19 +687,21 @@ export const appendMessageToChat = (chats, chatId, sender, text, file = null, al
 
   saveChats(updatedChats);
 
-  if (alertSupervisors && targetChat.type === 'direct' && targetChat.supervisoryChain) {
-    const recDistrict = targetChat.supervisoryChain.recipientDistrict;
-    const supervisoryAlertText = `अधिकारी ${sender.name} (${sender.post}, जनपद: ${sender.district}) ने आंतरिक संवाद में नया संदेश प्रेषित किया है।\nसंदेश: "${cleanText.substring(0, 100)}${cleanText.length > 100 ? '...' : ''}"\nपर्यवेक्षी प्रतिलिपि: संबंधित थाना प्रभारी (SHO), क्षेत्राधिकारी (CO), पुलिस अधीक्षक (${recDistrict})।`;
-
-    addNotification({
-      title: `🚨 [अंतर-जनपद संवाद] ${sender.district} ➔ ${recDistrict} (${targetChat.title})`,
-      content: supervisoryAlertText,
-      district: recDistrict,
-      postedBy: `${sender.name} (${sender.district})`,
-      type: 'inter_district_alert',
-      senderId: sender.id,
-      chatId: chatId
-    });
+  // If this is a direct chat, notify the other participant
+  if (targetChat.type === 'direct' && targetChat.participants) {
+    const otherParticipantId = targetChat.participants.find(p => p !== sender.id);
+    if (otherParticipantId) {
+      addNotification({
+        title: `📩 नया संदेश: ${sender.name} (${sender.post || 'अधिकारी'})`,
+        content: `अधिकारी ${sender.name} ने आपको संदेश भेजा है: "${cleanText ? cleanText.substring(0, 80) : (file ? file.name : 'फ़ाइल संलग्न')}"`,
+        district: targetChat.district || 'सभी ज़िले (All Districts)',
+        postedBy: `${sender.name}`,
+        type: 'direct_message',
+        targetUserId: otherParticipantId,
+        senderId: sender.id,
+        chatId: chatId
+      });
+    }
   }
 
   return updatedChats;
@@ -690,59 +709,88 @@ export const appendMessageToChat = (chats, chatId, sender, text, file = null, al
 
 // Send message inside a group chat
 export const sendGroupMessage = (chats, groupId, sender, text, file = null) => {
-  return appendMessageToChat(chats, groupId, sender, text, file, false);
+  return appendMessageToChat(chats, groupId, sender, text, file);
 };
 
-// Filter chats for a user (Includes Direct Chats, Group Chats, and Supervisory Monitored Chats for SHO, CO, SP, Co-Admin, Admin)
+// Mark all messages in a chat as read by a user
+export const markChatAsRead = (chats, chatId, userId) => {
+  if (!chats || !chatId || !userId) return chats;
+  let hasChanges = false;
+  const updatedChats = chats.map(c => {
+    if (c.id === chatId && Array.isArray(c.messages)) {
+      const updatedMessages = c.messages.map(m => {
+        const readBy = Array.isArray(m.readBy) ? m.readBy : [m.senderId];
+        if (!readBy.includes(userId)) {
+          hasChanges = true;
+          return { ...m, readBy: [...readBy, userId] };
+        }
+        return m;
+      });
+      return { ...c, messages: updatedMessages };
+    }
+    return c;
+  });
+
+  if (hasChanges) {
+    saveChats(updatedChats);
+  }
+  return updatedChats;
+};
+
+// Count total unread messages for a given user across all their chats
+export const getUnreadMessagesCountForUser = (chats, userId) => {
+  if (!userId || !Array.isArray(chats)) return 0;
+  let count = 0;
+  for (const c of chats) {
+    if (c.participants && c.participants.includes(userId)) {
+      for (const m of c.messages || []) {
+        if (m.senderId !== userId) {
+          const readBy = Array.isArray(m.readBy) ? m.readBy : [m.senderId];
+          if (!readBy.includes(userId)) {
+            count++;
+          }
+        }
+      }
+    }
+  }
+  return count;
+};
+
+// Count unread messages inside a specific chat for a user
+export const getUnreadCountForChat = (chat, userId) => {
+  if (!chat || !userId || !Array.isArray(chat.messages)) return 0;
+  let count = 0;
+  for (const m of chat.messages) {
+    if (m.senderId !== userId) {
+      const readBy = Array.isArray(m.readBy) ? m.readBy : [m.senderId];
+      if (!readBy.includes(userId)) {
+        count++;
+      }
+    }
+  }
+  return count;
+};
+
+// Filter chats for a user (Includes Direct Chats and Group Chats)
 export const getChatsForUser = (chats, contacts, currentUser) => {
   if (!currentUser) return [];
 
-  // Super Admin can view all chats across the state
   if (currentUser.role === 'admin') {
     return chats;
   }
 
-  // Check if current user is in supervisory role:
-  const isSP = currentUser.post && (currentUser.post.includes('SP') || currentUser.post.includes('SSP') || currentUser.post.includes('अधीक्षक'));
-  const isCO = currentUser.post && (currentUser.post.includes('DSP') || currentUser.post.includes('क्षेत्राधिकारी'));
-  const isSHO = currentUser.post && (currentUser.post.includes('Inspector') || currentUser.post.includes('प्रभारी निरीक्षक'));
-  const isCoAdmin = currentUser.role === 'co_admin';
-
   return chats.filter(c => {
-    // 1. User is direct participant
     if (c.participants && c.participants.includes(currentUser.id)) {
       return true;
     }
-
-    // 2. Group Chats: Visible to all participants, plus statewide official task groups or groups in user's district
     if (c.type === 'group') {
       if (c.district === 'सभी ज़िले (All Districts)' || c.district === currentUser.district) {
         return true;
       }
-      if (isCoAdmin) {
+      if (currentUser.role === 'co_admin') {
         return true;
       }
     }
-
-    // 3. Supervisory Chain for Direct Chats: SHO, CO, SP, or Co-Admin of the recipient's district
-    if (c.type === 'direct' && c.supervisoryChain) {
-      const recDistrict = c.supervisoryChain.recipientDistrict;
-      const recOffice = c.supervisoryChain.recipientOffice;
-
-      if (isCoAdmin && currentUser.district === recDistrict) {
-        return true;
-      }
-      if (isSP && currentUser.district === recDistrict) {
-        return true;
-      }
-      if (isCO && currentUser.district === recDistrict) {
-        return true;
-      }
-      if (isSHO && (currentUser.office === recOffice || currentUser.district === recDistrict)) {
-        return true;
-      }
-    }
-
     return false;
   });
 };
@@ -784,13 +832,33 @@ export const registerNewOfficer = (contacts, officerData) => {
     password: officerData.password ? officerData.password.trim() : '1234',
     status: 'pending',
     isRegisteredUser: true,
+    uniformPhoto: officerData.uniformPhoto || null,
+    uniformPhotoUploaded: Boolean(officerData.uniformPhoto),
     createdAt: new Date().toISOString(),
-    registrationNotes: officerData.registrationNotes || 'कर्मचारी द्वारा स्व-पंजीकरण।'
+    registrationNotes: officerData.registrationNotes || 'कर्मचारी द्वारा स्व-पंजीकरण (वर्दी फोटो संलग्न)।'
   };
 
   const updatedList = [newOfficer, ...contacts];
   saveContacts(updatedList);
   return { updatedList, newOfficer };
+};
+
+// ---------------- UPDATE UNIFORM PHOTO (Mandatory Verification) ----------------
+export const updateUserUniformPhoto = (contacts, userId, photoBase64) => {
+  const current = contacts && contacts.length > 0 ? contacts : getStoredContacts();
+  const updatedList = current.map(c => {
+    if (c.id === userId) {
+      return {
+        ...c,
+        uniformPhoto: photoBase64,
+        uniformPhotoUploaded: true,
+        uniformPhotoUploadedAt: new Date().toISOString()
+      };
+    }
+    return c;
+  });
+  saveContacts(updatedList);
+  return updatedList;
 };
 
 // ---------------- APPROVE / REJECT REGISTRATION ----------------

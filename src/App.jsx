@@ -9,7 +9,8 @@ import LoginModal from './components/LoginModal';
 import UserProfileModal from './components/UserProfileModal';
 import NotificationsModal from './components/NotificationsModal';
 import FeedbackModal from './components/FeedbackModal';
-import PoliceChatModal from './components/PoliceChatModal';
+import MessageBoxModal from './components/MessageBoxModal';
+import UniformPhotoGate from './components/UniformPhotoGate';
 import AuthGateway from './components/AuthGateway';
 import { 
   getStoredContacts, 
@@ -51,6 +52,9 @@ import {
   sendGroupMessage,
   appendMessageToChat,
   getChatsForUser,
+  markChatAsRead,
+  getUnreadMessagesCountForUser,
+  updateUserUniformPhoto,
   resetToDefaultContacts
 } from './utils/storage';
 import { MapPin, Shield, Search } from 'lucide-react';
@@ -179,6 +183,24 @@ export default function App() {
       setUserDistrictScope('my_district');
       setSelectedDistrict(sampleUser.district || 'लखनऊ');
       showToast(`👮 सक्रिय रोल: User (${sampleUser.name} - ${sampleUser.district})`);
+    } else if (roleKey === 'user_no_photo') {
+      const noPhotoUser = contacts.find(c => c.id === 'pol-115') || {
+        id: 'pol-115',
+        name: 'विकास यादव (फोटो अपलोड अपेक्षित)',
+        pno: 'PNO-999000111',
+        post: 'आरक्षी (Constable)',
+        district: 'लखनऊ',
+        office: 'थाना विभूति खंड',
+        phone: '9454401999',
+        status: 'approved',
+        uniformPhoto: null
+      };
+      const userObj = { role: 'user', ...noPhotoUser };
+      setCurrentUser(userObj);
+      saveSession(userObj);
+      setUserDistrictScope('my_district');
+      setSelectedDistrict('लखनऊ');
+      showToast('⚠️ सक्रिय रोल: विकास यादव (बिना वर्दी फोटो - अनिवार्य फोटो सत्यापन गेट सक्रिय)');
     }
   };
 
@@ -414,11 +436,11 @@ export default function App() {
     }
   };
 
-  // ---------------- CHAT & GROUP MESSAGING HANDLERS ----------------
+  // ---------------- PEER-TO-PEER MESSAGE BOX & GROUP CHAT HANDLERS ----------------
   const handleOpenChatWithContact = (targetContact) => {
     if (!currentUser) return;
     if (currentUser.id === targetContact.id) {
-      showToast('यह आपकी स्वयं की प्रोफ़ाइल है। अन्य अधिकारियों के साथ चैट करें।');
+      showToast('यह आपकी स्वयं की प्रोफ़ाइल है। अन्य अधिकारियों के साथ संदेश भेजें।');
       return;
     }
     // Check if direct chat already exists
@@ -436,9 +458,7 @@ export default function App() {
         contacts, 
         currentUser, 
         targetContact, 
-        `जय हिंद, ${targetContact.name} जी!`, 
-        null, 
-        true
+        `जय हिंद, ${targetContact.name} जी!`
       );
       setChats(updatedChats);
       setActiveChatId(targetChatId);
@@ -447,40 +467,53 @@ export default function App() {
     setIsChatModalOpen(true);
   };
 
-  const handleSendDirectMessage = (sender, recipient, text, file, alertSupervisors) => {
-    const { updatedChats, targetChatId } = sendDirectMessage(chats, contacts, sender, recipient, text, file, alertSupervisors);
+  const handleSendDirectMessage = (sender, recipient, text, file = null) => {
+    const { updatedChats, targetChatId } = sendDirectMessage(chats, contacts, sender, recipient, text, file);
     setChats(updatedChats);
     if (targetChatId) setActiveChatId(targetChatId);
-    setNotifications(getStoredNotifications()); // Refresh notifications with supervisory alert
-    if (alertSupervisors) {
-      showToast(`संदेश प्रेषित! संबंधित थाना प्रभारी (SHO), CO एवं SP को भी सूचित कर दिया गया है।`);
-    } else {
-      showToast('संदेश प्रेषित!');
-    }
+    setNotifications(getStoredNotifications());
+    showToast(`संदेश प्रेषित! प्राप्तकर्ता ${recipient.name} को नया संदेश नोटिफिकेशन भेजा गया।`);
   };
 
-  const handleSendGroupMessage = (groupId, sender, text, file) => {
+  const handleSendGroupMessage = (groupId, sender, text, file = null) => {
     const updated = sendGroupMessage(chats, groupId, sender, text, file);
     setChats(updated);
-    showToast('ग्रुप संदेश प्रेषित!');
+    showToast('समूह संदेश प्रेषित!');
   };
 
-  const handleAppendMessage = (chatId, sender, text, file, alertSupervisors) => {
-    const updated = appendMessageToChat(chats, chatId, sender, text, file, alertSupervisors);
+  const handleAppendMessage = (chatId, sender, text, file = null) => {
+    const updated = appendMessageToChat(chats, chatId, sender, text, file);
     setChats(updated);
     setNotifications(getStoredNotifications());
-    if (alertSupervisors) {
-      showToast(`संदेश प्रेषित! संबंधित SHO, CO एवं SP को भी सूचित कर दिया गया है।`);
-    } else {
-      showToast('संदेश प्रेषित!');
-    }
+    showToast('संदेश प्रेषित!');
   };
 
-  const handleCreateGroupChat = (creator, groupTitle, participantIds, description) => {
-    const { updatedChats, newGroupId } = createGroupChat(chats, creator, groupTitle, participantIds, description);
+  const handleCreateGroupChat = (groupTitle, participantIds, description = '') => {
+    const { updatedChats, newGroupId } = createGroupChat(chats, currentUser, groupTitle, participantIds, description);
     setChats(updatedChats);
     setActiveChatId(newGroupId);
-    showToast(`नया पुलिस ग्रुप "${groupTitle}" सफलतापूर्वक बनाया गया!`);
+    showToast(`नया पुलिस समूह "${groupTitle}" सफलतापूर्वक बनाया गया!`);
+  };
+
+  const handleMarkChatAsRead = (chatId) => {
+    if (!currentUser) return;
+    const updated = markChatAsRead(chats, chatId, currentUser.id);
+    setChats(updated);
+  };
+
+  const handleUpdateUniformPhoto = (userId, photoBase64) => {
+    const updatedContacts = updateUserUniformPhoto(contacts, userId, photoBase64);
+    setContacts(updatedContacts);
+    if (currentUser && currentUser.id === userId) {
+      const updatedUser = { 
+        ...currentUser, 
+        uniformPhoto: photoBase64, 
+        uniformPhotoUploaded: true 
+      };
+      setCurrentUser(updatedUser);
+      saveSession(updatedUser);
+    }
+    showToast('✅ वर्दी (यूनिफॉर्म) फोटो सत्यापित! ऐप का संचालन सक्रिय कर दिया गया है।');
   };
 
   // Handler: Notifications
@@ -549,7 +582,7 @@ export default function App() {
   }, [contacts, currentUser]);
 
   const approvedCount = contacts.filter(c => c.status === 'approved' || c.status === 'active').length;
-  const userVisibleChatsCount = getChatsForUser(chats, contacts, currentUser).length;
+  const unreadMessagesCount = getUnreadMessagesCountForUser(chats, currentUser?.id);
 
   // ---------------- SECURITY CHECK: MANDATORY LOGIN GATEWAY ----------------
   if (!currentUser) {
@@ -584,13 +617,22 @@ export default function App() {
         </div>
       )}
 
+      {/* Mandatory Uniform Photo Verification Gate */}
+      {currentUser && currentUser.role === 'user' && !currentUser.uniformPhoto && (
+        <UniformPhotoGate 
+          currentUser={currentUser}
+          onSavePhoto={(photo) => handleUpdateUniformPhoto(currentUser.id, photo)}
+          onLogout={handleLogout}
+        />
+      )}
+
       {/* Header with Active User Profile & Logout */}
       <Header
         currentUser={currentUser}
         totalApprovedCount={approvedCount}
         pendingCount={pendingCount}
         notifCount={notifications.length}
-        chatsCount={userVisibleChatsCount}
+        chatsCount={unreadMessagesCount}
         onOpenLogin={() => setIsLoginModalOpen(true)}
         onOpenRegister={() => setIsRegisterModalOpen(true)}
         onOpenAdmin={() => setIsAdminModalOpen(true)}
@@ -703,8 +745,8 @@ export default function App() {
         onOpenChatWithContact={handleOpenChatWithContact}
       />
 
-      {/* Police Internal Chat & Group Messaging Modal */}
-      <PoliceChatModal
+      {/* Police Message Box & Group Messaging Modal */}
+      <MessageBoxModal
         isOpen={isChatModalOpen}
         onClose={() => setIsChatModalOpen(false)}
         chats={chats}
@@ -716,6 +758,7 @@ export default function App() {
         onSendGroupMessage={handleSendGroupMessage}
         onCreateGroupChat={handleCreateGroupChat}
         onAppendMessage={handleAppendMessage}
+        onMarkChatAsRead={handleMarkChatAsRead}
       />
 
       {/* Login Modal */}
@@ -744,6 +787,7 @@ export default function App() {
         onClose={() => setIsProfileModalOpen(false)}
         onUpdateProfileRequest={handleUserProfileUpdateRequest}
         onChangePassword={handleChangeMyPassword}
+        onUpdateUniformPhoto={handleUpdateUniformPhoto}
       />
 
       {/* Admin / Co-Admin Control Portal */}

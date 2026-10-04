@@ -1,3 +1,7 @@
+export const DEFAULT_UNIFORM_PHOTO = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200"><rect width="200" height="200" fill="%230f172a"/><circle cx="100" cy="70" r="38" fill="%23f1c27d"/><path d="M70 56 Q100 28 130 56 Q120 40 100 40 Q80 40 70 56 Z" fill="%231e293b"/><path d="M50 170 C50 125 75 110 100 110 C125 110 150 125 150 170 Z" fill="%23c29b38"/><polygon points="90,110 100,140 110,110 100,105" fill="%231e293b"/><polygon points="76,112 88,140 100,110" fill="%23a88228"/><polygon points="124,112 112,140 100,110" fill="%23a88228"/><rect x="62" y="118" width="16" height="26" rx="3" fill="%231e3a8a"/><polygon points="70,123 72,128 77,128 73,131 75,136 70,133 65,136 67,131 63,128 68,128" fill="%23fbbf24"/><rect x="122" y="118" width="16" height="26" rx="3" fill="%231e3a8a"/><polygon points="130,123 132,128 137,128 133,131 135,136 130,133 125,136 127,131 123,128 128,128" fill="%23fbbf24"/><rect x="115" y="152" width="22" height="7" rx="2" fill="%231e293b"/><circle cx="126" cy="155.5" r="2" fill="%23fbbf24"/><path d="M50 170 Q100 160 150 170 L150 200 L50 200 Z" fill="%23b0892f"/></svg>`;
+
+export const DEFAULT_UNIFORM_PHOTO_FEMALE = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200"><rect width="200" height="200" fill="%230f172a"/><circle cx="100" cy="72" r="36" fill="%23fcd5b5"/><path d="M66 65 Q100 25 134 65 Q138 95 132 105 Q120 75 100 70 Q80 75 68 105 Z" fill="%231e293b"/><path d="M52 170 C52 128 76 112 100 112 C124 112 148 128 148 170 Z" fill="%23c29b38"/><polygon points="90,112 100,140 110,112 100,107" fill="%231e293b"/><polygon points="76,114 88,140 100,112" fill="%23a88228"/><polygon points="124,114 112,140 100,112" fill="%23a88228"/><rect x="64" y="120" width="15" height="24" rx="3" fill="%231e3a8a"/><polygon points="71.5,125 73,129 77,129 74,132 75.5,136 71.5,133.5 67.5,136 69,132 66,129 70,129" fill="%23fbbf24"/><rect x="121" y="120" width="15" height="24" rx="3" fill="%231e3a8a"/><polygon points="128.5,125 130,129 134,129 131,132 132.5,136 128.5,133.5 124.5,136 126,132 123,129 127,129" fill="%23fbbf24"/><path d="M52 170 Q100 162 148 170 L148 200 L52 200 Z" fill="%23b0892f"/></svg>`;
+
 export const initialContacts = [
   {
     id: "pol-101",
@@ -12,6 +16,8 @@ export const initialContacts = [
     password: "1234",
     status: "approved",
     isRegisteredUser: false,
+    uniformPhoto: DEFAULT_UNIFORM_PHOTO,
+    uniformPhotoUploaded: true,
     createdAt: "2026-01-10T10:00:00.000Z"
   },
   {
@@ -42,6 +48,8 @@ export const initialContacts = [
     password: "1234",
     status: "approved",
     isRegisteredUser: true,
+    uniformPhoto: DEFAULT_UNIFORM_PHOTO_FEMALE,
+    uniformPhotoUploaded: true,
     createdAt: "2026-02-01T09:15:00.000Z"
   },
   {
@@ -57,6 +65,8 @@ export const initialContacts = [
     password: "1234",
     status: "approved",
     isRegisteredUser: true,
+    uniformPhoto: DEFAULT_UNIFORM_PHOTO,
+    uniformPhotoUploaded: true,
     createdAt: "2026-02-05T14:20:00.000Z"
   },
   {
@@ -209,8 +219,27 @@ export const initialContacts = [
     password: "1234",
     status: "pending",
     isRegisteredUser: true,
+    uniformPhoto: DEFAULT_UNIFORM_PHOTO,
+    uniformPhotoUploaded: true,
     createdAt: "2026-08-01T11:20:00.000Z",
     registrationNotes: "कानपुर नगर में नया पदभार ग्रहण किया है, अनुमोदन की कृपा करें।"
+  },
+  {
+    id: "pol-115",
+    pno: "PNO-999000111",
+    name: "विकास यादव (फोटो अपलोड अपेक्षित)",
+    post: "आरक्षी (Constable)",
+    district: "लखनऊ",
+    office: "थाना विभूति खंड",
+    phone: "9454401999",
+    whatsapp: "9454401999",
+    email: "vikas.constable@up.gov.in",
+    password: "1234",
+    status: "approved",
+    isRegisteredUser: true,
+    uniformPhoto: null,
+    uniformPhotoUploaded: false,
+    createdAt: "2026-08-10T11:20:00.000Z"
   }
 ];
 

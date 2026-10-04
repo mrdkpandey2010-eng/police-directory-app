@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, UserPlus, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload, Sparkles, ShieldCheck } from 'lucide-react';
+import { DEFAULT_UNIFORM_PHOTO } from '../data/mockContacts';
 
 export default function RegistrationModal({ 
   isOpen, 
@@ -19,7 +20,8 @@ export default function RegistrationModal({
     whatsapp: '',
     email: '',
     password: '1234',
-    registrationNotes: ''
+    registrationNotes: '',
+    uniformPhoto: null
   });
 
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
@@ -32,6 +34,33 @@ export default function RegistrationModal({
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('कृपया केवल इमेज (JPG / PNG) फ़ाइल ही चुनें।');
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      setErrorMsg('कृपया 3 MB से छोटी फ़ोटो अपलोड करें।');
+      return;
+    }
+
+    setErrorMsg('');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setFormData(prev => ({ ...prev, uniformPhoto: event.target.result }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUseDemoPhoto = () => {
+    setErrorMsg('');
+    setFormData(prev => ({ ...prev, uniformPhoto: DEFAULT_UNIFORM_PHOTO }));
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.phone.trim() || !formData.office.trim()) {
@@ -41,6 +70,12 @@ export default function RegistrationModal({
 
     if (formData.phone.trim().length < 10) {
       setErrorMsg('कृपया सही 10 अंकों का मोबाइल नंबर दर्ज करें।');
+      return;
+    }
+
+    // MANDATORY UNIFORM PHOTO VALIDATION
+    if (!formData.uniformPhoto) {
+      setErrorMsg('⚠️ सुरक्षा नीति: वर्दी (यूनिफॉर्म) वाली फोटो अपलोड करना अनिवार्य है। इसके बिना ऐप का संचालन संभव नहीं होगा।');
       return;
     }
 
@@ -234,6 +269,95 @@ export default function RegistrationModal({
                   value={formData.email}
                   onChange={handleChange}
                 />
+              </div>
+
+              {/* MANDATORY UNIFORM PHOTO FIELD */}
+              <div className="form-group full-width" style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                padding: '0.85rem',
+                borderRadius: '10px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0, color: 'var(--gold-light)', fontWeight: 700 }}>
+                    👮 वर्दी (यूनिफॉर्म) वाली फोटो * (अनिवार्य / Mandatory)
+                  </label>
+                  {formData.uniformPhoto ? (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--success-emerald)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <CheckCircle2 size={13} />
+                      फोटो संलग्न
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.72rem', color: '#fca5a5', fontWeight: 600 }}>
+                      * अपलोड अनिवार्य
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{
+                    width: '65px',
+                    height: '65px',
+                    borderRadius: '50%',
+                    overflow: 'hidden',
+                    border: formData.uniformPhoto ? '2px solid var(--gold-primary)' : '2px dashed rgba(255,255,255,0.3)',
+                    background: 'rgba(0,0,0,0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    {formData.uniformPhoto ? (
+                      <img src={formData.uniformPhoto} alt="Uniform" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <Camera size={24} color="rgba(255,255,255,0.4)" />
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <label style={{
+                      background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
+                      color: '#fff',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}>
+                      <Upload size={13} />
+                      <span>गैलरी / फ़ाइल से चुनें</span>
+                      <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={handleUseDemoPhoto}
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(229,184,66,0.4)',
+                        color: 'var(--gold-light)',
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px'
+                      }}
+                      title="आधिकारिक वर्दी डेमो फोटो"
+                    >
+                      <Sparkles size={13} />
+                      <span>डेमो वर्दी फोटो लगाएं</span>
+                    </button>
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: '6px' }}>
+                  सुरक्षा सत्यापन हेतु वर्दी वाली स्पष्ट फोटो अपलोड होने के बाद ही ऐप का संचालन सक्रिय होगा।
+                </div>
               </div>
 
               <div className="form-group full-width">

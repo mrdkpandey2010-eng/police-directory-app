@@ -43,7 +43,14 @@ export default function NotificationsModal({
 
   // Filter notifications visible to current user
   const userVisibleNotifs = notifications.filter(n => {
-    // 1. Inter-District Supervisory Alert visibility
+    // 1. Direct Message notification visibility
+    if (n.type === 'direct_message') {
+      if (n.targetUserId && currentUser?.id === n.targetUserId) return true;
+      if (isAdmin) return true;
+      return false;
+    }
+
+    // 2. Inter-District Supervisory Alert visibility
     if (n.type === 'inter_district_alert') {
       if (isAdmin) return true;
       if (isCoAdmin && currentUser?.district === n.district) return true;
@@ -290,16 +297,29 @@ export default function NotificationsModal({
                           {n.content}
                         </p>
 
-                        {/* Direct action button to jump directly to Inter-District chat */}
+                        {/* Direct action button to jump directly to chat */}
+                        {n.type === 'direct_message' && onOpenChat && (
+                          <div style={{ marginTop: '0.35rem', display: 'flex', justifyContent: 'flex-end' }}>
+                            <button 
+                              className="btn btn-primary"
+                              style={{ padding: '5px 12px', fontSize: '0.8rem', background: 'linear-gradient(135deg, #059669, #10b981)' }}
+                              onClick={() => { onClose(); onOpenChat(n.chatId); }}
+                            >
+                              <MessageSquare size={14} />
+                              मैसेज बॉक्स में खोलें
+                            </button>
+                          </div>
+                        )}
+
                         {isInterAlert && onOpenChat && (
                           <div style={{ marginTop: '0.35rem', display: 'flex', justifyContent: 'flex-end' }}>
                             <button 
                               className="btn btn-primary"
                               style={{ padding: '5px 12px', fontSize: '0.8rem', background: 'linear-gradient(135deg, #1e3a8a, #2563eb)' }}
-                              onClick={() => onOpenChat(n.chatId)}
+                              onClick={() => { onClose(); onOpenChat(n.chatId); }}
                             >
                               <MessageSquare size={14} />
-                              संबंधित आंतरिक चैट एवं फ़ाइलें देखें
+                              संबंधित चैट एवं फ़ाइलें देखें
                             </button>
                           </div>
                         )}
