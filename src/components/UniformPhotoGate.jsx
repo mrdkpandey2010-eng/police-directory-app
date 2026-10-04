@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { 
   ShieldAlert, Camera, Upload, CheckCircle2, AlertTriangle, 
-  User, Shield, LogOut, Sparkles 
+  User, Shield, LogOut 
 } from 'lucide-react';
-import { DEFAULT_UNIFORM_PHOTO } from '../data/mockContacts';
 
 export default function UniformPhotoGate({ 
   currentUser, 
@@ -24,8 +23,8 @@ export default function UniformPhotoGate({
       return;
     }
 
-    if (file.size > 3 * 1024 * 1024) {
-      setErrorMsg('कृपया 3 MB से छोटी फ़ोटो अपलोड करें।');
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg('कृपया 5 MB से छोटी फ़ोटो अपलोड करें।');
       return;
     }
 
@@ -35,12 +34,6 @@ export default function UniformPhotoGate({
       setPhotoPreview(event.target.result);
     };
     reader.readAsDataURL(file);
-  };
-
-  // 1-Click Demo uniform photo filler
-  const handleUseDemoPhoto = () => {
-    setErrorMsg('');
-    setPhotoPreview(DEFAULT_UNIFORM_PHOTO);
   };
 
   // Submit and verify photo
@@ -244,6 +237,31 @@ export default function UniformPhotoGate({
 
             {/* Selection Options */}
             <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+              {/* Live Camera Capture */}
+              <label style={{
+                background: 'linear-gradient(135deg, #991b1b, #7f1d1d)',
+                color: '#fff',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <Camera size={15} />
+                <span>कैमरा से लाइव फ़ोटो खींचें</span>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  capture="user"
+                  onChange={handleFileChange} 
+                  style={{ display: 'none' }} 
+                />
+              </label>
+
+              {/* Gallery / File Upload */}
               <label style={{
                 background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
                 color: '#fff',
@@ -256,8 +274,8 @@ export default function UniformPhotoGate({
                 alignItems: 'center',
                 gap: '6px'
               }}>
-                <Upload size={14} />
-                <span>फ़ाइल से वर्दी फ़ोटो चुनें</span>
+                <Upload size={15} />
+                <span>गैलरी / फ़ाइल से चुनें</span>
                 <input 
                   type="file" 
                   accept="image/*" 
@@ -265,28 +283,6 @@ export default function UniformPhotoGate({
                   style={{ display: 'none' }} 
                 />
               </label>
-
-              <button
-                type="button"
-                onClick={handleUseDemoPhoto}
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(229,184,66,0.4)',
-                  color: 'var(--gold-light, #fbbf24)',
-                  padding: '8px 14px',
-                  borderRadius: '8px',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-                title="त्वरित परीक्षण हेतु आधिकारिक वर्दी डेमो फोटो लगाएं"
-              >
-                <Sparkles size={14} />
-                <span>डेमो वर्दी फ़ोटो लगाएं</span>
-              </button>
             </div>
 
             <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload, Sparkles, ShieldCheck } from 'lucide-react';
-import { DEFAULT_UNIFORM_PHOTO } from '../data/mockContacts';
+import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload } from 'lucide-react';
 
 export default function RegistrationModal({ 
   isOpen, 
@@ -19,7 +18,7 @@ export default function RegistrationModal({
     phone: '',
     whatsapp: '',
     email: '',
-    password: '1234',
+    password: '',
     registrationNotes: '',
     uniformPhoto: null
   });
@@ -56,11 +55,6 @@ export default function RegistrationModal({
     reader.readAsDataURL(file);
   };
 
-  const handleUseDemoPhoto = () => {
-    setErrorMsg('');
-    setFormData(prev => ({ ...prev, uniformPhoto: DEFAULT_UNIFORM_PHOTO }));
-  };
-
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.phone.trim() || !formData.office.trim()) {
@@ -73,9 +67,14 @@ export default function RegistrationModal({
       return;
     }
 
+    if (!formData.password || formData.password.trim().length < 4) {
+      setErrorMsg('कृपया कम से कम 4 अक्षरों/अंकों का पासवर्ड बनाएं।');
+      return;
+    }
+
     // MANDATORY UNIFORM PHOTO VALIDATION
     if (!formData.uniformPhoto) {
-      setErrorMsg('⚠️ सुरक्षा नीति: वर्दी (यूनिफॉर्म) वाली फोटो अपलोड करना अनिवार्य है। इसके बिना ऐप का संचालन संभव नहीं होगा।');
+      setErrorMsg('⚠️ सुरक्षा नीति: वर्दी (यूनिफॉर्म) वाली वास्तविक फोटो अपलोड करना अनिवार्य है। इसके बिना ऐप का संचालन संभव नहीं होगा।');
       return;
     }
 
@@ -236,14 +235,17 @@ export default function RegistrationModal({
               </div>
 
               <div className="form-group">
-                <label className="form-label">लॉगिन पासवर्ड (Default: 1234)</label>
+                <label className="form-label">
+                  लॉगिन पासवर्ड <span className="req">*</span>
+                </label>
                 <input
                   type="password"
                   name="password"
                   className="form-input"
-                  placeholder="1234"
+                  placeholder="कम से कम 4 अक्षरों का पासवर्ड"
                   value={formData.password}
                   onChange={handleChange}
+                  required
                 />
               </div>
 
@@ -315,6 +317,25 @@ export default function RegistrationModal({
                   </div>
 
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {/* Camera capture button */}
+                    <label style={{
+                      background: 'linear-gradient(135deg, #991b1b, #7f1d1d)',
+                      color: '#fff',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}>
+                      <Camera size={13} />
+                      <span>कैमरा से खींचें</span>
+                      <input type="file" accept="image/*" capture="user" onChange={handlePhotoUpload} style={{ display: 'none' }} />
+                    </label>
+
+                    {/* Gallery / File button */}
                     <label style={{
                       background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
                       color: '#fff',
@@ -331,32 +352,10 @@ export default function RegistrationModal({
                       <span>गैलरी / फ़ाइल से चुनें</span>
                       <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
                     </label>
-
-                    <button
-                      type="button"
-                      onClick={handleUseDemoPhoto}
-                      style={{
-                        background: 'rgba(255,255,255,0.08)',
-                        border: '1px solid rgba(229,184,66,0.4)',
-                        color: 'var(--gold-light)',
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        fontSize: '0.78rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px'
-                      }}
-                      title="आधिकारिक वर्दी डेमो फोटो"
-                    >
-                      <Sparkles size={13} />
-                      <span>डेमो वर्दी फोटो लगाएं</span>
-                    </button>
                   </div>
                 </div>
                 <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: '6px' }}>
-                  सुरक्षा सत्यापन हेतु वर्दी वाली स्पष्ट फोटो अपलोड होने के बाद ही ऐप का संचालन सक्रिय होगा।
+                  सुरक्षा नीति: केवल आधिकारिक वर्दी (यूनिफॉर्म) वाली वास्तविक फोटो ही मान्य है।
                 </div>
               </div>
 

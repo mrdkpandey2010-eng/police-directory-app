@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, Shield, User, KeyRound, Building, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { X, Lock, Shield, User, KeyRound, Building, ArrowRight } from 'lucide-react';
 
 export default function LoginModal({ 
   isOpen, 
@@ -49,7 +49,7 @@ export default function LoginModal({
     }
 
     if ((matchedUser.password || '1234') !== pwdClean) {
-      setErrorMsg('गलत पासवर्ड! डिफ़ॉल्ट पासवर्ड 1234 है।');
+      setErrorMsg('गलत पासवर्ड! कृपया सही पासवर्ड दर्ज करें।');
       return;
     }
 
@@ -76,7 +76,7 @@ export default function LoginModal({
     }
 
     if ((targetCoAdmin.password || '1234') !== password.trim()) {
-      setErrorMsg('गलत Co-Admin पासवर्ड! डिफ़ॉल्ट पासवर्ड 1234 है।');
+      setErrorMsg('गलत Co-Admin पासवर्ड! कृपया सही पासवर्ड दर्ज करें।');
       return;
     }
 
@@ -99,93 +99,70 @@ export default function LoginModal({
       });
       onClose();
     } else {
-      setErrorMsg('गलत Admin PIN! डिफ़ॉल्ट PIN 1234 है।');
+      setErrorMsg('गलत Admin PIN! कृपया सही PIN दर्ज करें।');
     }
-  };
-
-  // Quick 1-click preset logins for evaluation
-  const triggerQuickLogin = (role, extraData) => {
-    if (role === 'admin') {
-      onLoginSuccess({
-        role: 'admin',
-        name: 'मुख्यालय पुलिस महानिदेशक (Super Admin)',
-        district: 'सभी ज़िले (All Districts)',
-        id: 'super-admin'
-      });
-    } else if (role === 'co_admin') {
-      const co = coAdmins.find(c => c.district === extraData) || coAdmins[0];
-      onLoginSuccess({
-        role: 'co_admin',
-        ...co
-      });
-    } else if (role === 'user') {
-      const u = contacts.find(c => c.id === extraData) || contacts[2];
-      onLoginSuccess({
-        role: 'user',
-        ...u
-      });
-    }
-    onClose();
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" style={{ maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 className="modal-title">
-            <Lock size={22} color="var(--gold-primary)" />
-            पोर्टल लॉगिन (Role-Based Login)
-          </h2>
-          <button className="close-btn" onClick={onClose}>
-            <X size={20} />
-          </button>
+      <div 
+        className="modal-content" 
+        onClick={e => e.stopPropagation()} 
+        style={{ maxWidth: '480px', padding: '1.25rem' }}
+      >
+        <div className="modal-header" style={{ paddingBottom: '0.65rem' }}>
+          <div className="modal-title" style={{ fontSize: '1.1rem' }}>
+            <Lock size={18} color="var(--khaki-primary, #c49756)" />
+            <span>उत्तर प्रदेश पुलिस पोर्टल लॉगिन</span>
+          </div>
+          <button className="close-btn" onClick={onClose}><X size={18} /></button>
         </div>
 
         {/* Tab Selection */}
-        <div className="admin-tabs" style={{ marginBottom: '0.5rem' }}>
+        <div className="admin-tabs" style={{ justifyContent: 'center', gap: '0.35rem' }}>
           <button 
-            type="button"
             className={`admin-tab ${activeTab === 'user' ? 'active' : ''}`}
             onClick={() => { setActiveTab('user'); setErrorMsg(''); }}
+            style={{ padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}
           >
-            <User size={15} />
-            कर्मचारी (User)
+            <User size={14} />
+            कर्मचारी लॉगिन
           </button>
 
           <button 
-            type="button"
             className={`admin-tab ${activeTab === 'co_admin' ? 'active' : ''}`}
             onClick={() => { setActiveTab('co_admin'); setErrorMsg(''); }}
+            style={{ padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}
           >
-            <Building size={15} />
+            <Building size={14} />
             ज़िला Co-Admin
           </button>
 
           <button 
-            type="button"
             className={`admin-tab ${activeTab === 'admin' ? 'active' : ''}`}
             onClick={() => { setActiveTab('admin'); setErrorMsg(''); }}
+            style={{ padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}
           >
-            <Shield size={15} />
+            <Shield size={14} />
             Super Admin
           </button>
         </div>
 
         {errorMsg && (
-          <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red)', color: '#fca5a5', padding: '0.65rem 0.85rem', borderRadius: '8px', fontSize: '0.85rem' }}>
+          <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red, #ef4444)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
             {errorMsg}
           </div>
         )}
 
         {/* TAB 1: EMPLOYEE LOGIN */}
         {activeTab === 'user' && (
-          <form onSubmit={handleUserLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <form onSubmit={handleUserLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div className="form-group">
               <label className="form-label">PNO नंबर या मोबाइल नंबर</label>
               <input
                 type="text"
                 className="form-input"
-                placeholder="उदा. PNO-012849103 या 9454401203"
+                placeholder="PNO नंबर या मोबाइल नंबर दर्ज करें"
                 value={identifier}
                 onChange={e => setIdentifier(e.target.value)}
                 autoFocus
@@ -194,7 +171,7 @@ export default function LoginModal({
             </div>
 
             <div className="form-group">
-              <label className="form-label">पासवर्ड / PIN (Default: 1234)</label>
+              <label className="form-label">पासवर्ड</label>
               <input
                 type="password"
                 className="form-input"
@@ -205,8 +182,8 @@ export default function LoginModal({
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.25rem' }}>
-              <ArrowRight size={16} />
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
+              <ArrowRight size={15} />
               कर्मचारी लॉगिन करें
             </button>
           </form>
@@ -214,7 +191,7 @@ export default function LoginModal({
 
         {/* TAB 2: CO-ADMIN LOGIN */}
         {activeTab === 'co_admin' && (
-          <form onSubmit={handleCoAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <form onSubmit={handleCoAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div className="form-group">
               <label className="form-label">ज़िला नोडल अधिकारी चुनें</label>
               <select
@@ -233,7 +210,7 @@ export default function LoginModal({
             </div>
 
             <div className="form-group">
-              <label className="form-label">Co-Admin पासवर्ड (Default: 1234)</label>
+              <label className="form-label">Co-Admin पासवर्ड</label>
               <input
                 type="password"
                 className="form-input"
@@ -244,8 +221,8 @@ export default function LoginModal({
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.25rem' }}>
-              <Shield size={16} />
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
+              <Shield size={15} />
               ज़िला Co-Admin लॉगिन करें
             </button>
           </form>
@@ -253,17 +230,17 @@ export default function LoginModal({
 
         {/* TAB 3: SUPER ADMIN LOGIN */}
         {activeTab === 'admin' && (
-          <form onSubmit={handleSuperAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid var(--glass-border)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.82rem', color: 'var(--gold-light)' }}>
-              👑 <strong>Super Admin Access:</strong> पूरे राज्य के सभी ज़िलों, यूज़र्स, Co-Admins, एक्सेल अपडेट और सेटिंग्स का पूर्ण अधिकार।
+          <form onSubmit={handleSuperAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid var(--glass-border)', padding: '0.65rem', borderRadius: '8px', fontSize: '0.78rem', color: 'var(--khaki-light)' }}>
+              👑 <strong>Super Admin Access:</strong> पूरे राज्य के सभी ज़िलों, कार्मिकों, Co-Admins एवं सेटिंग्स का पूर्ण प्रशासनिक नियंत्रण।
             </div>
 
             <div className="form-group">
-              <label className="form-label">Master Admin PIN / Password (Default: 1234)</label>
+              <label className="form-label">Master Admin PIN</label>
               <input
                 type="password"
                 className="form-input"
-                placeholder="Admin PIN दर्ज करें"
+                placeholder="••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 autoFocus
@@ -272,57 +249,12 @@ export default function LoginModal({
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.25rem' }}>
-              <KeyRound size={16} />
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
+              <KeyRound size={15} />
               Super Admin लॉगिन
             </button>
           </form>
         )}
-
-        {/* Quick Testing Shortcuts */}
-        <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ fontSize: '0.78rem', color: 'var(--gold-primary)', fontWeight: 700, marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            ⚡ 1-क्लिक टेस्ट लॉगिन (Testing Shortcuts):
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuickLogin('admin')}
-              style={{ justifyContent: 'flex-start', fontSize: '0.82rem', padding: '6px 10px' }}
-            >
-              👑 <strong>Super Admin</strong> (सभी ज़िले & फुल अधिकार)
-            </button>
-
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuickLogin('co_admin', 'लखनऊ')}
-              style={{ justifyContent: 'flex-start', fontSize: '0.82rem', padding: '6px 10px' }}
-            >
-              🛡️ <strong>Co-Admin: लखनऊ</strong> (केवल लखनऊ ज़िले का प्रबंधन)
-            </button>
-
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuickLogin('co_admin', 'कानपुर नगर')}
-              style={{ justifyContent: 'flex-start', fontSize: '0.82rem', padding: '6px 10px' }}
-            >
-              🛡️ <strong>Co-Admin: कानपुर नगर</strong> (केवल कानपुर का प्रबंधन)
-            </button>
-
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuickLogin('user', 'pol-103')}
-              style={{ justifyContent: 'flex-start', fontSize: '0.82rem', padding: '6px 10px' }}
-            >
-              👮 <strong>User: प्रिया वर्मा</strong> (क्षेत्राधिकारी, DSP लखनऊ)
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

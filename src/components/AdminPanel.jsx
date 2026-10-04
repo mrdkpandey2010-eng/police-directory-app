@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, Lock, Unlock, FileSpreadsheet, Download, Upload, CheckCircle, 
   XCircle, Edit3, Trash2, Clock, Users, Shield, KeyRound, Plus, 
-  ShieldCheck, Settings, Power, UserCheck, UserX, Award, Building2, MapPin
+  ShieldCheck, Settings, Power, UserCheck, Award, Building2, MapPin,
+  FileText
 } from 'lucide-react';
-import { downloadSampleExcel, importContactsFromExcel } from '../utils/storage';
+import { downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS } from '../utils/storage';
 
 export default function AdminPanel({ 
   isOpen, 
@@ -15,6 +16,8 @@ export default function AdminPanel({
   posts,
   offices,
   districts,
+  terms,
+  onSaveTerms,
   onApprove,
   onReject,
   onEditContact,
@@ -39,7 +42,7 @@ export default function AdminPanel({
   const isCoAdmin = currentUser?.role === 'co_admin';
   const myDistrict = isCoAdmin ? currentUser.district : null;
 
-  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'manage' | 'excel' | 'coadmins' | 'master'
+  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'manage' | 'excel' | 'coadmins' | 'master' | 'terms'
   const [masterSubTab, setMasterSubTab] = useState('posts'); // 'posts' | 'offices' | 'districts'
   
   // Excel upload states
@@ -74,6 +77,62 @@ export default function AdminPanel({
   const [newPostInput, setNewPostInput] = useState('');
   const [newOfficeInput, setNewOfficeInput] = useState('');
   const [newDistrictInput, setNewDistrictInput] = useState('');
+
+  // Terms & Conditions editing state
+  const [editableTerms, setEditableTerms] = useState(terms || DEFAULT_TERMS);
+  const [termsSavedMsg, setTermsSavedMsg] = useState('');
+  const [newRuleInput, setNewRuleInput] = useState('');
+
+  useEffect(() => {
+    if (terms) {
+      setEditableTerms(terms);
+    }
+  }, [terms]);
+
+  const handleRuleChange = (index, value) => {
+    const updatedRules = [...(editableTerms.rules || [])];
+    updatedRules[index] = value;
+    setEditableTerms(prev => ({ ...prev, rules: updatedRules }));
+  };
+
+  const handleAddRule = (e) => {
+    e.preventDefault();
+    const trimmed = newRuleInput.trim();
+    if (trimmed) {
+      setEditableTerms(prev => ({
+        ...prev,
+        rules: [...(prev.rules || []), trimmed]
+      }));
+      setNewRuleInput('');
+    }
+  };
+
+  const handleRemoveRule = (index) => {
+    setEditableTerms(prev => ({
+      ...prev,
+      rules: prev.rules.filter((_, idx) => idx !== index)
+    }));
+  };
+
+  const handleSaveTermsSubmit = (e) => {
+    e.preventDefault();
+    if (onSaveTerms) {
+      onSaveTerms(editableTerms);
+      setTermsSavedMsg('✅ शासकीय नियम व शर्तें सफलतापूर्वक अद्यतन (Save) की गईं!');
+      setTimeout(() => setTermsSavedMsg(''), 4000);
+    }
+  };
+
+  const handleResetDefaultTerms = () => {
+    if (window.confirm('क्या आप डिफ़ॉल्ट शासकीय नियम व शर्तें पुनर्स्थापित करना चाहते हैं?')) {
+      setEditableTerms(DEFAULT_TERMS);
+      if (onSaveTerms) {
+        onSaveTerms(DEFAULT_TERMS);
+        setTermsSavedMsg('✅ डिफ़ॉल्ट नियम व शर्तें पुनर्स्थापित की गईं!');
+        setTimeout(() => setTermsSavedMsg(''), 4000);
+      }
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -258,6 +317,14 @@ export default function AdminPanel({
                 </button>
               </>
             )}
+
+            <button 
+              className={`admin-tab ${activeTab === 'terms' ? 'active' : ''}`}
+              onClick={() => setActiveTab('terms')}
+            >
+              <FileText size={16} />
+              गोपनीय नियम व शर्तें
+            </button>
           </div>
 
           {/* TAB 1: PENDING APPROVALS */}
@@ -830,6 +897,189 @@ export default function AdminPanel({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB 6: TERMS & CONDITIONS (Editable by Admin & Co-Admin) */}
+          {activeTab === 'terms' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{
+                background: 'rgba(30,58,138,0.25)',
+                border: '1px solid rgba(196,151,86,0.35)',
+                padding: '0.75rem 1rem',
+                borderRadius: '10px',
+                fontSize: '0.82rem',
+                color: 'var(--khaki-light)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <FileText size={20} color="var(--khaki-primary)" style={{ flexShrink: 0 }} />
+                <div>
+                  <strong>शासकीय गोपनीयता नीति एवं सेवा शर्तें संशोधन:</strong> यहाँ से {isAdmin ? 'Super Admin' : `Co-Admin (${myDistrict})`} पोर्टल की आधिकारिक नियम व शर्तों को अद्यतन कर सकते हैं। यह संशोधन पोर्टल के नीचे फुटर में लाइव प्रदर्शित होता है।
+                </div>
+              </div>
+
+              {termsSavedMsg && (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.2)',
+                  border: '1px solid #10b981',
+                  color: '#6ee7b7',
+                  padding: '0.65rem 1rem',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600
+                }}>
+                  {termsSavedMsg}
+                </div>
+              )}
+
+              <form onSubmit={handleSaveTermsSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {/* Header Titles */}
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.7)',
+                  border: '1px solid var(--glass-border-light)',
+                  borderRadius: '10px',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem'
+                }}>
+                  <div className="form-group">
+                    <label className="form-label">नीति का मुख्य शीर्षक (Policy Title)</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editableTerms?.title || ''}
+                      onChange={e => setEditableTerms({ ...editableTerms, title: e.target.value })}
+                      placeholder="उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तें"
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">उप-शीर्षक / विवरण (Subtitle / Scope)</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editableTerms?.subtitle || ''}
+                      onChange={e => setEditableTerms({ ...editableTerms, subtitle: e.target.value })}
+                      placeholder="Official Confidentiality Policy • केवल अधिकृत पुलिस कार्मिकों हेतु"
+                    />
+                  </div>
+                </div>
+
+                {/* List of Rules */}
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.7)',
+                  border: '1px solid var(--glass-border-light)',
+                  borderRadius: '10px',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-bright)', fontWeight: 700 }}>
+                      📋 सक्रिय नियम एवं शर्तें ({editableTerms?.rules?.length || 0})
+                    </h4>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                      प्रत्येक नियम को संपादित कर सकते हैं
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    {editableTerms?.rules?.map((rule, idx) => (
+                      <div 
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '8px',
+                          background: 'rgba(0,0,0,0.25)',
+                          padding: '0.6rem 0.75rem',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(255,255,255,0.06)'
+                        }}
+                      >
+                        <span style={{
+                          fontWeight: 700,
+                          color: 'var(--khaki-primary)',
+                          fontSize: '0.85rem',
+                          marginTop: '6px',
+                          flexShrink: 0
+                        }}>
+                          {idx + 1}.
+                        </span>
+                        <textarea
+                          className="form-textarea"
+                          rows={2}
+                          value={rule}
+                          onChange={e => handleRuleChange(idx, e.target.value)}
+                          style={{ flexGrow: 1, fontSize: '0.84rem' }}
+                          required
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          onClick={() => handleRemoveRule(idx)}
+                          style={{ padding: '6px 8px', alignSelf: 'flex-start' }}
+                          title="यह नियम हटाएं"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add New Rule Form */}
+                  <div style={{
+                    marginTop: '0.5rem',
+                    paddingTop: '0.75rem',
+                    borderTop: '1px dashed rgba(255,255,255,0.1)',
+                    display: 'flex',
+                    gap: '0.5rem',
+                    alignItems: 'center'
+                  }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="नया नियम या शर्त यहाँ लिखें..."
+                      value={newRuleInput}
+                      onChange={e => setNewRuleInput(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleAddRule}
+                      style={{ whiteSpace: 'nowrap', padding: '0.55rem 0.95rem' }}
+                    >
+                      <Plus size={15} />
+                      नियम जोड़ें
+                    </button>
+                  </div>
+                </div>
+
+                {/* Save and Reset Actions */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleResetDefaultTerms}
+                    style={{ fontSize: '0.82rem' }}
+                  >
+                    डिफ़ॉल्ट नियम रीसेट करें
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ padding: '0.65rem 1.4rem', fontSize: '0.9rem' }}
+                  >
+                    💾 नियम व शर्तें सुरक्षित करें (Save Terms)
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>

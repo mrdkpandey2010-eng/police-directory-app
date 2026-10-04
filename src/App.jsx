@@ -63,8 +63,12 @@ import {
   markChatAsRead,
   getUnreadMessagesCountForUser,
   updateUserUniformPhoto,
-  resetToDefaultContacts
+  resetToDefaultContacts,
+  getStoredTerms,
+  saveTerms,
+  DEFAULT_TERMS
 } from './utils/storage';
+import TermsFooter from './components/TermsFooter';
 import { MapPin, Shield, Search } from 'lucide-react';
 
 export default function App() {
@@ -74,6 +78,7 @@ export default function App() {
   const [feedbacks, setFeedbacks] = useState([]);
   const [chats, setChats] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [terms, setTerms] = useState(DEFAULT_TERMS);
 
   // Dynamic Master Configuration Lists
   const [posts, setPosts] = useState([]);
@@ -122,6 +127,7 @@ export default function App() {
     setPosts(getStoredPosts());
     setOffices(getStoredOffices());
     setDistricts(getStoredDistricts());
+    setTerms(getStoredTerms());
     
     // Check if user session already exists
     const savedUser = getStoredSession();
@@ -649,6 +655,12 @@ export default function App() {
     showToast('फीडबैक स्थिति अद्यतन की गई!');
   };
 
+  const handleSaveTerms = (updatedTerms) => {
+    const saved = saveTerms(updatedTerms);
+    setTerms(saved);
+    showToast('📜 शासकीय गोपनीयता नियम व शर्तें सफलतापूर्वक अपडेट हुईं!');
+  };
+
   // Demo Data Reset
   const handleResetData = () => {
     if (window.confirm('क्या आप डिफ़ॉल्ट पुलिस संपर्क, Co-Admins, सूचनाएं, चैट एवं ग्रुप्स रीसेट करना चाहते हैं?')) {
@@ -711,6 +723,7 @@ export default function App() {
           posts={posts}
           districts={districts}
           offices={offices}
+          terms={terms}
         />
 
         {/* Google Firebase Cloud Live Chat Setup Modal (Accessible on Login Screen) */}
@@ -871,6 +884,13 @@ export default function App() {
         onOpenChatWithContact={handleOpenChatWithContact}
       />
 
+      {/* Confidentiality Rules and Terms & Conditions Footer on Main Dashboard */}
+      <TermsFooter 
+        terms={terms} 
+        canEdit={currentUser?.role === 'admin' || currentUser?.role === 'co_admin'}
+        onOpenAdminTermsEdit={() => setIsAdminModalOpen(true)}
+      />
+
       {/* Police Message Box & Group Messaging Modal */}
       <MessageBoxModal
         isOpen={isChatModalOpen}
@@ -943,6 +963,8 @@ export default function App() {
         posts={posts}
         offices={offices}
         districts={districts}
+        terms={terms}
+        onSaveTerms={handleSaveTerms}
         onApprove={handleApproveContact}
         onReject={handleRejectContact}
         onEditContact={handleStartEdit}

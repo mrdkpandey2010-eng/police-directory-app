@@ -22,6 +22,44 @@ const CHATS_KEY = 'police_directory_chats_v2';
 const POSTS_KEY = 'police_directory_master_posts_v1';
 const OFFICES_KEY = 'police_directory_master_offices_v1';
 const DISTRICTS_KEY = 'police_directory_master_districts_v1';
+const TERMS_KEY = 'police_directory_terms_v1';
+
+// ---------------- CONFIDENTIALITY TERMS & CONDITIONS ----------------
+export const DEFAULT_TERMS = {
+  title: "उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तें",
+  subtitle: "Official Confidentiality Policy & Terms of Service • केवल अधिकृत पुलिस कार्मिकों हेतु",
+  lastUpdated: new Date().toISOString().split('T')[0],
+  rules: [
+    "यह पोर्टल एवं संपर्क निर्देशिका केवल उत्तर प्रदेश पुलिस के सेवारत अधिकृत पुलिस कार्मिकों के शासकीय एवं आपातकालीन समन्वय हेतु है।",
+    "पोर्टल में उपलब्ध किसी भी अधिकारी अथवा कर्मचारी का व्यक्तिगत फोन नंबर, पता, या विवरण किसी अनधिकृत व्यक्ति अथवा सार्वजनिक सोशल मीडिया पर साझा करना पूर्णतः वर्जित है।",
+    "सभी कार्मिकों के लिए पोर्टल में अपनी नवीनतम आधिकारिक वर्दी (Uniform) वाली स्पष्ट फोटो अपलोड एवं सत्यापित कराना अनिवार्य है। बिना वर्दी फोटो के ऐप का उपयोग प्रतिबंधित रहेगा।",
+    "लॉगिन क्रेडेंशियल्स (PNO, मोबाइल नंबर, पासवर्ड) पूर्णतः व्यक्तिगत एवं गोपनीय हैं। अपने क्रेडेंशियल्स किसी अन्य के साथ साझा न करें।",
+    "नियमों के उल्लंघन अथवा डेटा के दुरुपयोग की स्थिति में भारतीय सूचना प्रौद्योगिकी अधिनियम (IT Act) एवं पुलिस आचरण नियमावली के अंतर्गत कठोर दंडात्मक व विभागीय कार्यवाही की जाएगी।"
+  ]
+};
+
+export const getStoredTerms = () => {
+  try {
+    const saved = localStorage.getItem(TERMS_KEY);
+    return saved ? JSON.parse(saved) : DEFAULT_TERMS;
+  } catch (err) {
+    return DEFAULT_TERMS;
+  }
+};
+
+export const saveTerms = (termsData) => {
+  try {
+    const updated = {
+      ...termsData,
+      lastUpdated: new Date().toISOString().split('T')[0]
+    };
+    localStorage.setItem(TERMS_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (err) {
+    console.error('Error saving terms', err);
+    return termsData;
+  }
+};
 
 // ---------------- MASTER CONFIGURATION (POSTS, OFFICES, DISTRICTS) ----------------
 export const getStoredPosts = () => {

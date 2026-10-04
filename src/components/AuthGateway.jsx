@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { 
   Shield, Lock, User, UserPlus, KeyRound, Building, ArrowRight, 
-  AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload, Sparkles, Cloud
+  AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload, Cloud
 } from 'lucide-react';
-import { DEFAULT_UNIFORM_PHOTO } from '../data/mockContacts';
+import TermsFooter from './TermsFooter';
 
 export default function AuthGateway({ 
   onLoginSuccess, 
@@ -14,7 +14,8 @@ export default function AuthGateway({
   coAdmins,
   posts = [],
   districts = [],
-  offices = []
+  offices = [],
+  terms = null
 }) {
   const [activeTab, setActiveTab] = useState('user_login'); // 'user_login' | 'register' | 'co_admin' | 'admin'
   
@@ -34,7 +35,7 @@ export default function AuthGateway({
     phone: '',
     whatsapp: '',
     email: '',
-    password: '1234',
+    password: '',
     registrationNotes: '',
     uniformPhoto: null
   });
@@ -74,7 +75,7 @@ export default function AuthGateway({
     }
 
     if ((matchedUser.password || '1234') !== pwdClean) {
-      setErrorMsg('गलत पासवर्ड! डिफ़ॉल्ट पासवर्ड 1234 है।');
+      setErrorMsg('गलत पासवर्ड! कृपया अपना सही पासवर्ड दर्ज करें।');
       return;
     }
 
@@ -101,7 +102,7 @@ export default function AuthGateway({
     }
 
     if ((targetCoAdmin.password || '1234') !== password.trim()) {
-      setErrorMsg('गलत Co-Admin पासवर्ड! डिफ़ॉल्ट पासवर्ड 1234 है।');
+      setErrorMsg('गलत Co-Admin पासवर्ड! कृपया सही पासवर्ड दर्ज करें।');
       return;
     }
 
@@ -123,7 +124,7 @@ export default function AuthGateway({
         id: 'super-admin'
       });
     } else {
-      setErrorMsg('गलत Admin PIN! डिफ़ॉल्ट PIN 1234 है।');
+      setErrorMsg('गलत Admin PIN! कृपया सही Master PIN दर्ज करें।');
     }
   };
 
@@ -136,8 +137,8 @@ export default function AuthGateway({
       return;
     }
 
-    if (file.size > 3 * 1024 * 1024) {
-      setErrorMsg('कृपया 3 MB से छोटी फ़ोटो अपलोड करें।');
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg('कृपया 5 MB से छोटी फ़ोटो अपलोड करें।');
       return;
     }
 
@@ -147,11 +148,6 @@ export default function AuthGateway({
       setRegForm(prev => ({ ...prev, uniformPhoto: event.target.result }));
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleUseDemoPhoto = () => {
-    setErrorMsg('');
-    setRegForm(prev => ({ ...prev, uniformPhoto: DEFAULT_UNIFORM_PHOTO }));
   };
 
   // Self Registration Handler
@@ -167,9 +163,14 @@ export default function AuthGateway({
       return;
     }
 
+    if (!regForm.password || regForm.password.trim().length < 4) {
+      setErrorMsg('कृपया कम से कम 4 अक्षरों/अंकों का पासवर्ड बनाएं।');
+      return;
+    }
+
     // MANDATORY UNIFORM PHOTO CHECK
     if (!regForm.uniformPhoto) {
-      setErrorMsg('⚠️ सुरक्षा नीति: वर्दी (यूनिफॉर्म) वाली फोटो अपलोड करना अनिवार्य है। इसके बिना ऐप का संचालन संभव नहीं होगा।');
+      setErrorMsg('⚠️ सुरक्षा नीति: वर्दी (यूनिफॉर्म) वाली वास्तविक फोटो अपलोड करना अनिवार्य है। इसके बिना पंजीकरण मान्य नहीं होगा।');
       return;
     }
 
@@ -178,117 +179,107 @@ export default function AuthGateway({
     setRegSuccess(true);
   };
 
-  // Quick 1-click test login triggers
-  const triggerQuick = (roleKey, param) => {
-    if (roleKey === 'admin') {
-      onLoginSuccess({
-        role: 'admin',
-        name: 'मुख्यालय पुलिस महानिदेशक (Super Admin)',
-        district: 'सभी ज़िले (All Districts)',
-        id: 'super-admin'
-      });
-    } else if (roleKey === 'co_admin') {
-      const co = coAdmins.find(c => c.district === param) || coAdmins[0];
-      onLoginSuccess({
-        role: 'co_admin',
-        ...co
-      });
-    } else if (roleKey === 'user') {
-      const u = contacts.find(c => c.id === param) || contacts[2];
-      onLoginSuccess({
-        role: 'user',
-        ...u
-      });
-    }
-  };
-
   return (
     <div style={{
-      minHeight: '85vh',
+      minHeight: '88vh',
       display: 'flex',
+      flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '1rem'
+      padding: '0.75rem 1rem'
     }}>
       <div style={{
         width: '100%',
-        maxWidth: '620px',
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--glass-border)',
-        borderTop: '4px solid var(--gold-primary)',
-        borderRadius: 'var(--radius-lg)',
-        padding: '1.75rem',
-        boxShadow: 'var(--shadow-card)',
+        maxWidth: '580px',
+        background: 'var(--bg-surface, #111827)',
+        border: '1px solid var(--khaki-border, rgba(196, 151, 86, 0.35))',
+        borderTop: '4px solid var(--khaki-primary, #c49756)',
+        borderRadius: 'var(--radius-lg, 12px)',
+        padding: '1.25rem 1.5rem',
+        boxShadow: 'var(--shadow-card, 0 10px 30px rgba(0,0,0,0.5))',
         display: 'flex',
         flexDirection: 'column',
-        gap: '1.25rem'
+        gap: '1rem'
       }}>
         {/* Cloud Setup Button on Login Screen */}
         {onOpenFirebaseSetup && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '-0.5rem -0.5rem 0 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '-0.35rem -0.5rem 0 0' }}>
             <button
               type="button"
               onClick={onOpenFirebaseSetup}
               style={{
-                background: isFirebaseConnected ? 'rgba(16,185,129,0.15)' : 'rgba(234,179,8,0.15)',
-                border: isFirebaseConnected ? '1px solid #10b981' : '1px solid #eab308',
-                color: isFirebaseConnected ? '#34d399' : '#fde047',
-                padding: '4px 10px',
-                borderRadius: '20px',
-                fontSize: '0.74rem',
+                background: isFirebaseConnected ? 'rgba(16,185,129,0.15)' : 'rgba(196,151,86,0.15)',
+                border: isFirebaseConnected ? '1px solid #10b981' : '1px solid var(--khaki-primary, #c49756)',
+                color: isFirebaseConnected ? '#34d399' : 'var(--khaki-light, #dfb97e)',
+                padding: '3px 8px',
+                borderRadius: '16px',
+                fontSize: '0.72rem',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '5px',
-                fontWeight: 600
+                gap: '4px'
               }}
-              title="Google Firebase लाइव चैट क्लाउड सेटअप करें"
             >
-              <Cloud size={13} />
-              <span>{isFirebaseConnected ? '🟢 क्लाउड लाइव' : '⚡ क्लाउड सेटअप (Firebase)'}</span>
+              <Cloud size={12} />
+              <span>{isFirebaseConnected ? 'क्लाउड लाइव चैट' : 'क्लाउड सिंक'}</span>
             </button>
           </div>
         )}
 
         {/* Police Branding Header */}
-        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
-          <div className="police-badge-icon" style={{ width: '60px', height: '60px' }}>
-            <Shield size={32} />
+        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.45rem' }}>
+          {/* Official UP Police Ribbon Accent */}
+          <div style={{
+            height: '3px',
+            width: '60px',
+            background: 'linear-gradient(90deg, #991b1b 50%, #1e3a8a 50%)',
+            borderRadius: '2px',
+            marginBottom: '2px'
+          }} />
+
+          <div className="police-badge-icon" style={{ 
+            width: '54px', 
+            height: '54px', 
+            background: 'linear-gradient(145deg, #162c5b, #0b1a30)',
+            border: '2px solid var(--khaki-primary, #c49756)',
+            boxShadow: '0 0 15px rgba(196, 151, 86, 0.35)'
+          }}>
+            <Shield size={28} color="var(--khaki-light, #dfb97e)" />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-bright)' }}>
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-bright, #fff)' }}>
               उत्तर प्रदेश पुलिस संपर्क पोर्टल
             </h1>
-            <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              आधिकारिक निर्देशिका एवं कॉलर ऐप • अधिकृत कार्मिक लॉगिन
+            <p style={{ fontSize: '0.8rem', color: 'var(--khaki-light, #dfb97e)', marginTop: '1px' }}>
+              आधिकारिक निर्देशिका एवं कॉलर ऐप • अधिकृत विभागीय लॉगिन
             </p>
           </div>
 
           <div style={{ 
-            background: 'rgba(229,184,66,0.1)', 
-            border: '1px solid rgba(229,184,66,0.25)', 
-            borderRadius: '8px', 
-            padding: '6px 12px', 
-            fontSize: '0.78rem', 
-            color: 'var(--gold-light)',
+            background: 'rgba(196,151,86,0.1)', 
+            border: '1px solid rgba(196,151,86,0.3)', 
+            borderRadius: '6px', 
+            padding: '4px 10px', 
+            fontSize: '0.74rem', 
+            color: 'var(--khaki-light, #dfb97e)',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            marginTop: '4px'
+            gap: '5px'
           }}>
-            <Lock size={13} color="var(--gold-primary)" />
-            <span>गोपनीयता नियम: निर्देशिका केवल लॉगिन के पश्चात ही संबंधित जनपद अनुसार दिखेगी।</span>
+            <Lock size={12} color="var(--khaki-primary, #c49756)" />
+            <span>गोपनीय शासकीय पोर्टल: केवल अधिकृत पुलिस कार्मिकों के उपयोग हेतु।</span>
           </div>
         </div>
 
         {/* Tab Selection */}
-        <div className="admin-tabs" style={{ justifyContent: 'center' }}>
+        <div className="admin-tabs" style={{ justifyContent: 'center', gap: '0.35rem' }}>
           <button 
             type="button"
             className={`admin-tab ${activeTab === 'user_login' ? 'active' : ''}`}
             onClick={() => { setActiveTab('user_login'); setErrorMsg(''); setRegSuccess(false); }}
+            style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem' }}
           >
-            <User size={15} />
+            <User size={14} />
             कर्मचारी लॉगिन
           </button>
 
@@ -296,8 +287,9 @@ export default function AuthGateway({
             type="button"
             className={`admin-tab ${activeTab === 'register' ? 'active' : ''}`}
             onClick={() => { setActiveTab('register'); setErrorMsg(''); setRegSuccess(false); }}
+            style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem' }}
           >
-            <UserPlus size={15} />
+            <UserPlus size={14} />
             नया स्व-पंजीकरण
           </button>
 
@@ -305,8 +297,9 @@ export default function AuthGateway({
             type="button"
             className={`admin-tab ${activeTab === 'co_admin' ? 'active' : ''}`}
             onClick={() => { setActiveTab('co_admin'); setErrorMsg(''); setRegSuccess(false); }}
+            style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem' }}
           >
-            <Building size={15} />
+            <Building size={14} />
             ज़िला Co-Admin
           </button>
 
@@ -314,27 +307,28 @@ export default function AuthGateway({
             type="button"
             className={`admin-tab ${activeTab === 'admin' ? 'active' : ''}`}
             onClick={() => { setActiveTab('admin'); setErrorMsg(''); setRegSuccess(false); }}
+            style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem' }}
           >
-            <Shield size={15} />
+            <Shield size={14} />
             Super Admin
           </button>
         </div>
 
         {errorMsg && (
-          <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red)', color: '#fca5a5', padding: '0.65rem 0.85rem', borderRadius: '8px', fontSize: '0.85rem' }}>
+          <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red, #ef4444)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
             {errorMsg}
           </div>
         )}
 
         {/* TAB 1: EMPLOYEE LOGIN */}
         {activeTab === 'user_login' && (
-          <form onSubmit={handleUserLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <form onSubmit={handleUserLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div className="form-group">
               <label className="form-label">PNO नंबर या मोबाइल नंबर</label>
               <input
                 type="text"
                 className="form-input"
-                placeholder="उदा. PNO-012849103 या 9454401203"
+                placeholder="PNO नंबर या मोबाइल नंबर दर्ज करें"
                 value={identifier}
                 onChange={e => setIdentifier(e.target.value)}
                 autoFocus
@@ -343,7 +337,7 @@ export default function AuthGateway({
             </div>
 
             <div className="form-group">
-              <label className="form-label">पासवर्ड (Default: 1234)</label>
+              <label className="form-label">पासवर्ड</label>
               <input
                 type="password"
                 className="form-input"
@@ -354,18 +348,18 @@ export default function AuthGateway({
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.25rem' }}>
-              <ArrowRight size={16} />
-              लॉगिन करें (अपने जनपद की निर्देशिका देखें)
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
+              <ArrowRight size={15} />
+              लॉगिन करें
             </button>
 
-            <div style={{ textAlign: 'center', marginTop: '0.25rem' }}>
+            <div style={{ textAlign: 'center', marginTop: '0.2rem' }}>
               <button 
                 type="button" 
                 onClick={() => { setActiveTab('register'); setErrorMsg(''); }}
-                style={{ background: 'transparent', border: 'none', color: 'var(--gold-primary)', fontSize: '0.82rem', cursor: 'pointer', textDecoration: 'underline' }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--khaki-primary, #c49756)', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline' }}
               >
-                नया कर्मचारी खाता? यहाँ स्व-पंजीकरण करें
+                नया पुलिस कर्मचारी खाता? यहाँ स्व-पंजीकरण करें
               </button>
             </div>
           </form>
@@ -375,27 +369,27 @@ export default function AuthGateway({
         {activeTab === 'register' && (
           <div>
             {regSuccess ? (
-              <div style={{ textAlign: 'center', padding: '1.5rem 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-                <CheckCircle2 size={52} color="var(--success-emerald)" />
-                <h3 style={{ color: 'var(--text-bright)', fontSize: '1.2rem', fontWeight: 700 }}>
+              <div style={{ textAlign: 'center', padding: '1.25rem 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.65rem' }}>
+                <CheckCircle2 size={46} color="var(--success-emerald, #10b981)" />
+                <h3 style={{ color: 'var(--text-bright)', fontSize: '1.1rem', fontWeight: 700 }}>
                   पंजीकरण सफलतापूर्वक दर्ज हुआ!
                 </h3>
-                <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', padding: '0.85rem', borderRadius: '10px', color: '#fcd34d', fontSize: '0.85rem' }}>
-                  <strong>Admin Approval Mandatory:</strong> आपकी प्रोफ़ाइल संबंधित ज़िला Co-Admin / Admin के सत्यापन एवं अनुमोदन हेतु भेजी गई है। अप्रूवल के पश्चात आप लॉगिन कर पाएंगे।
+                <div style={{ background: 'rgba(196,151,86,0.12)', border: '1px solid rgba(196,151,86,0.3)', padding: '0.75rem', borderRadius: '8px', color: 'var(--khaki-light)', fontSize: '0.8rem', lineHeight: 1.45 }}>
+                  <strong>Admin Approval Mandatory:</strong> आपकी प्रोफ़ाइल संबंधित ज़िला Co-Admin / Super Admin के सत्यापन एवं अनुमोदन हेतु भेजी गई है। सत्यापन उपरांत आप पोर्टल में लॉगिन कर सकेंगे।
                 </div>
                 <button 
                   type="button" 
                   className="btn btn-primary" 
                   onClick={() => { setActiveTab('user_login'); setRegSuccess(false); }}
-                  style={{ marginTop: '0.5rem' }}
+                  style={{ marginTop: '0.4rem' }}
                 >
                   लॉगिन स्क्रीन पर जाएं
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                <div style={{ background: 'rgba(30,58,138,0.25)', padding: '0.65rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--gold-light)' }}>
-                  📝 पुलिस कर्मचारी अपना विवरण भरें। सत्यापन के बाद आपको अपने जनपद की निर्देशिका का एक्सेस मिलेगा।
+              <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--khaki-light)' }}>
+                  📝 पुलिस कर्मचारी अपना आधिकारिक विवरण भरें। सत्यापन के उपरांत आपको अपने जनपद की निर्देशिका का एक्सेस मिलेगा।
                 </div>
 
                 <div className="form-grid">
@@ -404,7 +398,7 @@ export default function AuthGateway({
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="उदा. अमित कुमार सिंह"
+                      placeholder="पूरा नाम दर्ज करें"
                       value={regForm.name}
                       onChange={e => setRegForm({ ...regForm, name: e.target.value })}
                       required
@@ -453,7 +447,7 @@ export default function AuthGateway({
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="उदा. थाना हजरतगंज / एसपी कार्यालय"
+                      placeholder="उदा. थाना कोतवाली / पुलिस लाइन"
                       value={regForm.office}
                       onChange={e => setRegForm({ ...regForm, office: e.target.value })}
                       required
@@ -465,7 +459,7 @@ export default function AuthGateway({
                     <input
                       type="tel"
                       className="form-input"
-                      placeholder="10 अंकों का मोबाइल"
+                      placeholder="10 अंकों का मोबाइल नंबर"
                       value={regForm.phone}
                       onChange={e => setRegForm({ ...regForm, phone: e.target.value })}
                       required
@@ -473,46 +467,47 @@ export default function AuthGateway({
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">पासवर्ड चुनें (Default: 1234)</label>
+                    <label className="form-label">पासवर्ड बनाएं <span className="req">*</span></label>
                     <input
                       type="password"
                       className="form-input"
-                      placeholder="1234"
+                      placeholder="पासवर्ड दर्ज करें"
                       value={regForm.password}
                       onChange={e => setRegForm({ ...regForm, password: e.target.value })}
+                      required
                     />
                   </div>
 
-                  {/* MANDATORY UNIFORM PHOTO FIELD */}
+                  {/* REAL & MANDATORY UNIFORM PHOTO FIELD */}
                   <div className="form-group full-width" style={{
-                    background: 'rgba(245, 158, 11, 0.08)',
-                    border: '1px solid rgba(245, 158, 11, 0.3)',
-                    padding: '0.75rem',
+                    background: 'rgba(196, 151, 86, 0.08)',
+                    border: '1px solid rgba(196, 151, 86, 0.35)',
+                    padding: '0.65rem 0.85rem',
                     borderRadius: '8px'
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                      <label className="form-label" style={{ margin: 0, color: 'var(--gold-light)', fontWeight: 700, fontSize: '0.8rem' }}>
-                        👮 वर्दी (यूनिफॉर्म) वाली फोटो * (अनिवार्य / Mandatory)
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                      <label className="form-label" style={{ margin: 0, color: 'var(--khaki-light)', fontWeight: 700, fontSize: '0.78rem' }}>
+                        👮 वास्तविक वर्दी (यूनिफॉर्म) वाली फोटो * (अनिवार्य / Mandatory)
                       </label>
                       {regForm.uniformPhoto ? (
                         <span style={{ fontSize: '0.7rem', color: 'var(--success-emerald)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
                           <CheckCircle2 size={12} />
-                          फोटो संलग्न
+                          फ़ोटो संलग्न
                         </span>
                       ) : (
                         <span style={{ fontSize: '0.7rem', color: '#fca5a5', fontWeight: 600 }}>
-                          * अपलोड अनिवार्य
+                          * वास्तविक फ़ोटो अनिवार्य
                         </span>
                       )}
                     </div>
 
                     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                       <div style={{
-                        width: '55px',
-                        height: '55px',
+                        width: '56px',
+                        height: '56px',
                         borderRadius: '50%',
                         overflow: 'hidden',
-                        border: regForm.uniformPhoto ? '2px solid var(--gold-primary)' : '2px dashed rgba(255,255,255,0.3)',
+                        border: regForm.uniformPhoto ? '2px solid var(--khaki-primary, #c49756)' : '2px dashed rgba(255,255,255,0.3)',
                         background: 'rgba(0,0,0,0.3)',
                         display: 'flex',
                         alignItems: 'center',
@@ -522,56 +517,53 @@ export default function AuthGateway({
                         {regForm.uniformPhoto ? (
                           <img src={regForm.uniformPhoto} alt="Uniform" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                          <Camera size={20} color="rgba(255,255,255,0.4)" />
+                          <Camera size={22} color="rgba(255,255,255,0.4)" />
                         )}
                       </div>
 
                       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        {/* Real Camera capture option */}
                         <label style={{
-                          background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
+                          background: 'linear-gradient(135deg, #991b1b, #7f1d1d)',
                           color: '#fff',
-                          padding: '5px 10px',
+                          padding: '5px 11px',
                           borderRadius: '6px',
-                          fontSize: '0.75rem',
+                          fontSize: '0.74rem',
                           fontWeight: 600,
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '4px'
+                          gap: '5px'
                         }}>
-                          <Upload size={12} />
-                          <span>गैलरी से चुनें</span>
-                          <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
+                          <Camera size={13} />
+                          <span>कैमरा से खींचें</span>
+                          <input type="file" accept="image/*" capture="user" onChange={handlePhotoUpload} style={{ display: 'none' }} />
                         </label>
 
-                        <button
-                          type="button"
-                          onClick={handleUseDemoPhoto}
-                          style={{
-                            background: 'rgba(255,255,255,0.08)',
-                            border: '1px solid rgba(229,184,66,0.4)',
-                            color: 'var(--gold-light)',
-                            padding: '5px 10px',
-                            borderRadius: '6px',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                          title="आधिकारिक वर्दी डेमो फोटो"
-                        >
-                          <Sparkles size={12} />
-                          <span>डेमो वर्दी फोटो</span>
-                        </button>
+                        {/* File/Gallery upload option */}
+                        <label style={{
+                          background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
+                          color: '#fff',
+                          padding: '5px 11px',
+                          borderRadius: '6px',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px'
+                        }}>
+                          <Upload size={13} />
+                          <span>गैलरी / फ़ाइल से चुनें</span>
+                          <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
+                        </label>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.4rem' }}>
-                  <UserPlus size={16} />
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.35rem' }}>
+                  <UserPlus size={15} />
                   स्व-पंजीकरण सबमिट करें
                 </button>
               </form>
@@ -581,9 +573,9 @@ export default function AuthGateway({
 
         {/* TAB 3: CO-ADMIN LOGIN */}
         {activeTab === 'co_admin' && (
-          <form onSubmit={handleCoAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ background: 'rgba(30,58,138,0.25)', padding: '0.65rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--gold-light)' }}>
-              🛡️ <strong>ज़िला Co-Admin पोर्टल:</strong> अपने संबंधित जनपद के यूज़र्स, पेंडिंग अप्रूवल एवं एक्सेल का प्रबंधन।
+          <form onSubmit={handleCoAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.55rem 0.75rem', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--khaki-light)' }}>
+              🛡️ <strong>ज़िला Co-Admin पोर्टल:</strong> अपने संबंधित जनपद के कार्मिकों, पेंडिंग अप्रूवल एवं एक्सेल का अधिकृत प्रबंधन।
             </div>
 
             <div className="form-group">
@@ -604,7 +596,7 @@ export default function AuthGateway({
             </div>
 
             <div className="form-group">
-              <label className="form-label">Co-Admin पासवर्ड (Default: 1234)</label>
+              <label className="form-label">Co-Admin पासवर्ड</label>
               <input
                 type="password"
                 className="form-input"
@@ -615,8 +607,8 @@ export default function AuthGateway({
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.25rem' }}>
-              <Shield size={16} />
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
+              <Shield size={15} />
               ज़िला Co-Admin लॉगिन करें
             </button>
           </form>
@@ -624,17 +616,17 @@ export default function AuthGateway({
 
         {/* TAB 4: SUPER ADMIN LOGIN */}
         {activeTab === 'admin' && (
-          <form onSubmit={handleSuperAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ background: 'rgba(30,58,138,0.25)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.82rem', color: 'var(--gold-light)' }}>
-              👑 <strong>Super Admin Access:</strong> समस्त जनपदों, Co-Admins, मास्टर सेटिंग्स और यूज़र्स का पूर्ण नियंत्रण।
+          <form onSubmit={handleSuperAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.65rem 0.75rem', borderRadius: '6px', fontSize: '0.78rem', color: 'var(--khaki-light)' }}>
+              👑 <strong>Super Admin Access:</strong> समस्त जनपदों, Co-Admins, मास्टर सेटिंग्स और यूज़र्स का पूर्ण प्रशासनिक नियंत्रण।
             </div>
 
             <div className="form-group">
-              <label className="form-label">Master Admin PIN (Default: 1234)</label>
+              <label className="form-label">Master Admin PIN</label>
               <input
                 type="password"
                 className="form-input"
-                placeholder="1234"
+                placeholder="••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 autoFocus
@@ -643,76 +635,17 @@ export default function AuthGateway({
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.25rem' }}>
-              <KeyRound size={16} />
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
+              <KeyRound size={15} />
               Super Admin लॉगिन
             </button>
           </form>
         )}
+      </div>
 
-        {/* 1-Click Evaluation Shortcuts */}
-        <div style={{ marginTop: '0.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ fontSize: '0.76rem', color: 'var(--gold-primary)', fontWeight: 700, marginBottom: '0.5rem', textTransform: 'uppercase' }}>
-            ⚡ त्वरित 1-क्लिक परीक्षण शॉर्टकट (Instant Demo Logins):
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.4rem' }}>
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuick('admin')}
-              style={{ fontSize: '0.78rem', padding: '6px 8px', justifyContent: 'flex-start' }}
-            >
-              👑 <strong>Super Admin</strong>
-            </button>
-
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuick('co_admin', 'लखनऊ')}
-              style={{ fontSize: '0.78rem', padding: '6px 8px', justifyContent: 'flex-start' }}
-            >
-              🛡️ <strong>Co-Admin: लखनऊ</strong>
-            </button>
-
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuick('co_admin', 'कानपुर नगर')}
-              style={{ fontSize: '0.78rem', padding: '6px 8px', justifyContent: 'flex-start' }}
-            >
-              🛡️ <strong>Co-Admin: कानपुर</strong>
-            </button>
-
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuick('user', 'pol-103')}
-              style={{ fontSize: '0.78rem', padding: '6px 8px', justifyContent: 'flex-start' }}
-            >
-              👮 <strong>प्रिया वर्मा (लखनऊ)</strong>
-            </button>
-
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuick('user', 'pol-106')}
-              style={{ fontSize: '0.78rem', padding: '6px 8px', justifyContent: 'flex-start' }}
-            >
-              👮 <strong>राकेश कुमार (कानपुर)</strong>
-            </button>
-
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => triggerQuick('user', 'pol-115')}
-              style={{ fontSize: '0.78rem', padding: '6px 8px', justifyContent: 'flex-start', borderColor: 'rgba(245,158,11,0.5)', color: '#fde047' }}
-              title="परीक्षण हेतु बिना फोटो वाला खाता: इसे क्लिक करने पर अनिवार्य वर्दी फोटो गेट खुलेगा"
-            >
-              ⚠️ <strong>विकास यादव (फोटो गेट टेस्ट)</strong>
-            </button>
-          </div>
-        </div>
+      {/* Confidentiality Rules and Terms & Conditions Footer on Login Gateway */}
+      <div style={{ width: '100%', maxWidth: '580px' }}>
+        <TermsFooter terms={terms} />
       </div>
     </div>
   );
