@@ -29,6 +29,14 @@ export default function RegistrationModal({
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  const districtOffices = React.useMemo(() => {
+    if (!Array.isArray(offices)) return [];
+    return offices.filter(o => {
+      const dist = typeof o === 'object' ? o.district : null;
+      return !dist || dist === formData.district;
+    }).map(o => typeof o === 'string' ? o : o.name);
+  }, [offices, formData.district]);
+
   if (!isOpen) return null;
 
   const handleChange = (e) => {
@@ -215,13 +223,13 @@ export default function RegistrationModal({
                   />
                   <select
                     className="form-select"
-                    style={{ width: '190px' }}
+                    style={{ width: '220px' }}
                     onChange={e => {
                       if (e.target.value) setFormData({ ...formData, office: e.target.value });
                     }}
                   >
-                    <option value="">-- त्वरित चयन --</option>
-                    {offices.filter((_, i) => i > 0).map((o, i) => (
+                    <option value="">-- त्वरित चयन ({formData.district || 'ज़िला'}) --</option>
+                    {districtOffices.map((o, i) => (
                       <option key={i} value={o}>{o}</option>
                     ))}
                   </select>

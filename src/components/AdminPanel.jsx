@@ -37,19 +37,32 @@ export default function AdminPanel({
   onPromoteUserToCoAdmin,
   onRevokeCoAdmin,
   onAddPost,
+  onEditPost,
   onDeletePost,
   onAddOffice,
+  onEditOffice,
   onDeleteOffice,
   onAddDistrict,
+  onEditDistrict,
   onDeleteDistrict
 }) {
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
   const myDistrict = isCoAdmin ? currentUser.district : null;
 
-  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'manage' | 'excel' | 'coadmins' | 'master' | 'terms' | 'call_logs' | 'backups' | 'phone_perms' | '2fa_settings'
+  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'manage' | 'excel' | 'coadmins' | 'master' | 'coadmin_offices' | 'terms' | 'call_logs' | 'backups' | 'phone_perms' | '2fa_settings'
   const [masterSubTab, setMasterSubTab] = useState('posts'); // 'posts' | 'offices' | 'districts'
   
+  // Master data edit state
+  const [editingPost, setEditingPost] = useState(null); // { oldName, newName }
+  const [editingDistrict, setEditingDistrict] = useState(null); // { oldName, newName }
+  const [editingOffice, setEditingOffice] = useState(null); // { id, oldName, newName, district }
+
+  // Office management inputs
+  const [officeFilterDistrict, setOfficeFilterDistrict] = useState('सभी ज़िले');
+  const [newOfficeDistrict, setNewOfficeDistrict] = useState(districts[1] || 'लखनऊ');
+  const [coAdminNewOfficeName, setCoAdminNewOfficeName] = useState('');
+
   // Call Logs state
   const [callLogs, setCallLogs] = useState([]);
   const [callLogSearch, setCallLogSearch] = useState('');
@@ -253,8 +266,15 @@ export default function AdminPanel({
   const handleAddNewOffice = (e) => {
     e.preventDefault();
     if (!newOfficeInput.trim()) return;
-    onAddOffice(newOfficeInput.trim());
+    onAddOffice(newOfficeInput.trim(), newOfficeDistrict);
     setNewOfficeInput('');
+  };
+
+  const handleCoAdminAddOffice = (e) => {
+    e.preventDefault();
+    if (!coAdminNewOfficeName.trim()) return;
+    onAddOffice(coAdminNewOfficeName.trim(), myDistrict);
+    setCoAdminNewOfficeName('');
   };
 
   const handleAddNewDistrict = (e) => {
@@ -262,6 +282,33 @@ export default function AdminPanel({
     if (!newDistrictInput.trim()) return;
     onAddDistrict(newDistrictInput.trim());
     setNewDistrictInput('');
+  };
+
+  const handleSaveEditPost = (e) => {
+    e.preventDefault();
+    if (!editingPost || !editingPost.newName.trim()) return;
+    if (onEditPost) {
+      onEditPost(editingPost.oldName, editingPost.newName.trim());
+    }
+    setEditingPost(null);
+  };
+
+  const handleSaveEditDistrict = (e) => {
+    e.preventDefault();
+    if (!editingDistrict || !editingDistrict.newName.trim()) return;
+    if (onEditDistrict) {
+      onEditDistrict(editingDistrict.oldName, editingDistrict.newName.trim());
+    }
+    setEditingDistrict(null);
+  };
+
+  const handleSaveEditOffice = (e) => {
+    e.preventDefault();
+    if (!editingOffice || !editingOffice.newName.trim()) return;
+    if (onEditOffice) {
+      onEditOffice(editingOffice.id, editingOffice.newName.trim(), editingOffice.district);
+    }
+    setEditingOffice(null);
   };
 
   const filteredAdminContacts = scopedContacts.filter(c => {
@@ -345,9 +392,19 @@ export default function AdminPanel({
                   onClick={() => setActiveTab('master')}
                 >
                   <Settings size={16} />
-                  मास्टर सेटिंग्स (पद व कार्यालय)
+                  मास्टर सेटिंग्स (पद, ज़िला व थाना)
                 </button>
               </>
+            )}
+
+            {isCoAdmin && (
+              <button 
+                className={`admin-tab ${activeTab === 'coadmin_offices' ? 'active' : ''}`}
+                onClick={() => setActiveTab('coadmin_offices')}
+              >
+                <Building2 size={16} />
+                थाना / शाखा प्रबंधन ({myDistrict})
+              </button>
             )}
 
             <button 
@@ -874,7 +931,7 @@ export default function AdminPanel({
                 </button>
               </div>
 
-              {/* SUB TAB: POSTS */}
+              {/* SUB TAB: POSTS (SUPER ADMIN ONLY) */}
               {masterSubTab === 'posts' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <form onSubmit={handleAddNewPost} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -893,48 +950,228 @@ export default function AdminPanel({
                     </button>
                   </form>
 
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {posts.filter((_, idx) => idx > 0).map((post, idx) => (
-                      <span key={idx} className="pill" style={{ fontSize: '0.85rem', padding: '6px 12px' }}>
-                        {post}
-                        <X size={14} className="pill-remove" onClick={() => onDeletePost(post)} title="यह पद हटाएं" />
-                      </span>
-                    ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.65rem' }}>
+                    {posts.filter((_, idx) => idx > 0).map((post, idx) => {
+                      const isEditing = editingPost?.oldName === post;
+                      return (
+                        <div 
+                          key={idx} 
+                          style={{
+                            background: 'rgba(15, 23, 42, 0.75)',
+                            border: '1px solid rgba(229,184,66,0.3)',
+                            borderRadius: '8px',
+                            padding: '0.65rem 0.85rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '0.5rem'
+                          }}
+                        >
+                          {isEditing ? (
+                            <form onSubmit={handleSaveEditPost} style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={editingPost.newName}
+                                onChange={e => setEditingPost({ ...editingPost, newName: e.target.value })}
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.85rem', flex: 1 }}
+                                autoFocus
+                                required
+                              />
+                              <button type="submit" className="btn btn-primary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="सुरक्षित करें">
+                                <CheckCircle size={14} />
+                              </button>
+                              <button type="button" className="btn btn-secondary" onClick={() => setEditingPost(null)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="रद्द करें">
+                                <X size={14} />
+                              </button>
+                            </form>
+                          ) : (
+                            <>
+                              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-bright)' }}>{post}</span>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                  type="button"
+                                  className="action-btn"
+                                  style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)', padding: '4px 6px' }}
+                                  onClick={() => setEditingPost({ oldName: post, newName: post })}
+                                  title="पद संशोधित करें"
+                                >
+                                  <Edit3 size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="action-btn"
+                                  style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)', padding: '4px 6px' }}
+                                  onClick={() => {
+                                    if (window.confirm(`क्या आप पद "${post}" को हटाना चाहते हैं?`)) {
+                                      onDeletePost(post);
+                                    }
+                                  }}
+                                  title="यह पद हटाएं"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* SUB TAB: OFFICES */}
+              {/* SUB TAB: OFFICES (SUPER ADMIN VIEW) */}
               {masterSubTab === 'offices' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <form onSubmit={handleAddNewOffice} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {/* District Filter Bar */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', background: 'rgba(15,23,42,0.5)', padding: '0.75rem', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <MapPin size={16} color="var(--gold-primary)" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>ज़िले अनुसार देखें:</span>
+                      <select
+                        className="form-select"
+                        style={{ width: '180px', padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
+                        value={officeFilterDistrict}
+                        onChange={e => setOfficeFilterDistrict(e.target.value)}
+                      >
+                        <option value="सभी ज़िले">सभी ज़िले (All Districts)</option>
+                        {districts.filter((_, idx) => idx > 0).map((d, i) => (
+                          <option key={i} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+                      कुल थाने/शाखाएं: {offices.length}
+                    </span>
+                  </div>
+
+                  {/* Add Office Form with District Selector */}
+                  <form onSubmit={handleAddNewOffice} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', background: 'rgba(15,23,42,0.6)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--glass-border-light)' }}>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="उदा. थाना सुशांत गोल्फ सिटी / महिला हेल्पडेस्क / एटीएस"
+                      placeholder="उदा. थाना सुशांत गोल्फ सिटी / महिला हेल्पडेस्क / साइबर सेल"
                       value={newOfficeInput}
                       onChange={e => setNewOfficeInput(e.target.value)}
-                      style={{ flex: '1 1 260px' }}
+                      style={{ flex: '1 1 240px' }}
                       required
                     />
+                    <select
+                      className="form-select"
+                      style={{ width: '170px' }}
+                      value={newOfficeDistrict}
+                      onChange={e => setNewOfficeDistrict(e.target.value)}
+                      required
+                    >
+                      {districts.filter((_, idx) => idx > 0).map((d, i) => (
+                        <option key={i} value={d}>{d}</option>
+                      ))}
+                    </select>
                     <button type="submit" className="btn btn-primary">
                       <Plus size={16} />
-                      नया कार्यालय/थाना जोड़ें
+                      कार्यालय/थाना जोड़ें
                     </button>
                   </form>
 
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {offices.filter((_, idx) => idx > 0).map((office, idx) => (
-                      <span key={idx} className="pill" style={{ fontSize: '0.85rem', padding: '6px 12px' }}>
-                        {office}
-                        <X size={14} className="pill-remove" onClick={() => onDeleteOffice(office)} title="यह कार्यालय हटाएं" />
-                      </span>
-                    ))}
+                  {/* Offices Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.65rem' }}>
+                    {offices
+                      .filter(o => {
+                        if (officeFilterDistrict === 'सभी ज़िले') return true;
+                        return typeof o === 'object' && o.district === officeFilterDistrict;
+                      })
+                      .map((officeItem, idx) => {
+                        const oName = typeof officeItem === 'string' ? officeItem : officeItem.name;
+                        const oDist = typeof officeItem === 'object' ? officeItem.district : 'लखनऊ';
+                        const oId = typeof officeItem === 'object' ? officeItem.id : oName;
+                        const isEditing = editingOffice?.id === oId;
+
+                        return (
+                          <div 
+                            key={idx} 
+                            style={{
+                              background: 'rgba(15, 23, 42, 0.75)',
+                              border: '1px solid rgba(229,184,66,0.25)',
+                              borderRadius: '8px',
+                              padding: '0.65rem 0.85rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '0.5rem'
+                            }}
+                          >
+                            {isEditing ? (
+                              <form onSubmit={handleSaveEditOffice} style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  value={editingOffice.newName}
+                                  onChange={e => setEditingOffice({ ...editingOffice, newName: e.target.value })}
+                                  style={{ padding: '0.3rem 0.5rem', fontSize: '0.85rem' }}
+                                  autoFocus
+                                  required
+                                />
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                  <select
+                                    className="form-select"
+                                    value={editingOffice.district}
+                                    onChange={e => setEditingOffice({ ...editingOffice, district: e.target.value })}
+                                    style={{ flex: 1, padding: '0.25rem 0.5rem', fontSize: '0.78rem' }}
+                                  >
+                                    {districts.filter((_, i) => i > 0).map((d, i) => (
+                                      <option key={i} value={d}>{d}</option>
+                                    ))}
+                                  </select>
+                                  <button type="submit" className="btn btn-primary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="सुरक्षित करें">
+                                    <CheckCircle size={14} />
+                                  </button>
+                                  <button type="button" className="btn btn-secondary" onClick={() => setEditingOffice(null)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="रद्द करें">
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </form>
+                            ) : (
+                              <>
+                                <div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-bright)' }}>{oName}</div>
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--gold-primary)', marginTop: '2px' }}>📍 जनपद: {oDist}</div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                  <button
+                                    type="button"
+                                    className="action-btn"
+                                    style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)', padding: '4px 6px' }}
+                                    onClick={() => setEditingOffice({ id: oId, oldName: oName, newName: oName, district: oDist })}
+                                    title="थाना/शाखा संशोधित करें"
+                                  >
+                                    <Edit3 size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="action-btn"
+                                    style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)', padding: '4px 6px' }}
+                                    onClick={() => {
+                                      if (window.confirm(`क्या आप "${oName}" (${oDist}) को हटाना चाहते हैं?`)) {
+                                        onDeleteOffice(oId);
+                                      }
+                                    }}
+                                    title="यह कार्यालय/थाना हटाएं"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               )}
 
-              {/* SUB TAB: DISTRICTS */}
+              {/* SUB TAB: DISTRICTS (SUPER ADMIN ONLY) */}
               {masterSubTab === 'districts' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <form onSubmit={handleAddNewDistrict} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -953,16 +1190,186 @@ export default function AdminPanel({
                     </button>
                   </form>
 
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {districts.filter((_, idx) => idx > 0).map((dist, idx) => (
-                      <span key={idx} className="pill" style={{ fontSize: '0.85rem', padding: '6px 12px' }}>
-                        {dist}
-                        <X size={14} className="pill-remove" onClick={() => onDeleteDistrict(dist)} title="यह ज़िला हटाएं" />
-                      </span>
-                    ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.65rem' }}>
+                    {districts.filter((_, idx) => idx > 0).map((dist, idx) => {
+                      const isEditing = editingDistrict?.oldName === dist;
+                      return (
+                        <div 
+                          key={idx} 
+                          style={{
+                            background: 'rgba(15, 23, 42, 0.75)',
+                            border: '1px solid rgba(229,184,66,0.3)',
+                            borderRadius: '8px',
+                            padding: '0.65rem 0.85rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '0.5rem'
+                          }}
+                        >
+                          {isEditing ? (
+                            <form onSubmit={handleSaveEditDistrict} style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={editingDistrict.newName}
+                                onChange={e => setEditingDistrict({ ...editingDistrict, newName: e.target.value })}
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.85rem', flex: 1 }}
+                                autoFocus
+                                required
+                              />
+                              <button type="submit" className="btn btn-primary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="सुरक्षित करें">
+                                <CheckCircle size={14} />
+                              </button>
+                              <button type="button" className="btn btn-secondary" onClick={() => setEditingDistrict(null)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="रद्द करें">
+                                <X size={14} />
+                              </button>
+                            </form>
+                          ) : (
+                            <>
+                              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-bright)' }}>{dist}</span>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                  type="button"
+                                  className="action-btn"
+                                  style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)', padding: '4px 6px' }}
+                                  onClick={() => setEditingDistrict({ oldName: dist, newName: dist })}
+                                  title="ज़िला संशोधित करें"
+                                >
+                                  <Edit3 size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="action-btn"
+                                  style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)', padding: '4px 6px' }}
+                                  onClick={() => {
+                                    if (window.confirm(`क्या आप ज़िला "${dist}" को हटाना चाहते हैं?`)) {
+                                      onDeleteDistrict(dist);
+                                    }
+                                  }}
+                                  title="यह ज़िला हटाएं"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB: CO-ADMIN OFFICE MANAGEMENT (CO-ADMIN ONLY) */}
+          {activeTab === 'coadmin_offices' && isCoAdmin && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(229,184,66,0.3)', padding: '1rem', borderRadius: '12px' }}>
+                <h4 style={{ color: 'var(--gold-light)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Building2 size={18} />
+                  थाना / शाखा / इकाई प्रबंधन • जनपद: {myDistrict}
+                </h4>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-primary)', marginTop: '4px' }}>
+                  🛡️ <strong>Co-Admin अधिकार:</strong> आपको अपने तैनात जनपद <strong>({myDistrict})</strong> के अंतर्गत थाने, पुलिस चौकियां, अपराध शाखाएं एवं अन्य इकाइयां जोड़ने, संशोधित (Edit) करने तथा घटाने/हटाने का पूर्ण अधिकार है। (पद व ज़िला प्रबंधन केवल Super Admin द्वारा ही संशोधित हो सकता है।)
+                </p>
+              </div>
+
+              {/* Add New Thana for myDistrict */}
+              <form onSubmit={handleCoAdminAddOffice} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', background: 'rgba(15,23,42,0.6)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--glass-border-light)' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder={`उदा. नया थाना / महिला हेल्पडेस्क (${myDistrict})`}
+                  value={coAdminNewOfficeName}
+                  onChange={e => setCoAdminNewOfficeName(e.target.value)}
+                  style={{ flex: '1 1 260px' }}
+                  required
+                />
+                <div style={{ display: 'flex', alignItems: 'center', padding: '0 0.85rem', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--gold-light)', fontWeight: 600 }}>
+                  📍 ज़िला: {myDistrict}
+                </div>
+                <button type="submit" className="btn btn-primary">
+                  <Plus size={16} />
+                  नया थाना जोड़ें
+                </button>
+              </form>
+
+              {/* List of Thanas in myDistrict */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.65rem' }}>
+                {offices
+                  .filter(o => typeof o === 'object' && o.district === myDistrict)
+                  .map((officeItem, idx) => {
+                    const isEditing = editingOffice?.id === officeItem.id;
+                    return (
+                      <div 
+                        key={idx} 
+                        style={{
+                          background: 'rgba(15, 23, 42, 0.75)',
+                          border: '1px solid rgba(229,184,66,0.25)',
+                          borderRadius: '8px',
+                          padding: '0.65rem 0.85rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.5rem'
+                        }}
+                      >
+                        {isEditing ? (
+                          <form onSubmit={handleSaveEditOffice} style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={editingOffice.newName}
+                              onChange={e => setEditingOffice({ ...editingOffice, newName: e.target.value })}
+                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.85rem', flex: 1 }}
+                              autoFocus
+                              required
+                            />
+                            <button type="submit" className="btn btn-primary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="सुरक्षित करें">
+                              <CheckCircle size={14} />
+                            </button>
+                            <button type="button" className="btn btn-secondary" onClick={() => setEditingOffice(null)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="रद्द करें">
+                              <X size={14} />
+                            </button>
+                          </form>
+                        ) : (
+                          <>
+                            <div>
+                              <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-bright)' }}>{officeItem.name}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--gold-primary)', marginTop: '2px' }}>📍 जनपद: {officeItem.district}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                type="button"
+                                className="action-btn"
+                                style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)', padding: '4px 6px' }}
+                                onClick={() => setEditingOffice({ id: officeItem.id, oldName: officeItem.name, newName: officeItem.name, district: myDistrict })}
+                                title="थाना संशोधित करें"
+                              >
+                                <Edit3 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                className="action-btn"
+                                style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)', padding: '4px 6px' }}
+                                onClick={() => {
+                                  if (window.confirm(`क्या आप थाना "${officeItem.name}" को हटाना चाहते हैं?`)) {
+                                    onDeleteOffice(officeItem.id);
+                                  }
+                                }}
+                                title="यह थाना हटाएं"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
           )}
 

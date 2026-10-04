@@ -40,6 +40,14 @@ export default function EditContactModal({
     }
   }, [contact, posts, districts]);
 
+  const districtOffices = React.useMemo(() => {
+    if (!Array.isArray(offices)) return [];
+    return offices.filter(o => {
+      const dist = typeof o === 'object' ? o.district : null;
+      return !dist || dist === formData.district;
+    }).map(o => typeof o === 'string' ? o : o.name);
+  }, [offices, formData.district]);
+
   if (!isOpen || !contact) return null;
 
   const handleChange = (e) => {
@@ -122,14 +130,28 @@ export default function EditContactModal({
 
             <div className="form-group full-width">
               <label className="form-label">कार्यालय / थाना (Office/Thana)</label>
-              <input
-                type="text"
-                name="office"
-                className="form-input"
-                value={formData.office}
-                onChange={handleChange}
-                required
-              />
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="text"
+                  name="office"
+                  className="form-input"
+                  value={formData.office}
+                  onChange={handleChange}
+                  required
+                />
+                <select
+                  className="form-select"
+                  style={{ width: '220px' }}
+                  onChange={e => {
+                    if (e.target.value) setFormData({ ...formData, office: e.target.value });
+                  }}
+                >
+                  <option value="">-- त्वरित चयन ({formData.district || 'ज़िला'}) --</option>
+                  {districtOffices.map((o, i) => (
+                    <option key={i} value={o}>{o}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="form-group">

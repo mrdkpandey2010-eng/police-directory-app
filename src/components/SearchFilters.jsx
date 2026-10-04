@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Search, MapPin, Award, Building2, X, Filter } from 'lucide-react';
 
 export default function SearchFilters({
@@ -16,6 +16,56 @@ export default function SearchFilters({
   onResetFilters,
   hasActiveFilters
 }) {
+  // Filter offices list by the selected district
+  const availableOffices = useMemo(() => {
+    if (!Array.isArray(offices)) return [];
+
+    let filtered = offices.filter(o => {
+      const name = typeof o === 'string' ? o : o.name;
+      return name && !name.includes('सभी कार्यालय/थाने');
+    });
+
+    if (selectedDistrict && selectedDistrict !== 'सभी ज़िले (All Districts)' && selectedDistrict !== 'सभी ज़िले') {
+      filtered = filtered.filter(o => {
+        if (typeof o === 'object' && o.district) {
+          return o.district === selectedDistrict;
+        }
+        return false;
+      });
+    }
+
+    // Keep unique office names
+    const seen = new Set();
+    const unique = [];
+    for (const item of filtered) {
+      const name = typeof item === 'string' ? item : item.name;
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        unique.push({
+          id: typeof item === 'object' ? item.id : name,
+          name: name,
+          district: typeof item === 'object' ? item.district : ''
+        });
+      }
+    }
+    return unique;
+  }, [offices, selectedDistrict]);
+
+  // Handle District Change: if currently selected office is not in new district, reset office
+  const handleDistrictChange = (newDistrict) => {
+    setSelectedDistrict(newDistrict);
+    if (newDistrict && selectedOffice) {
+      const existsInNewDistrict = offices.some(o => {
+        const name = typeof o === 'string' ? o : o.name;
+        const dist = typeof o === 'object' ? o.district : null;
+        return name === selectedOffice && (!dist || dist === newDistrict);
+      });
+      if (!existsInNewDistrict) {
+        setSelectedOffice('');
+      }
+    }
+  };
+
   return (
     <div className="search-card">
       {/* Instant Free-Text Search */}
@@ -49,7 +99,7 @@ export default function SearchFilters({
           <select 
             className="filter-select"
             value={selectedDistrict}
-            onChange={(e) => setSelectedDistrict(e.target.value)}
+            onChange={(e) => handleDistrictChange(e.target.value)}
           >
             {districts.map((d, i) => (
               <option key={i} value={i === 0 ? '' : d}>{d}</option>
@@ -76,15 +126,20 @@ export default function SearchFilters({
         <div className="filter-group">
           <label className="filter-label">
             <Building2 size={14} />
-            कार्यालय / थाना (Office/Thana)
+            कार्यालय / थाना (Office/Thana) {selectedDistrict ? `• ${selectedDistrict}` : ''}
           </label>
           <select 
             className="filter-select"
             value={selectedOffice}
             onChange={(e) => setSelectedOffice(e.target.value)}
           >
-            {offices.map((o, i) => (
-              <option key={i} value={i === 0 ? '' : o}>{o}</option>
+            <option value="">
+              {selectedDistrict 
+                ? `सभी संबंधित थाने/कार्यालय (${selectedDistrict} - कुल ${availableOffices.length})` 
+                : 'सभी कार्यालय/थाने (पहले ज़िला चुनें तो केवल उस ज़िले के थाने दिखेंगे)'}
+            </option>
+            {availableOffices.map((o) => (
+              <option key={o.id} value={o.name}>{o.name}</option>
             ))}
           </select>
         </div>
@@ -98,7 +153,7 @@ export default function SearchFilters({
             {selectedDistrict && (
               <span className="pill">
                 ज़िला: {selectedDistrict}
-                <X size={12} className="pill-remove" onClick={() => setSelectedDistrict('')} />
+                <X size={12} className="pill-remove" onClick={() => handleDistrictChange('')} />
               </span>
             )}
             {selectedPost && (

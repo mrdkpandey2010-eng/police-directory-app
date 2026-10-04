@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Shield, Lock, User, UserPlus, KeyRound, Building, ArrowRight, 
   AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload, Cloud
@@ -43,6 +43,15 @@ export default function AuthGateway({
   });
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [regSuccess, setRegSuccess] = useState(false);
+
+  // Filter offices by selected district
+  const districtOffices = useMemo(() => {
+    if (!Array.isArray(offices)) return [];
+    return offices.filter(o => {
+      const dist = typeof o === 'object' ? o.district : null;
+      return !dist || dist === regForm.district;
+    }).map(o => typeof o === 'string' ? o : o.name);
+  }, [offices, regForm.district]);
 
   // User Login Handler
   const handleUserLogin = (e) => {
@@ -453,14 +462,28 @@ export default function AuthGateway({
 
                   <div className="form-group full-width">
                     <label className="form-label">कार्यालय / थाना (Office/Thana) <span className="req">*</span></label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="उदा. थाना कोतवाली / पुलिस लाइन"
-                      value={regForm.office}
-                      onChange={e => setRegForm({ ...regForm, office: e.target.value })}
-                      required
-                    />
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="उदा. थाना कोतवाली / पुलिस लाइन"
+                        value={regForm.office}
+                        onChange={e => setRegForm({ ...regForm, office: e.target.value })}
+                        required
+                      />
+                      <select
+                        className="form-select"
+                        style={{ width: '220px' }}
+                        onChange={e => {
+                          if (e.target.value) setRegForm({ ...regForm, office: e.target.value });
+                        }}
+                      >
+                        <option value="">-- त्वरित चयन ({regForm.district || 'ज़िला'}) --</option>
+                        {districtOffices.map((o, i) => (
+                          <option key={i} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
 
                   <div className="form-group">

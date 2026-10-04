@@ -38,10 +38,13 @@ import {
   getStoredOffices,
   getStoredDistricts,
   addPost,
+  editPost,
   deletePost,
   addOffice,
+  editOffice,
   deleteOffice,
   addDistrict,
+  editDistrict,
   deleteDistrict,
   registerNewOfficer, 
   approveOfficer, 
@@ -544,26 +547,36 @@ export default function App() {
     showToast(`नया पद "${postName}" जोड़ा गया!`);
   };
 
+  const handleEditPost = (oldName, newName) => {
+    const updated = editPost(oldName, newName);
+    setPosts(updated);
+    setContacts(getStoredContacts());
+    showToast(`पद "${oldName}" को बदलकर "${newName}" किया गया!`);
+  };
+
   const handleDeletePost = (postName) => {
-    if (window.confirm(`क्या आप पद "${postName}" को हटाना चाहते हैं?`)) {
-      const updated = deletePost(postName);
-      setPosts(updated);
-      showToast(`पद "${postName}" हटा दिया गया।`);
-    }
+    const updated = deletePost(postName);
+    setPosts(updated);
+    showToast(`पद "${postName}" हटा दिया गया।`);
   };
 
-  const handleAddOffice = (officeName) => {
-    const updated = addOffice(officeName);
+  const handleAddOffice = (officeName, districtName = 'लखनऊ') => {
+    const updated = addOffice(officeName, districtName);
     setOffices(updated);
-    showToast(`नया कार्यालय/थाना "${officeName}" जोड़ा गया!`);
+    showToast(`नया कार्यालय/थाना "${officeName}" (${districtName}) जोड़ा गया!`);
   };
 
-  const handleDeleteOffice = (officeName) => {
-    if (window.confirm(`क्या आप कार्यालय "${officeName}" को हटाना चाहते हैं?`)) {
-      const updated = deleteOffice(officeName);
-      setOffices(updated);
-      showToast(`कार्यालय "${officeName}" हटा दिया गया।`);
-    }
+  const handleEditOffice = (officeIdOrName, newName, newDistrict = null) => {
+    const updated = editOffice(officeIdOrName, newName, newDistrict);
+    setOffices(updated);
+    setContacts(getStoredContacts());
+    showToast(`कार्यालय/थाना "${newName}" सफलतापूर्वक संशोधित किया गया!`);
+  };
+
+  const handleDeleteOffice = (officeIdOrName) => {
+    const updated = deleteOffice(officeIdOrName);
+    setOffices(updated);
+    showToast(`कार्यालय/थाना सूची से हटाया गया।`);
   };
 
   const handleAddDistrict = (distName) => {
@@ -572,12 +585,19 @@ export default function App() {
     showToast(`नया ज़िला "${distName}" जोड़ा गया!`);
   };
 
+  const handleEditDistrict = (oldName, newName) => {
+    const updated = editDistrict(oldName, newName);
+    setDistricts(updated);
+    setContacts(getStoredContacts());
+    setCoAdmins(getStoredCoAdmins());
+    setOffices(getStoredOffices());
+    showToast(`ज़िला "${oldName}" को बदलकर "${newName}" किया गया!`);
+  };
+
   const handleDeleteDistrict = (distName) => {
-    if (window.confirm(`क्या आप ज़िला "${distName}" को हटाना चाहते हैं?`)) {
-      const updated = deleteDistrict(distName);
-      setDistricts(updated);
-      showToast(`ज़िला "${distName}" हटा दिया गया।`);
-    }
+    const updated = deleteDistrict(distName);
+    setDistricts(updated);
+    showToast(`ज़िला "${distName}" हटा दिया गया।`);
   };
 
   // ---------------- PEER-TO-PEER MESSAGE BOX & GROUP CHAT HANDLERS ----------------
@@ -1065,6 +1085,7 @@ export default function App() {
         onUpdateProfileRequest={handleUserProfileUpdateRequest}
         onChangePassword={handleChangeMyPassword}
         onUpdateUniformPhoto={handleUpdateUniformPhoto}
+        offices={offices}
       />
 
       {/* Admin / Co-Admin Control Portal */}
@@ -1093,10 +1114,13 @@ export default function App() {
         onPromoteUserToCoAdmin={handlePromoteUserToCoAdmin}
         onRevokeCoAdmin={handleRevokeCoAdmin}
         onAddPost={handleAddPost}
+        onEditPost={handleEditPost}
         onDeletePost={handleDeletePost}
         onAddOffice={handleAddOffice}
+        onEditOffice={handleEditOffice}
         onDeleteOffice={handleDeleteOffice}
         onAddDistrict={handleAddDistrict}
+        onEditDistrict={handleEditDistrict}
         onDeleteDistrict={handleDeleteDistrict}
       />
 

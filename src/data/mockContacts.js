@@ -377,21 +377,76 @@ export const POSTS = [
   "आरक्षी (Constable)"
 ];
 
+export const DEFAULT_OFFICE_ITEMS = [
+  // लखनऊ
+  { id: "off-1", name: "एसपी कार्यालय (मुख्यालय)", district: "लखनऊ" },
+  { id: "off-2", name: "एसएसपी कार्यालय", district: "लखनऊ" },
+  { id: "off-3", name: "अपराध शाखा / क्राइम ब्रांच", district: "लखनऊ" },
+  { id: "off-4", name: "साइबर क्राइम सेल", district: "लखनऊ" },
+  { id: "off-5", name: "थाना हजरतगंज", district: "लखनऊ" },
+  { id: "off-6", name: "थाना हजरतगंज सर्द", district: "लखनऊ" },
+  { id: "off-7", name: "थाना विभूति खंड", district: "लखनऊ" },
+  { id: "off-8", name: "कंट्रोल रूम (112)", district: "लखनऊ" },
+  { id: "off-9", name: "ट्रैफिक पुलिस लाइन", district: "लखनऊ" },
+  { id: "off-10", name: "महिला थाना", district: "लखनऊ" },
+  { id: "off-11", name: "थाना गोमती नगर", district: "लखनऊ" },
+  { id: "off-12", name: "थाना आलमबाग", district: "लखनऊ" },
+  { id: "off-13", name: "थाना चौक", district: "लखनऊ" },
+
+  // कानपुर नगर
+  { id: "off-14", name: "थाना कोतवाली", district: "कानपुर नगर" },
+  { id: "off-15", name: "थाना कल्याणपुर", district: "कानपुर नगर" },
+  { id: "off-16", name: "थाना काकादेव", district: "कानपुर नगर" },
+  { id: "off-17", name: "थाना चकेरी", district: "कानपुर नगर" },
+  { id: "off-18", name: "थाना गोविंदनगर", district: "कानपुर नगर" },
+  { id: "off-19", name: "महिला थाना", district: "कानपुर नगर" },
+  { id: "off-20", name: "ट्रैफिक पुलिस लाइन", district: "कानपुर नगर" },
+
+  // वाराणसी
+  { id: "off-21", name: "थाना लंका", district: "वाराणसी" },
+  { id: "off-22", name: "थाना कैंट", district: "वाराणसी" },
+  { id: "off-23", name: "थाना भेलूपुर", district: "वाराणसी" },
+  { id: "off-24", name: "थाना दशाश्वमेध", district: "वाराणसी" },
+  { id: "off-25", name: "थाना सिगरा", district: "वाराणसी" },
+  { id: "off-26", name: "कंट्रोल रूम (112)", district: "वाराणसी" },
+  { id: "off-27", name: "महिला थाना", district: "वाराणसी" },
+
+  // आगरा
+  { id: "off-28", name: "थाना ताजगंज वृत्त", district: "आगरा" },
+  { id: "off-29", name: "थाना हरीपर्वत", district: "आगरा" },
+  { id: "off-30", name: "थाना रकाबगंज", district: "आगरा" },
+  { id: "off-31", name: "एसएसपी कार्यालय", district: "आगरा" },
+  { id: "off-32", name: "महिला थाना", district: "आगरा" },
+
+  // प्रयागराज
+  { id: "off-33", name: "थाना कैंट", district: "प्रयागराज" },
+  { id: "off-34", name: "थाना सिविल लाइंस", district: "प्रयागराज" },
+  { id: "off-35", name: "थाना कर्नलगंज", district: "प्रयागराज" },
+  { id: "off-36", name: "पुलिस लाइन प्रयागराज", district: "प्रयागराज" },
+  { id: "off-37", name: "महिला थाना", district: "प्रयागराज" },
+
+  // गोरखपुर
+  { id: "off-38", name: "थाना कोतवाली", district: "गोरखपुर" },
+  { id: "off-39", name: "थाना कैंट", district: "गोरखपुर" },
+  { id: "off-40", name: "थाना गोरखनाथ", district: "गोरखपुर" },
+  { id: "off-41", name: "कंट्रोल रूम (112)", district: "गोरखपुर" },
+  { id: "off-42", name: "महिला थाना", district: "गोरखपुर" },
+
+  // मेरठ
+  { id: "off-43", name: "थाना नौचंदी", district: "मेरठ" },
+  { id: "off-44", name: "थाना सिविल लाइंस", district: "मेरठ" },
+  { id: "off-45", name: "ट्रैफिक पुलिस लाइन", district: "मेरठ" },
+  { id: "off-46", name: "महिला थाना", district: "मेरठ" },
+
+  // बरेली
+  { id: "off-47", name: "थाना कोतवाली", district: "बरेली" },
+  { id: "off-48", name: "थाना सुभाषनगर", district: "बरेली" },
+  { id: "off-49", name: "थाना बारादरी", district: "बरेली" },
+  { id: "off-50", name: "महिला थाना", district: "बरेली" }
+];
+
 export const OFFICES = [
   "सभी कार्यालय/थाने (All Offices)",
-  "एसपी कार्यालय (मुख्यालय)",
-  "एसएसपी कार्यालय",
-  "अपराध शाखा / क्राइम ब्रांच",
-  "साइबर क्राइम सेल",
-  "कंट्रोल रूम (112)",
-  "ट्रैफिक पुलिस लाइन",
-  "थाना हजरतगंज",
-  "थाना हजरतगंज सर्द",
-  "थाना विभूति खंड",
-  "थाना कोतवाली",
-  "महिला थाना",
-  "थाना लंका",
-  "थाना ताजगंज वृत्त",
-  "थाना कैंट",
-  "थाना कल्याणपुर"
+  ...Array.from(new Set(DEFAULT_OFFICE_ITEMS.map(o => o.name)))
 ];
+

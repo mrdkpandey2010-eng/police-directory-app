@@ -8,9 +8,18 @@ export default function UserProfileModal({
   onClose, 
   onUpdateProfileRequest,
   onChangePassword,
-  onUpdateUniformPhoto
+  onUpdateUniformPhoto,
+  offices = []
 }) {
   const [activeTab, setActiveTab] = useState('details'); // 'details' | 'edit' | 'password'
+
+  const districtOffices = React.useMemo(() => {
+    if (!Array.isArray(offices) || !user) return [];
+    return offices.filter(o => {
+      const dist = typeof o === 'object' ? o.district : null;
+      return !dist || dist === user.district;
+    }).map(o => typeof o === 'string' ? o : o.name);
+  }, [offices, user]);
 
   const [formData, setFormData] = useState({
     office: user?.office || '',
@@ -291,13 +300,29 @@ export default function UserProfileModal({
 
             <div className="form-group">
               <label className="form-label">वर्तमान कार्यालय / थाना (Office/Thana)</label>
-              <input
-                type="text"
-                className="form-input"
-                value={formData.office}
-                onChange={e => setFormData({ ...formData, office: e.target.value })}
-                required
-              />
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={formData.office}
+                  onChange={e => setFormData({ ...formData, office: e.target.value })}
+                  required
+                />
+                {districtOffices.length > 0 && (
+                  <select
+                    className="form-select"
+                    style={{ width: '220px' }}
+                    onChange={e => {
+                      if (e.target.value) setFormData({ ...formData, office: e.target.value });
+                    }}
+                  >
+                    <option value="">-- त्वरित चयन ({user.district}) --</option>
+                    {districtOffices.map((o, i) => (
+                      <option key={i} value={o}>{o}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
 
             <div className="form-group">

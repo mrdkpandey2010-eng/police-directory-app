@@ -7,6 +7,7 @@ import {
   DEFAULT_UNIFORM_PHOTO_FEMALE,
   POSTS as DEFAULT_POSTS,
   OFFICES as DEFAULT_OFFICES,
+  DEFAULT_OFFICE_ITEMS,
   DISTRICTS as DEFAULT_DISTRICTS
 } from '../data/mockContacts';
 import * as XLSX from 'xlsx';
@@ -88,6 +89,35 @@ export const addPost = (postName) => {
   return current;
 };
 
+export const editPost = (oldPostName, newPostName) => {
+  const current = getStoredPosts();
+  const trimmed = (newPostName || '').trim();
+  if (!trimmed || trimmed === oldPostName) return current;
+
+  const updated = current.map(p => p === oldPostName ? trimmed : p);
+  savePosts(updated);
+
+  // Synchronize contacts who hold this post
+  try {
+    const contacts = getStoredContacts();
+    let contactChanged = false;
+    const updatedContacts = contacts.map(c => {
+      if (c.post === oldPostName) {
+        contactChanged = true;
+        return { ...c, post: trimmed };
+      }
+      return c;
+    });
+    if (contactChanged) {
+      saveContacts(updatedContacts);
+    }
+  } catch (e) {
+    console.error('Error syncing contacts with edited post', e);
+  }
+
+  return updated;
+};
+
 export const deletePost = (postName) => {
   const current = getStoredPosts();
   const updated = current.filter((p, i) => i === 0 || p !== postName);
@@ -98,9 +128,40 @@ export const deletePost = (postName) => {
 export const getStoredOffices = () => {
   try {
     const saved = localStorage.getItem(OFFICES_KEY);
-    return saved ? JSON.parse(saved) : DEFAULT_OFFICES;
+    if (!saved) {
+      localStorage.setItem(OFFICES_KEY, JSON.stringify(DEFAULT_OFFICE_ITEMS));
+      return DEFAULT_OFFICE_ITEMS;
+    }
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.setItem(OFFICES_KEY, JSON.stringify(DEFAULT_OFFICE_ITEMS));
+      return DEFAULT_OFFICE_ITEMS;
+    }
+
+    // Auto-migration: if localStorage has strings instead of objects { id, name, district }
+    let hasString = false;
+    const migrated = parsed.map((item, idx) => {
+      if (typeof item === 'string') {
+        hasString = true;
+        const found = DEFAULT_OFFICE_ITEMS.find(d => d.name === item);
+        return {
+          id: found ? found.id : `off-migrated-${idx}`,
+          name: item,
+          district: found ? found.district : 'लखनऊ'
+        };
+      }
+      return item;
+    }).filter(item => item && item.name && item.name !== "सभी कार्यालय/थाने (All Offices)");
+
+    if (hasString || migrated.length === 0) {
+      const finalItems = migrated.length > 0 ? migrated : DEFAULT_OFFICE_ITEMS;
+      localStorage.setItem(OFFICES_KEY, JSON.stringify(finalItems));
+      return finalItems;
+    }
+
+    return migrated;
   } catch (err) {
-    return DEFAULT_OFFICES;
+    return DEFAULT_OFFICE_ITEMS;
   }
 };
 
@@ -110,22 +171,107 @@ export const saveOffices = (offices) => {
   } catch (err) {}
 };
 
-export const addOffice = (officeName) => {
+export const addOffice = (officeName, districtName = 'लखनऊ') => {
   const current = getStoredOffices();
-  const trimmed = officeName.trim();
-  if (trimmed && !current.includes(trimmed)) {
-    const updated = [...current, trimmed];
+  const trimmedName = (officeName || '').trim();
+  const trimmedDist = (districtName || 'लखनऊ').trim();
+  if (!trimmedName) return current;
+
+  // Check duplicate within the same district
+  const exists = current.some(o => 
+    typeof o === 'object' 
+      ? (o.name === trimmedName && o.district === trimmedDist)
+      : o === trimmedName
+  );
+
+  if (!exists) {
+    const newOffice = {
+      id: `off-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      name: trimmedName,
+      district: trimmedDist
+    };
+    const updated = [...current, newOffice];
     saveOffices(updated);
     return updated;
   }
   return current;
 };
 
-export const deleteOffice = (officeName) => {
+export const editOffice = (officeIdOrName, newOfficeName, newDistrict = null) => {
   const current = getStoredOffices();
-  const updated = current.filter((o, i) => i === 0 || o !== officeName);
+  const trimmedName = (newOfficeName || '').trim();
+  if (!trimmedName) return current;
+
+  let oldName = null;
+  const updated = current.map(o => {
+    if (typeof o === 'object') {
+      if (o.id === officeIdOrName || o.name === officeIdOrName) {
+        oldName = o.name;
+        return {
+          ...o,
+          name: trimmedName,
+          district: newDistrict ? newDistrict.trim() : o.district
+        };
+      }
+      return o;
+    } else {
+      if (o === officeIdOrName) {
+        oldName = o;
+        return {
+          id: `off-${Date.now()}`,
+          name: trimmedName,
+          district: newDistrict ? newDistrict.trim() : 'लखनऊ'
+        };
+      }
+      return o;
+    }
+  });
+
+  saveOffices(updated);
+
+  // Sync contacts whose office changed
+  if (oldName && oldName !== trimmedName) {
+    try {
+      const contacts = getStoredContacts();
+      let contactChanged = false;
+      const updatedContacts = contacts.map(c => {
+        if (c.office === oldName) {
+          contactChanged = true;
+          return { ...c, office: trimmedName };
+        }
+        return c;
+      });
+      if (contactChanged) {
+        saveContacts(updatedContacts);
+      }
+    } catch (e) {
+      console.error('Error syncing contacts with edited office', e);
+    }
+  }
+
+  return updated;
+};
+
+export const deleteOffice = (officeIdOrName) => {
+  const current = getStoredOffices();
+  const updated = current.filter(o => {
+    if (typeof o === 'object') {
+      return o.id !== officeIdOrName && o.name !== officeIdOrName;
+    }
+    return o !== officeIdOrName;
+  });
   saveOffices(updated);
   return updated;
+};
+
+export const getOfficesForDistrict = (officesList, districtName) => {
+  if (!Array.isArray(officesList)) return [];
+  if (!districtName || districtName === 'सभी ज़िले (All Districts)' || districtName === 'सभी ज़िले') {
+    return Array.from(new Set(officesList.map(o => typeof o === 'string' ? o : o.name)));
+  }
+  return officesList
+    .filter(o => typeof o === 'object' && o.district === districtName)
+    .map(o => o.name);
 };
 
 export const getStoredDistricts = () => {
@@ -152,6 +298,71 @@ export const addDistrict = (distName) => {
     return updated;
   }
   return current;
+};
+
+export const editDistrict = (oldDistName, newDistName) => {
+  const current = getStoredDistricts();
+  const trimmed = (newDistName || '').trim();
+  if (!trimmed || trimmed === oldDistName) return current;
+
+  const updated = current.map(d => d === oldDistName ? trimmed : d);
+  saveDistricts(updated);
+
+  // Sync contacts
+  try {
+    const contacts = getStoredContacts();
+    let contactChanged = false;
+    const updatedContacts = contacts.map(c => {
+      if (c.district === oldDistName) {
+        contactChanged = true;
+        return { ...c, district: trimmed };
+      }
+      return c;
+    });
+    if (contactChanged) {
+      saveContacts(updatedContacts);
+    }
+  } catch (e) {
+    console.error('Error syncing contacts with edited district', e);
+  }
+
+  // Sync co-admins
+  try {
+    const coAdmins = getStoredCoAdmins();
+    let coAdminChanged = false;
+    const updatedCoAdmins = coAdmins.map(ca => {
+      if (ca.district === oldDistName) {
+        coAdminChanged = true;
+        return { ...ca, district: trimmed };
+      }
+      return ca;
+    });
+    if (coAdminChanged) {
+      saveCoAdmins(updatedCoAdmins);
+    }
+  } catch (e) {
+    console.error('Error syncing co-admins with edited district', e);
+  }
+
+  // Sync offices
+  try {
+    const offices = getStoredOffices();
+    let officesChanged = false;
+    const updatedOffices = offices.map(o => {
+      if (typeof o === 'object' && o.district === oldDistName) {
+        officesChanged = true;
+        return { ...o, district: trimmed };
+      }
+      return o;
+    });
+    if (officesChanged) {
+      saveOffices(updatedOffices);
+    }
+  } catch (e) {
+    console.error('Error syncing offices with edited district', e);
+  }
+
+  return updated;
 };
 
 export const deleteDistrict = (distName) => {
