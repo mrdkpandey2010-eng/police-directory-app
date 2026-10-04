@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { 
   Shield, Lock, User, UserPlus, KeyRound, Building, ArrowRight, 
-  AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload, Sparkles 
+  AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload, Sparkles, Cloud
 } from 'lucide-react';
 import { DEFAULT_UNIFORM_PHOTO } from '../data/mockContacts';
 
 export default function AuthGateway({ 
   onLoginSuccess, 
   onRegisterSubmit,
+  onOpenFirebaseSetup,
+  isFirebaseConnected = false,
   contacts, 
   coAdmins,
   posts = [],
@@ -221,6 +223,33 @@ export default function AuthGateway({
         flexDirection: 'column',
         gap: '1.25rem'
       }}>
+        {/* Cloud Setup Button on Login Screen */}
+        {onOpenFirebaseSetup && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '-0.5rem -0.5rem 0 0' }}>
+            <button
+              type="button"
+              onClick={onOpenFirebaseSetup}
+              style={{
+                background: isFirebaseConnected ? 'rgba(16,185,129,0.15)' : 'rgba(234,179,8,0.15)',
+                border: isFirebaseConnected ? '1px solid #10b981' : '1px solid #eab308',
+                color: isFirebaseConnected ? '#34d399' : '#fde047',
+                padding: '4px 10px',
+                borderRadius: '20px',
+                fontSize: '0.74rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontWeight: 600
+              }}
+              title="Google Firebase लाइव चैट क्लाउड सेटअप करें"
+            >
+              <Cloud size={13} />
+              <span>{isFirebaseConnected ? '🟢 क्लाउड लाइव' : '⚡ क्लाउड सेटअप (Firebase)'}</span>
+            </button>
+          </div>
+        )}
+
         {/* Police Branding Header */}
         <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
           <div className="police-badge-icon" style={{ width: '60px', height: '60px' }}>

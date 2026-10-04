@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   Shield, UserPlus, Lock, RefreshCw, Bell, MessageSquare, 
-  User, LogOut, CheckCircle, Clock, ShieldCheck, KeyRound, MessageCircle, Mail 
+  User, LogOut, CheckCircle, Clock, ShieldCheck, KeyRound, MessageCircle, Mail, Cloud 
 } from 'lucide-react';
 
 export default function Header({ 
@@ -10,6 +10,8 @@ export default function Header({
   pendingCount, 
   notifCount,
   chatsCount = 0,
+  isFirebaseConnected = false,
+  onOpenFirebaseSetup,
   onOpenLogin,
   onOpenRegister, 
   onOpenAdmin, 
@@ -149,6 +151,27 @@ export default function Header({
                   {chatsCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {/* Cloud Sync Status / Setup Button */}
+          {isLoggedIn && onOpenFirebaseSetup && (
+            <button
+              className="btn btn-secondary"
+              onClick={onOpenFirebaseSetup}
+              title={isFirebaseConnected ? "Google Firebase लाइव क्लाउड सक्रिय है (सभी डिवाइस पर लाइव)" : "Google Firebase लाइव क्लाउड सेटअप करें"}
+              style={{
+                borderColor: isFirebaseConnected ? 'rgba(16,185,129,0.5)' : 'rgba(234,179,8,0.4)',
+                color: isFirebaseConnected ? '#34d399' : '#fde047',
+                padding: '0.45rem 0.65rem',
+                fontSize: '0.78rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              <Cloud size={15} />
+              <span>{isFirebaseConnected ? 'लाइव क्लाउड' : 'क्लाउड सेटअप'}</span>
             </button>
           )}
 

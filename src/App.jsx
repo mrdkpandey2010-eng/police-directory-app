@@ -10,14 +10,23 @@ import UserProfileModal from './components/UserProfileModal';
 import NotificationsModal from './components/NotificationsModal';
 import FeedbackModal from './components/FeedbackModal';
 import MessageBoxModal from './components/MessageBoxModal';
+import FirebaseSetupModal from './components/FirebaseSetupModal';
 import UniformPhotoGate from './components/UniformPhotoGate';
 import AuthGateway from './components/AuthGateway';
+import {
+  isFirebaseConfigured,
+  subscribeToFirestoreChats,
+  saveFirestoreChat,
+  markFirestoreChatAsRead,
+  playNotificationChime
+} from './utils/firebase';
 import { 
   getStoredContacts, 
   getStoredCoAdmins,
   getStoredNotifications,
   getStoredFeedbacks,
   getStoredChats,
+  saveChats,
   getStoredSession,
   saveSession,
   getStoredPosts,
@@ -51,7 +60,6 @@ import {
   createGroupChat,
   sendGroupMessage,
   appendMessageToChat,
-  getChatsForUser,
   markChatAsRead,
   getUnreadMessagesCountForUser,
   updateUserUniformPhoto,
@@ -90,6 +98,8 @@ export default function App() {
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState(null);
+  const [isFirebaseSetupOpen, setIsFirebaseSetupOpen] = useState(false);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState(isFirebaseConfigured());
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
@@ -125,6 +135,63 @@ export default function App() {
       setCurrentUser(null);
     }
   }, []);
+
+  // Listen to real-time chat updates from Firebase Firestore
+  useEffect(() => {
+    const isConfigured = isFirebaseConfigured();
+    setIsFirebaseConnected(isConfigured);
+    if (!isConfigured) return;
+
+    const unsubscribe = subscribeToFirestoreChats((cloudChats) => {
+      if (!Array.isArray(cloudChats) || cloudChats.length === 0) return;
+
+      setChats((prevChats) => {
+        const mergedMap = new Map();
+        (prevChats || []).forEach((c) => mergedMap.set(c.id, c));
+
+        let hasNewIncoming = false;
+
+        cloudChats.forEach((cloudChat) => {
+          const local = mergedMap.get(cloudChat.id);
+          if (!local) {
+            mergedMap.set(cloudChat.id, cloudChat);
+            if (cloudChat.messages && cloudChat.messages.length > 0) {
+              const lastMsg = cloudChat.messages[cloudChat.messages.length - 1];
+              if (currentUser && lastMsg && lastMsg.senderId !== currentUser.id) {
+                hasNewIncoming = true;
+              }
+            }
+          } else {
+            const localCount = local.messages?.length || 0;
+            const cloudCount = cloudChat.messages?.length || 0;
+            const isCloudNewer = cloudChat.lastUpdated && (!local.lastUpdated || cloudChat.lastUpdated > local.lastUpdated);
+
+            if (cloudCount > localCount || isCloudNewer) {
+              mergedMap.set(cloudChat.id, { ...local, ...cloudChat });
+              const lastMsg = cloudChat.messages?.[cloudChat.messages.length - 1];
+              if (currentUser && lastMsg && lastMsg.senderId !== currentUser.id) {
+                hasNewIncoming = true;
+              }
+            }
+          }
+        });
+
+        const mergedList = Array.from(mergedMap.values());
+        saveChats(mergedList);
+
+        if (hasNewIncoming) {
+          playNotificationChime();
+        }
+        return mergedList;
+      });
+    }, (err) => {
+      console.warn('Real-time chat sync error:', err);
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isFirebaseConnected, currentUser]);
 
   // Update current user session on login
   const handleLoginSuccess = (userObj) => {
@@ -437,7 +504,7 @@ export default function App() {
   };
 
   // ---------------- PEER-TO-PEER MESSAGE BOX & GROUP CHAT HANDLERS ----------------
-  const handleOpenChatWithContact = (targetContact) => {
+  const handleOpenChatWithContact = async (targetContact) => {
     if (!currentUser) return;
     if (currentUser.id === targetContact.id) {
       showToast('यह आपकी स्वयं की प्रोफ़ाइल है। अन्य अधिकारियों के साथ संदेश भेजें।');
@@ -463,42 +530,82 @@ export default function App() {
       setChats(updatedChats);
       setActiveChatId(targetChatId);
       setNotifications(getStoredNotifications());
+
+      if (isFirebaseConfigured() && targetChatId) {
+        const updatedChat = updatedChats.find(c => c.id === targetChatId);
+        if (updatedChat) {
+          saveFirestoreChat(updatedChat);
+        }
+      }
     }
     setIsChatModalOpen(true);
   };
 
-  const handleSendDirectMessage = (sender, recipient, text, file = null) => {
+  const handleSendDirectMessage = async (sender, recipient, text, file = null) => {
     const { updatedChats, targetChatId } = sendDirectMessage(chats, contacts, sender, recipient, text, file);
     setChats(updatedChats);
     if (targetChatId) setActiveChatId(targetChatId);
     setNotifications(getStoredNotifications());
     showToast(`संदेश प्रेषित! प्राप्तकर्ता ${recipient.name} को नया संदेश नोटिफिकेशन भेजा गया।`);
+
+    if (isFirebaseConfigured() && targetChatId) {
+      const updatedChat = updatedChats.find(c => c.id === targetChatId);
+      if (updatedChat) {
+        saveFirestoreChat(updatedChat);
+      }
+    }
   };
 
-  const handleSendGroupMessage = (groupId, sender, text, file = null) => {
+  const handleSendGroupMessage = async (groupId, sender, text, file = null) => {
     const updated = sendGroupMessage(chats, groupId, sender, text, file);
     setChats(updated);
     showToast('समूह संदेश प्रेषित!');
+
+    if (isFirebaseConfigured() && groupId) {
+      const updatedChat = updated.find(c => c.id === groupId);
+      if (updatedChat) {
+        saveFirestoreChat(updatedChat);
+      }
+    }
   };
 
-  const handleAppendMessage = (chatId, sender, text, file = null) => {
+  const handleAppendMessage = async (chatId, sender, text, file = null) => {
     const updated = appendMessageToChat(chats, chatId, sender, text, file);
     setChats(updated);
     setNotifications(getStoredNotifications());
     showToast('संदेश प्रेषित!');
+
+    if (isFirebaseConfigured() && chatId) {
+      const updatedChat = updated.find(c => c.id === chatId);
+      if (updatedChat) {
+        saveFirestoreChat(updatedChat);
+      }
+    }
   };
 
-  const handleCreateGroupChat = (groupTitle, participantIds, description = '') => {
+  const handleCreateGroupChat = async (groupTitle, participantIds, description = '') => {
     const { updatedChats, newGroupId } = createGroupChat(chats, currentUser, groupTitle, participantIds, description);
     setChats(updatedChats);
     setActiveChatId(newGroupId);
     showToast(`नया पुलिस समूह "${groupTitle}" सफलतापूर्वक बनाया गया!`);
+
+    if (isFirebaseConfigured() && newGroupId) {
+      const updatedChat = updatedChats.find(c => c.id === newGroupId);
+      if (updatedChat) {
+        saveFirestoreChat(updatedChat);
+      }
+    }
   };
 
-  const handleMarkChatAsRead = (chatId) => {
-    if (!currentUser) return;
+  const handleMarkChatAsRead = async (chatId) => {
+    if (!currentUser || !chatId) return;
     const updated = markChatAsRead(chats, chatId, currentUser.id);
-    setChats(updated);
+    if (updated !== chats) {
+      setChats(updated);
+      if (isFirebaseConfigured()) {
+        markFirestoreChatAsRead(chatId, currentUser.id);
+      }
+    }
   };
 
   const handleUpdateUniformPhoto = (userId, photoBase64) => {
@@ -597,11 +704,28 @@ export default function App() {
         <AuthGateway
           onLoginSuccess={handleLoginSuccess}
           onRegisterSubmit={handleRegistrationSubmit}
+          onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
+          isFirebaseConnected={isFirebaseConnected}
           contacts={contacts}
           coAdmins={coAdmins}
           posts={posts}
           districts={districts}
           offices={offices}
+        />
+
+        {/* Google Firebase Cloud Live Chat Setup Modal (Accessible on Login Screen) */}
+        <FirebaseSetupModal
+          isOpen={isFirebaseSetupOpen}
+          onClose={() => {
+            setIsFirebaseSetupOpen(false);
+            setIsFirebaseConnected(isFirebaseConfigured());
+          }}
+          currentUser={currentUser}
+          currentChats={chats}
+          onSyncSuccess={() => {
+            setIsFirebaseConnected(isFirebaseConfigured());
+            showToast('🎉 Google Firebase लाइव चैट क्लाउड सक्रिय!');
+          }}
         />
       </div>
     );
@@ -633,6 +757,8 @@ export default function App() {
         pendingCount={pendingCount}
         notifCount={notifications.length}
         chatsCount={unreadMessagesCount}
+        isFirebaseConnected={isFirebaseConnected}
+        onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
         onOpenLogin={() => setIsLoginModalOpen(true)}
         onOpenRegister={() => setIsRegisterModalOpen(true)}
         onOpenAdmin={() => setIsAdminModalOpen(true)}
@@ -754,11 +880,28 @@ export default function App() {
         currentUser={currentUser}
         activeChatId={activeChatId}
         setActiveChatId={setActiveChatId}
+        isFirebaseConnected={isFirebaseConnected}
+        onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
         onSendDirectMessage={handleSendDirectMessage}
         onSendGroupMessage={handleSendGroupMessage}
         onCreateGroupChat={handleCreateGroupChat}
         onAppendMessage={handleAppendMessage}
         onMarkChatAsRead={handleMarkChatAsRead}
+      />
+
+      {/* Google Firebase Cloud Live Chat Setup Modal */}
+      <FirebaseSetupModal
+        isOpen={isFirebaseSetupOpen}
+        onClose={() => {
+          setIsFirebaseSetupOpen(false);
+          setIsFirebaseConnected(isFirebaseConfigured());
+        }}
+        currentUser={currentUser}
+        currentChats={chats}
+        onSyncSuccess={() => {
+          setIsFirebaseConnected(isFirebaseConfigured());
+          showToast('🎉 Google Firebase लाइव चैट क्लाउड सक्रिय!');
+        }}
       />
 
       {/* Login Modal */}

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, MessageSquare, Send, Paperclip, Users, User, Phone, 
-  Shield, Plus, Search, Check, Download, ArrowLeft, CheckCircle2,
-  Bell, Mail, AlertCircle, FileText, Image as ImageIcon
+  Shield, Plus, Search, Check, Download, 
+  Mail, FileText, Cloud
 } from 'lucide-react';
 import { getChatsForUser, getUnreadCountForChat } from '../utils/storage';
 
@@ -14,6 +14,8 @@ export default function MessageBoxModal({
   currentUser,
   activeChatId,
   setActiveChatId,
+  isFirebaseConnected = false,
+  onOpenFirebaseSetup,
   onSendDirectMessage,
   onSendGroupMessage,
   onCreateGroupChat,
@@ -24,7 +26,7 @@ export default function MessageBoxModal({
   const [chatSearch, setChatSearch] = useState('');
   
   // Mobile responsive view toggle: 'list' | 'chat'
-  const [mobileView, setMobileView] = useState('list');
+  const [_mobileView, setMobileView] = useState('list');
 
   // Message input state
   const [inputText, setInputText] = useState('');
@@ -43,10 +45,8 @@ export default function MessageBoxModal({
   const [selectedGroupParticipants, setSelectedGroupParticipants] = useState([]);
   const [groupMemberSearch, setGroupMemberSearch] = useState('');
 
-  if (!isOpen || !currentUser) return null;
-
-  // Filter chats visible to current user
-  const userVisibleChats = getChatsForUser(chats, contacts, currentUser);
+  // Filter chats visible to current user (safely computed for hook dependencies)
+  const userVisibleChats = (isOpen && currentUser) ? getChatsForUser(chats, contacts, currentUser) : [];
 
   // Direct chats vs Group chats
   const directChats = userVisibleChats.filter(c => c.type === 'direct');
@@ -69,22 +69,33 @@ export default function MessageBoxModal({
 
   // Auto-select chat when activeChatId is not set or belongs to other tab
   useEffect(() => {
-    if (filteredChatList.length > 0 && (!currentChat || !filteredChatList.some(c => c.id === currentChat.id))) {
+    if (!isOpen) return;
+    if (filteredChatList.length > 0 && (!activeChatId || !filteredChatList.some(c => c.id === activeChatId))) {
       setActiveChatId(filteredChatList[0].id);
     }
-  }, [activeTab, chats]);
+  }, [isOpen, activeTab, activeChatId, filteredChatList.length, setActiveChatId]);
 
-  // Mark active chat as read when opened or switched
+  // Mark active chat as read ONLY IF there are unread messages for currentUser
   useEffect(() => {
-    if (currentChat && currentUser && onMarkChatAsRead) {
+    if (!isOpen || !currentChat || !currentUser || !onMarkChatAsRead) return;
+
+    const hasUnread = Array.isArray(currentChat.messages) && currentChat.messages.some(m => {
+      const readBy = Array.isArray(m.readBy) ? m.readBy : [m.senderId];
+      return !readBy.includes(currentUser.id);
+    });
+
+    if (hasUnread) {
       onMarkChatAsRead(currentChat.id);
     }
-  }, [currentChat?.id, currentUser?.id, chats]);
+  }, [isOpen, currentChat?.id, currentUser?.id]);
 
   // Auto-scroll to bottom of messages
   useEffect(() => {
+    if (!isOpen) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentChat?.messages, activeChatId]);
+  }, [isOpen, currentChat?.messages?.length, activeChatId]);
+
+  if (!isOpen || !currentUser) return null;
 
   // Find other participant for direct chat
   const otherParticipantId = currentChat?.type === 'direct' && currentChat?.participants
@@ -317,14 +328,113 @@ export default function MessageBoxModal({
             </button>
           </div>
 
-          <button 
-            className="close-btn" 
-            onClick={onClose}
-            style={{ color: 'rgba(255,255,255,0.8)' }}
-          >
-            <X size={20} />
-          </button>
+          {/* Firebase Live Cloud Status Pill / Setup Button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {isFirebaseConnected ? (
+              <div 
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(16,185,129,0.18)',
+                  border: '1px solid rgba(16,185,129,0.5)',
+                  padding: '5px 10px',
+                  borderRadius: '20px',
+                  fontSize: '0.75rem',
+                  color: '#34d399',
+                  fontWeight: 700
+                }}
+                title="Google Firebase रीयल-टाइम क्लाउड लाइव सक्रिय है"
+              >
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981' }}></span>
+                <span>🟢 लाइव चैट (Live)</span>
+              </div>
+            ) : onOpenFirebaseSetup ? (
+              <button
+                type="button"
+                onClick={onOpenFirebaseSetup}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  background: 'rgba(234,179,8,0.2)',
+                  border: '1px solid #eab308',
+                  padding: '5px 10px',
+                  borderRadius: '20px',
+                  fontSize: '0.75rem',
+                  color: '#fde047',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+                title="सभी डिवाइस पर रीयल-टाइम लाइव मैसेजिंग हेतु Firebase जोड़ें"
+              >
+                <Cloud size={13} />
+                <span>⚡ Firebase जोड़ें</span>
+              </button>
+            ) : null}
+
+            <button 
+              className="close-btn" 
+              onClick={onClose}
+              style={{ color: 'rgba(255,255,255,0.8)' }}
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
+
+        {/* Live Cloud Status Banner */}
+        {isFirebaseConnected ? (
+          <div style={{
+            background: 'rgba(16, 185, 129, 0.1)',
+            borderBottom: '1px solid rgba(16, 185, 129, 0.25)',
+            padding: '5px 14px',
+            fontSize: '0.73rem',
+            color: '#6ee7b7',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+            <span>🟢 <strong>Google Firebase लाइव कनेक्टेड:</strong> सभी पुलिस अधिकारियों के संदेश तुरंत रियल-टाइम में लाइव अपडेट हो रहे हैं।</span>
+          </div>
+        ) : onOpenFirebaseSetup ? (
+          <div style={{
+            background: 'rgba(234, 179, 8, 0.1)',
+            borderBottom: '1px solid rgba(234, 179, 8, 0.22)',
+            padding: '5px 14px',
+            fontSize: '0.74rem',
+            color: '#fef08a',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Cloud size={14} color="#eab308" />
+              <span>
+                <strong>लोकल मोड सक्रिय:</strong> संदेश इसी ब्राउज़र में सुरक्षित हैं। अन्य डिवाइसों पर रीयल-टाइम लाइव संदेश पहुँचाने के लिए <strong>Firebase</strong> जोड़ें।
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenFirebaseSetup}
+              style={{
+                background: 'rgba(234, 179, 8, 0.25)',
+                border: '1px solid #eab308',
+                color: '#fef08a',
+                padding: '2px 8px',
+                borderRadius: '5px',
+                fontSize: '0.72rem',
+                cursor: 'pointer',
+                fontWeight: 600,
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Firebase जोड़ें &gt;
+            </button>
+          </div>
+        ) : null}
 
         {/* Main Content Layout (Sidebar + Chat Area) */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -421,16 +531,22 @@ export default function MessageBoxModal({
 
                   // Other contact in direct chat
                   let displayPhoto = null;
-                  let displayName = chat.title;
-                  let displaySub = chat.district;
+                  let displayName = chat.title || 'विभागीय चैट';
+                  let displaySub = chat.district || 'उत्तर प्रदेश पुलिस';
 
                   if (chat.type === 'direct') {
                     const peerId = chat.participants?.find(p => p !== currentUser.id);
                     const peerObj = contacts.find(c => c.id === peerId);
                     if (peerObj) {
                       displayPhoto = peerObj.uniformPhoto;
-                      displayName = peerObj.name;
-                      displaySub = `${peerObj.post} • ${peerObj.office || peerObj.district}`;
+                      displayName = peerObj.name || 'पुलिस अधिकारी';
+                      displaySub = `${peerObj.post || 'अधिकारी'} • ${peerObj.office || peerObj.district || ''}`;
+                    } else if (peerId === 'super-admin') {
+                      displayName = 'मुख्यालय पुलिस महानिदेशक (Super Admin)';
+                      displaySub = 'समस्त जनपद (All Districts)';
+                    } else if (peerId) {
+                      displayName = `अधिकारी (${peerId})`;
+                      displaySub = 'उत्तर प्रदेश पुलिस';
                     }
                   }
 
@@ -481,7 +597,7 @@ export default function MessageBoxModal({
                             <Users size={18} color="var(--gold-primary, #e5b842)" />
                           ) : (
                             <span style={{ fontWeight: 700, color: 'var(--gold-primary)', fontSize: '0.9rem' }}>
-                              {displayName.charAt(0)}
+                              {((displayName || 'P').charAt(0)).toUpperCase()}
                             </span>
                           )}
                         </div>
@@ -583,7 +699,7 @@ export default function MessageBoxModal({
                         <Users size={22} color="var(--gold-primary)" />
                       ) : (
                         <span style={{ fontWeight: 700, color: 'var(--gold-primary)' }}>
-                          {otherContact ? otherContact.name.charAt(0) : currentChat.title.charAt(0)}
+                          {((otherContact?.name || currentChat.title || 'P').charAt(0)).toUpperCase()}
                         </span>
                       )}
                     </div>
@@ -591,7 +707,7 @@ export default function MessageBoxModal({
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
-                          {currentChat.type === 'direct' && otherContact ? otherContact.name : currentChat.title}
+                          {currentChat.type === 'direct' ? (otherContact?.name || (otherParticipantId === 'super-admin' ? 'मुख्यालय पुलिस महानिदेशक' : 'पुलिस अधिकारी')) : (currentChat.title || 'समूह चैट')}
                         </h3>
                         {currentChat.type === 'direct' && otherContact?.uniformPhoto && (
                           <span style={{
@@ -609,8 +725,12 @@ export default function MessageBoxModal({
                       </div>
 
                       <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.6)', marginTop: '2px' }}>
-                        {currentChat.type === 'direct' && otherContact ? (
-                          `${otherContact.post} • ${otherContact.office || ''} (${otherContact.district}) • PNO: ${otherContact.pno || 'N/A'}`
+                        {currentChat.type === 'direct' ? (
+                          otherContact ? (
+                            `${otherContact.post || ''} • ${otherContact.office || ''} (${otherContact.district || ''}) • PNO: ${otherContact.pno || 'N/A'}`
+                          ) : (
+                            'विभागीय सीधा संवाद'
+                          )
                         ) : (
                           `${currentChat.participants?.length || 0} सदस्य • ${currentChat.description || 'विभागीय समूह'}`
                         )}
@@ -619,7 +739,7 @@ export default function MessageBoxModal({
                   </div>
 
                   {/* Quick Action Buttons for Direct Chat (Call / WhatsApp) */}
-                  {currentChat.type === 'direct' && otherContact && (
+                  {currentChat.type === 'direct' && otherContact?.phone && (
                     <div style={{ display: 'flex', gap: '0.4rem' }}>
                       <a 
                         href={`tel:${otherContact.phone}`}
@@ -631,7 +751,7 @@ export default function MessageBoxModal({
                         <span>कॉल</span>
                       </a>
                       <a 
-                        href={`https://wa.me/${otherContact.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`जय हिंद, ${otherContact.name} जी!`)}`}
+                        href={`https://wa.me/${(otherContact.phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`जय हिंद, ${otherContact.name || ''} जी!`)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="btn btn-wa"
@@ -985,7 +1105,7 @@ export default function MessageBoxModal({
                           <img src={contact.uniformPhoto} alt={contact.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
                           <span style={{ fontWeight: 700, color: 'var(--gold-primary)' }}>
-                            {contact.name.charAt(0)}
+                            {((contact?.name || 'P').charAt(0)).toUpperCase()}
                           </span>
                         )}
                       </div>

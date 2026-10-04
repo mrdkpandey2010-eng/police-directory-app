@@ -9,7 +9,8 @@ export default function ContactCard({
   onToggleActive,
   onPromoteCoAdmin,
   onDelete,
-  onOpenChatWithContact 
+  onOpenChatWithContact,
+  onOpenDispatch
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -152,10 +153,10 @@ export default function ContactCard({
         </a>
 
         <button 
-          onClick={() => onOpenChatWithContact && onOpenChatWithContact(contact)}
+          onClick={() => onOpenDispatch ? onOpenDispatch(contact) : (onOpenChatWithContact && onOpenChatWithContact(contact))}
           className="btn btn-primary"
-          title={`${contact.name} को सीधा मैसेज भेजें (Direct P2P Message)`}
-          style={{ padding: '0.5rem 0.4rem', fontSize: '0.8rem' }}
+          title={`${contact.name} को आधिकारिक संदेश भेजें (WhatsApp / SMS / Live Chat)`}
+          style={{ padding: '0.5rem 0.4rem', fontSize: '0.8rem', background: 'linear-gradient(135deg, #1d4ed8, #2563eb)' }}
         >
           <Mail size={14} />
           <span>मैसेज भेजें</span>
