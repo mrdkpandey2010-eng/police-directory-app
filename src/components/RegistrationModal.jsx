@@ -5,6 +5,7 @@ export default function RegistrationModal({
   isOpen, 
   onClose, 
   onSubmitRegistration,
+  onOpenPolicy,
   districts = [],
   posts = [],
   offices = []
@@ -20,9 +21,11 @@ export default function RegistrationModal({
     email: '',
     password: '',
     registrationNotes: '',
-    uniformPhoto: null
+    uniformPhoto: null,
+    isPhoneHidden: false
   });
 
+  const [termsAgreed, setTermsAgreed] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -75,6 +78,12 @@ export default function RegistrationModal({
     // MANDATORY UNIFORM PHOTO VALIDATION
     if (!formData.uniformPhoto) {
       setErrorMsg('⚠️ सुरक्षा नीति: वर्दी (यूनिफॉर्म) वाली वास्तविक फोटो अपलोड करना अनिवार्य है। इसके बिना ऐप का संचालन संभव नहीं होगा।');
+      return;
+    }
+
+    // MANDATORY CONFIDENTIALITY TERMS CHECKBOX
+    if (!termsAgreed) {
+      setErrorMsg('⚠️ कृपया उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तों को स्वीकार करें।');
       return;
     }
 
@@ -369,6 +378,46 @@ export default function RegistrationModal({
                   value={formData.registrationNotes}
                   onChange={handleChange}
                 />
+              </div>
+
+              {/* Privacy: Hide Phone Number Toggle */}
+              <div className="form-group full-width" style={{
+                background: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid rgba(196, 151, 86, 0.25)',
+                padding: '0.6rem 0.85rem',
+                borderRadius: '8px'
+              }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--khaki-light)' }}>
+                  <input
+                    type="checkbox"
+                    name="isPhoneHidden"
+                    checked={formData.isPhoneHidden}
+                    onChange={e => setFormData({ ...formData, isPhoneHidden: e.target.checked })}
+                    style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                  />
+                  <span>🔒 <strong>नंबर गोपनीयता:</strong> मेरा मोबाइल नंबर अन्य सामान्य यूज़र्स से छिपाएं (अनुमति मिलने पर ही दिखेगा)</span>
+                </label>
+              </div>
+
+              {/* Mandatory Policy Agreement Checkbox */}
+              <div className="form-group full-width" style={{
+                background: 'rgba(196, 151, 86, 0.1)',
+                border: '1px solid var(--khaki-border)',
+                padding: '0.65rem 0.85rem',
+                borderRadius: '8px'
+              }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '0.8rem', color: '#fff' }}>
+                  <input
+                    type="checkbox"
+                    checked={termsAgreed}
+                    onChange={e => setTermsAgreed(e.target.checked)}
+                    style={{ marginTop: '2px', accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                    required
+                  />
+                  <span>
+                    मैं <button type="button" onClick={() => onOpenPolicy && onOpenPolicy('terms')} style={{ background: 'none', border: 'none', color: 'var(--khaki-light)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 700, padding: 0 }}>उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तों</button> को स्वीकार करता हूँ। <span style={{ color: 'var(--danger-red)' }}>*</span>
+                  </span>
+                </label>
               </div>
             </div>
 

@@ -82,6 +82,8 @@ export const getFirebaseDB = () => {
   }
 };
 
+export const db = getFirebaseDB();
+
 // Save Firebase config into localStorage and re-init
 export const saveFirebaseConfig = async (config) => {
   try {

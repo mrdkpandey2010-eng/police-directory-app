@@ -1,14 +1,14 @@
 import React from 'react';
 import { 
   Shield, UserPlus, Lock, RefreshCw, Bell, MessageSquare, 
-  User, LogOut, CheckCircle, Clock, KeyRound, Mail, Cloud 
+  User, LogOut, CheckCircle, Clock, KeyRound, Mail, Cloud, Menu
 } from 'lucide-react';
 
 export default function Header({ 
   currentUser, 
   totalApprovedCount, 
-  pendingCount, 
-  notifCount, 
+  pendingCount = 0, 
+  notifCount = 0, 
   chatsCount = 0, 
   isFirebaseConnected = false, 
   onOpenFirebaseSetup, 
@@ -20,221 +20,205 @@ export default function Header({
   onOpenFeedback, 
   onOpenChat, 
   onLogout, 
-  onResetData 
+  onResetData,
+  onOpenMenu
 }) {
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
   const isUser = currentUser?.role === 'user';
   const isLoggedIn = Boolean(currentUser);
 
+  const totalBadges = (chatsCount || 0) + (notifCount || 0) + (pendingCount || 0);
+
   return (
-    <header className="header-card">
+    <header className="header-card" style={{ padding: '0.75rem 1rem' }}>
       {/* Main Brand Section */}
-      <div className="header-top">
-        <div className="brand-section">
-          <div className="police-badge-icon">
-            <Shield size={26} color="var(--khaki-light, #dfb97e)" />
+      <div className="header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+        <div className="brand-section" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="police-badge-icon" style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)',
+            border: '2px solid var(--khaki-primary, #c49756)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            flexShrink: 0
+          }}>
+            <Shield size={24} color="var(--khaki-primary, #c49756)" />
           </div>
           <div className="brand-titles">
-            <h1>
+            <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               उत्तर प्रदेश पुलिस निर्देशिका
-              <span className="dept-tag">आधिकारिक पोर्टल</span>
+              <span className="dept-tag" style={{
+                fontSize: '0.68rem',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                background: 'rgba(196,151,86,0.2)',
+                color: 'var(--khaki-light, #dfb97e)',
+                border: '1px solid var(--khaki-primary, #c49756)',
+                fontWeight: 700
+              }}>
+                आधिकारिक पोर्टल
+              </span>
             </h1>
-            <p className="brand-subtitle">
-              उत्तर प्रदेश शासन • अधिकृत विभागीय दूरभाष निर्देशिका एवं त्वरित संपर्क प्रणाली
+            <p className="brand-subtitle" style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>
+              उत्तर प्रदेश शासन • अधिकृत विभागीय सुरक्षित दूरभाष निर्देशिका
             </p>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="header-actions">
-          {/* Peer-to-Peer Message Box Button */}
+        {/* Header Right Action Area */}
+        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
+          
+          {/* Quick Message Box Shortcut (When logged in) */}
           {isLoggedIn && (
             <button 
               className="btn btn-primary"
               onClick={onOpenChat}
-              title="पीयर-टू-पीयर मैसेज बॉक्स एवं समूह चैट (Direct P2P & Group Messages)"
+              title="पीयर-टू-पीयर मैसेज बॉक्स (Direct Messages & Calls)"
               style={{ 
                 position: 'relative', 
                 background: 'linear-gradient(135deg, #162c5b, #1e40af)', 
                 color: '#fff', 
-                border: '1px solid rgba(196,151,86,0.5)' 
+                border: '1px solid rgba(196,151,86,0.4)',
+                padding: '0.45rem 0.75rem',
+                fontSize: '0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}
             >
               <Mail size={15} />
-              <span>मैसेज बॉक्स</span>
+              <span className="hide-on-mobile">मैसेज बॉक्स</span>
               {chatsCount > 0 && (
-                <span className="tab-badge" style={{ position: 'relative', top: 'auto', right: 'auto', background: '#ef4444', color: '#fff' }}>
+                <span style={{
+                  background: '#ef4444',
+                  color: '#fff',
+                  borderRadius: '10px',
+                  padding: '1px 6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 800
+                }}>
                   {chatsCount}
                 </span>
               )}
             </button>
           )}
 
-          {/* Cloud Sync Status / Setup Button */}
-          {isLoggedIn && onOpenFirebaseSetup && (
-            <button
-              className="btn btn-secondary"
-              onClick={onOpenFirebaseSetup}
-              title={isFirebaseConnected ? "Google Firebase लाइव क्लाउड सक्रिय है" : "Google Firebase लाइव क्लाउड सेटअप"}
+          {/* User Status / Role Pill */}
+          {isLoggedIn ? (
+            <div 
+              onClick={onOpenMenu}
               style={{
-                borderColor: isFirebaseConnected ? 'rgba(16,185,129,0.5)' : 'rgba(196,151,86,0.4)',
-                color: isFirebaseConnected ? '#34d399' : 'var(--khaki-light, #dfb97e)',
-                padding: '0.4rem 0.65rem',
-                fontSize: '0.78rem',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px'
+                gap: '8px',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid var(--khaki-border, rgba(196,151,86,0.3))',
+                padding: '4px 10px',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+              title="मेनु खोलने हेतु क्लिक करें"
+            >
+              <div style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                overflow: 'hidden',
+                background: 'rgba(196,151,86,0.2)',
+                border: '1px solid var(--khaki-primary, #c49756)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                color: 'var(--khaki-light, #dfb97e)',
+                flexShrink: 0
+              }}>
+                {currentUser.uniformPhoto ? (
+                  <img src={currentUser.uniformPhoto} alt={currentUser.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <User size={14} />
+                )}
+              </div>
+              <div style={{ textAlign: 'left' }} className="hide-on-mobile">
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f1f5f9', lineHeight: 1.1 }}>
+                  {currentUser.name}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)' }}>
+                  {isAdmin ? 'Super Admin' : isCoAdmin ? `Co-Admin (${currentUser.district})` : currentUser.post}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button 
+              className="btn btn-primary"
+              onClick={onOpenLogin}
+              style={{
+                background: 'linear-gradient(135deg, #c49756, #8e6833)',
+                color: '#081022',
+                fontWeight: 800,
+                border: 'none',
+                padding: '0.45rem 0.85rem',
+                fontSize: '0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}
             >
-              <Cloud size={14} />
-              <span>{isFirebaseConnected ? 'लाइव चैट' : 'क्लाउड सिंक'}</span>
+              <Lock size={14} />
+              <span>लॉगिन</span>
             </button>
           )}
 
-          {/* Notifications Button */}
+          {/* MAIN MODAL MENU TOGGLE BUTTON (☰ मेनु) */}
           <button 
+            type="button"
             className="btn btn-secondary"
-            onClick={onOpenNotifications}
-            title="विभागीय सूचनाएं एवं परिपत्र"
-            style={{ position: 'relative' }}
+            onClick={onOpenMenu}
+            title="मुख्य नियंत्रण एवं नेविगेशन मेनु खोलें"
+            style={{ 
+              position: 'relative',
+              background: 'linear-gradient(180deg, rgba(30, 58, 138, 0.4), rgba(15, 23, 42, 0.6))',
+              border: '1px solid var(--khaki-primary, #c49756)',
+              color: 'var(--khaki-light, #dfb97e)',
+              padding: '0.45rem 0.85rem',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              borderRadius: '8px'
+            }}
           >
-            <Bell size={15} color="var(--khaki-primary, #c49756)" />
-            <span>सूचनाएं</span>
-            {notifCount > 0 && (
-              <span className="tab-badge" style={{ position: 'relative', top: 'auto', right: 'auto' }}>
-                {notifCount}
+            <Menu size={16} color="var(--khaki-primary, #c49756)" />
+            <span>मेनु (Menu)</span>
+            {totalBadges > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '-5px',
+                right: '-5px',
+                background: '#ef4444',
+                color: '#fff',
+                borderRadius: '50%',
+                width: '18px',
+                height: '18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.65rem',
+                fontWeight: 900,
+                boxShadow: '0 2px 5px rgba(0,0,0,0.5)'
+              }}>
+                {totalBadges}
               </span>
             )}
           </button>
-
-          {/* Feedback Button */}
-          <button 
-            className="btn btn-secondary"
-            onClick={onOpenFeedback}
-            title="फीडबैक एवं सुझाव"
-          >
-            <MessageSquare size={15} />
-            <span>फीडबैक</span>
-          </button>
-
-          {/* User Specific or Admin Specific Controls */}
-          {isUser && (
-            <button 
-              className="btn btn-secondary"
-              onClick={onOpenProfile}
-              title="अपनी प्रोफ़ाइल देखें एवं अपडेट अनुरोध करें"
-            >
-              <User size={15} />
-              <span>मेरी प्रोफ़ाइल</span>
-            </button>
-          )}
-
-          {(isAdmin || isCoAdmin) && (
-            <button 
-              className="btn btn-admin"
-              onClick={onOpenAdmin}
-              title={isAdmin ? "Super Admin Portal" : `Co-Admin Portal (${currentUser.district})`}
-            >
-              <Lock size={15} />
-              <span>{isAdmin ? 'Admin नियंत्रण' : `Co-Admin (${currentUser.district})`}</span>
-              {pendingCount > 0 && (
-                <span className="tab-badge">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {isLoggedIn ? (
-            <button 
-              className="btn btn-secondary"
-              onClick={onLogout}
-              title="पोर्टल से लॉगआउट करें"
-              style={{
-                borderColor: 'rgba(239, 68, 68, 0.4)',
-                color: '#fca5a5'
-              }}
-            >
-              <LogOut size={15} />
-              <span>लॉगआउट</span>
-            </button>
-          ) : (
-            <>
-              <button 
-                className="btn btn-primary"
-                onClick={onOpenRegister}
-                title="नया कर्मचारी स्व-पंजीकरण"
-              >
-                <UserPlus size={15} />
-                <span>स्व-पंजीकरण</span>
-              </button>
-
-              <button 
-                className="btn btn-admin"
-                onClick={onOpenLogin}
-                title="पोर्टल लॉगिन करें"
-              >
-                <KeyRound size={15} />
-                <span>लॉगिन</span>
-              </button>
-            </>
-          )}
         </div>
-      </div>
-
-      {/* Status Bar */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '0.85rem', 
-        marginTop: '0.75rem', 
-        paddingTop: '0.65rem', 
-        borderTop: '1px solid rgba(255,255,255,0.08)', 
-        flexWrap: 'wrap', 
-        alignItems: 'center', 
-        fontSize: '0.8rem', 
-        color: 'var(--text-secondary)' 
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <CheckCircle size={14} color="var(--success-emerald, #10b981)" />
-          <span>सक्रिय कार्मिक: <strong style={{ color: 'var(--text-bright)' }}>{totalApprovedCount}</strong></span>
-        </div>
-
-        {pendingCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Clock size={14} color="var(--warning-amber, #f59e0b)" />
-            <span>लंबित सत्यापन: <strong style={{ color: 'var(--warning-amber)' }}>{pendingCount}</strong></span>
-          </div>
-        )}
-
-        {currentUser && (
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '5px', 
-            background: 'rgba(196,151,86,0.12)', 
-            padding: '2px 8px', 
-            borderRadius: '12px', 
-            border: '1px solid rgba(196,151,86,0.3)' 
-          }}>
-            <User size={12} color="var(--khaki-primary, #c49756)" />
-            <span>लॉगिन: <strong style={{ color: 'var(--khaki-light, #dfb97e)' }}>{currentUser.name}</strong></span>
-            {currentUser.district && <span style={{ opacity: 0.85 }}>({currentUser.district})</span>}
-          </div>
-        )}
-
-        {isAdmin && onResetData && (
-          <div style={{ marginLeft: 'auto' }}>
-            <button 
-              onClick={onResetData}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-              title="डिफ़ॉल्ट डेटा रीसेट करें"
-            >
-              <RefreshCw size={11} />
-              <span>डेटा रीसेट</span>
-            </button>
-          </div>
-        )}
       </div>
     </header>
   );

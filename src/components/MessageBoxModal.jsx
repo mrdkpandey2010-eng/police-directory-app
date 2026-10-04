@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, MessageSquare, Send, Paperclip, Users, User, Phone, 
   Shield, Plus, Search, Check, Download, 
-  Mail, FileText, Cloud
+  Mail, FileText, Cloud, FileSpreadsheet, PhoneCall, AlertTriangle
 } from 'lucide-react';
 import { getChatsForUser, getUnreadCountForChat } from '../utils/storage';
+import { callManager } from '../utils/webrtc';
 
 export default function MessageBoxModal({ 
   isOpen, 
@@ -105,29 +106,41 @@ export default function MessageBoxModal({
     ? contacts.find(c => c.id === otherParticipantId) 
     : null;
 
-  // Handle file select (image or PDF under 3MB)
+  // Strictly enforce whitelist: MS Word, Excel, PDF, Images only. Block any executables or scripts.
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const isImage = file.type.startsWith('image/');
-    const isPdf = file.type === 'application/pdf';
+    const fileName = (file.name || '').toLowerCase();
+    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif)$/i.test(fileName);
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(fileName);
+    const isWord = /\.docx?$/i.test(fileName) || 
+      file.type === 'application/msword' || 
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const isExcel = /\.xlsx?$/i.test(fileName) || 
+      file.type === 'application/vnd.ms-excel' || 
+      file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-    if (!isImage && !isPdf) {
-      alert('केवल JPG/PNG फ़ोटो या PDF दस्तावेज़ ही समर्थित हैं।');
+    // Strict rejection of any non-whitelisted files, executables, scripts, or archives
+    if (!isImage && !isPdf && !isWord && !isExcel) {
+      alert('⚠️ सुरक्षा प्रतिबंध: चैट में केवल Microsoft Word (.doc, .docx), Excel (.xls, .xlsx), PDF (.pdf) एवं तस्वीरें (JPG/PNG) ही मान्य हैं। कोई अन्य फ़ाइल या प्रोग्राम (.exe/.bat/.zip/इत्यादि) पूर्णतः प्रतिबंधित है।');
+      if (e.target) e.target.value = '';
       return;
     }
 
-    if (file.size > 3 * 1024 * 1024) {
-      alert('कृपया 3 MB से छोटी फ़ोटो या PDF चुनें।');
+    if (file.size > 10 * 1024 * 1024) {
+      alert('कृपया 10 MB से छोटी फ़ाइल चुनें।');
+      if (e.target) e.target.value = '';
       return;
     }
+
+    const detectedType = isImage ? 'image' : isPdf ? 'pdf' : isWord ? 'word' : 'excel';
 
     const reader = new FileReader();
     reader.onload = (event) => {
       setAttachedFile({
         name: file.name,
-        type: isImage ? 'image' : 'pdf',
+        type: detectedType,
         size: `${Math.round(file.size / 1024)} KB`,
         url: event.target.result
       });
@@ -738,29 +751,43 @@ export default function MessageBoxModal({
                     </div>
                   </div>
 
-                  {/* Quick Action Buttons for Direct Chat (Call / WhatsApp) */}
-                  {currentChat.type === 'direct' && otherContact?.phone && (
+                  {/* Quick Action Buttons for Direct Chat (In-App Call / Direct SIM Call - WhatsApp Removed) */}
+                  {currentChat.type === 'direct' && otherContact && (
                     <div style={{ display: 'flex', gap: '0.4rem' }}>
-                      <a 
-                        href={`tel:${otherContact.phone}`}
+                      <button 
+                        type="button"
+                        onClick={() => callManager.startCall(currentUser, otherContact)}
                         className="btn btn-call"
-                        style={{ padding: '6px 10px', fontSize: '0.78rem' }}
-                        title="डायरेक्ट कॉल करें"
+                        style={{
+                          padding: '5px 10px',
+                          fontSize: '0.78rem',
+                          background: 'linear-gradient(135deg, #15803d, #166534)',
+                          color: '#fff',
+                          border: '1px solid rgba(34,197,94,0.4)',
+                          borderRadius: '6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          cursor: 'pointer',
+                          fontWeight: 700
+                        }}
+                        title="सुरक्षित इन-ऐप वॉइस कॉल (अधिकतम 05 मिनट)"
                       >
-                        <Phone size={13} />
-                        <span>कॉल</span>
-                      </a>
-                      <a 
-                        href={`https://wa.me/${(otherContact.phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`जय हिंद, ${otherContact.name || ''} जी!`)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-wa"
-                        style={{ padding: '6px 10px', fontSize: '0.78rem' }}
-                        title="वॉट्सऐप पर संपर्क करें"
-                      >
-                        <MessageSquare size={13} />
-                        <span>वॉट्सऐप</span>
-                      </a>
+                        <PhoneCall size={13} />
+                        <span>इन-ऐप कॉल</span>
+                      </button>
+
+                      {otherContact.phone && (
+                        <a 
+                          href={`tel:${otherContact.phone}`}
+                          className="btn btn-secondary"
+                          style={{ padding: '5px 9px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          title="डायरेक्ट फोन कॉल करें"
+                        >
+                          <Phone size={13} />
+                          <span>फोन</span>
+                        </a>
+                      )}
                     </div>
                   )}
                 </div>
@@ -843,12 +870,43 @@ export default function MessageBoxModal({
                                       {msg.file.name} ({msg.file.size})
                                     </div>
                                   </div>
+                                ) : msg.file.type === 'word' ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <FileText size={22} color="#60a5fa" />
+                                    <div>
+                                      <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>{msg.file.name}</div>
+                                      <div style={{ fontSize: '0.7rem', color: '#93c5fd' }}>MS Word दस्तावेज़ ({msg.file.size})</div>
+                                      {msg.file.url && (
+                                        <a href={msg.file.url} download={msg.file.name} style={{ fontSize: '0.68rem', color: 'var(--khaki-light)', textDecoration: 'underline' }}>
+                                          डाउनलोड करें
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : msg.file.type === 'excel' ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <FileSpreadsheet size={22} color="#34d399" />
+                                    <div>
+                                      <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>{msg.file.name}</div>
+                                      <div style={{ fontSize: '0.7rem', color: '#6ee7b7' }}>MS Excel स्प्रेडशीट ({msg.file.size})</div>
+                                      {msg.file.url && (
+                                        <a href={msg.file.url} download={msg.file.name} style={{ fontSize: '0.68rem', color: 'var(--khaki-light)', textDecoration: 'underline' }}>
+                                          डाउनलोड करें
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
                                 ) : (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <FileText size={20} color="var(--gold-primary)" />
                                     <div>
                                       <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>{msg.file.name}</div>
                                       <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>PDF दस्तावेज़ ({msg.file.size})</div>
+                                      {msg.file.url && (
+                                        <a href={msg.file.url} download={msg.file.name} style={{ fontSize: '0.68rem', color: 'var(--khaki-light)', textDecoration: 'underline' }}>
+                                          डाउनलोड करें
+                                        </a>
+                                      )}
                                     </div>
                                   </div>
                                 )}
@@ -922,7 +980,7 @@ export default function MessageBoxModal({
                   {/* File attach button */}
                   <label style={{
                     background: 'rgba(255,255,255,0.08)',
-                    color: 'var(--gold-primary, #e5b842)',
+                    color: 'var(--khaki-primary, #c49756)',
                     padding: '8px',
                     borderRadius: '8px',
                     cursor: 'pointer',
@@ -930,12 +988,12 @@ export default function MessageBoxModal({
                     alignItems: 'center',
                     justifyContent: 'center',
                     border: '1px solid rgba(255,255,255,0.15)'
-                  }} title="फ़ोटो या PDF संलग्न करें (अधिकतम 3 MB)">
+                  }} title="दस्तावेज़ संलग्न करें (MS Word, Excel, PDF, फ़ोटो - अधिकतम 10 MB)">
                     <Paperclip size={18} />
                     <input 
                       ref={fileInputRef}
                       type="file" 
-                      accept="image/*,application/pdf"
+                      accept="image/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                       onChange={handleFileChange}
                       style={{ display: 'none' }} 
                     />

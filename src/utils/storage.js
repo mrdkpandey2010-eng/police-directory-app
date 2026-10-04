@@ -1112,3 +1112,239 @@ export const downloadSampleExcel = () => {
   XLSX.utils.book_append_sheet(workbook, worksheet, "Police_Directory");
   XLSX.writeFile(workbook, "Police_Directory_Template.xlsx");
 };
+
+// ---------------- CALL LOGS (In-App Voice Calling Audit Trail) ----------------
+const CALL_LOGS_KEY = 'police_directory_call_logs_v1';
+
+export const getStoredCallLogs = () => {
+  try {
+    const saved = localStorage.getItem(CALL_LOGS_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch (err) {
+    return [];
+  }
+};
+
+export const saveCallLog = (logEntry) => {
+  try {
+    const current = getStoredCallLogs();
+    const newEntry = {
+      id: `call-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      ...logEntry
+    };
+    // Keep up to 200 call logs in local storage
+    const updated = [newEntry, ...current].slice(0, 200);
+    localStorage.setItem(CALL_LOGS_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (err) {
+    console.error('Error saving call log', err);
+    return getStoredCallLogs();
+  }
+};
+
+export const clearCallLogs = () => {
+  try {
+    localStorage.removeItem(CALL_LOGS_KEY);
+    return [];
+  } catch (err) {
+    return [];
+  }
+};
+
+// ---------------- AUTOMATED 6-HOUR ROLLING BACKUP (MAX 5 SLOTS) ----------------
+const BACKUPS_KEY = 'police_directory_backups_v1';
+
+export const getStoredBackups = () => {
+  try {
+    const saved = localStorage.getItem(BACKUPS_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch (err) {
+    return [];
+  }
+};
+
+export const createBackupSlot = (label = 'स्वचालित 6-घंटे का आवधिक बैकअप') => {
+  try {
+    const currentBackups = getStoredBackups();
+    
+    // Create snapshot of all major keys
+    const snapshot = {
+      id: `backup-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      label,
+      data: {
+        contacts: getStoredContacts(),
+        coAdmins: getStoredCoAdmins(),
+        chats: getStoredChats(),
+        callLogs: getStoredCallLogs(),
+        notifications: getStoredNotifications(),
+        feedbacks: getStoredFeedbacks(),
+        terms: getStoredTerms(),
+        posts: getStoredPosts(),
+        offices: getStoredOffices(),
+        districts: getStoredDistricts()
+      },
+      counts: {
+        contacts: getStoredContacts().length,
+        chats: getStoredChats().length,
+        callLogs: getStoredCallLogs().length
+      }
+    };
+
+    // Keep MAX 5 slots; overwrite oldest when exceeding 5
+    const updated = [snapshot, ...currentBackups].slice(0, 5);
+    localStorage.setItem(BACKUPS_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (err) {
+    console.error('Error creating backup slot', err);
+    return getStoredBackups();
+  }
+};
+
+export const checkAndTrigger6HourBackup = () => {
+  try {
+    const backups = getStoredBackups();
+    const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+    
+    if (backups.length === 0) {
+      return createBackupSlot('प्रारंभिक आधारभूत बैकअप (Baseline Backup)');
+    }
+
+    const latest = backups[0];
+    const latestTime = new Date(latest.timestamp).getTime();
+    const now = Date.now();
+
+    if (now - latestTime >= SIX_HOURS_MS) {
+      return createBackupSlot('स्वचालित 6-घंटे का आवधिक बैकअप (Rolling Backup)');
+    }
+
+    return backups;
+  } catch (err) {
+    return getStoredBackups();
+  }
+};
+
+export const restoreBackupSlot = (backupId) => {
+  try {
+    const backups = getStoredBackups();
+    const target = backups.find(b => b.id === backupId);
+    if (!target || !target.data) {
+      throw new Error('बैकअप स्लॉट उपलब्ध नहीं है या डेटा रिक्त है।');
+    }
+
+    const { contacts, coAdmins, chats, callLogs, notifications, feedbacks, terms, posts, offices, districts } = target.data;
+    if (contacts) saveContacts(contacts);
+    if (coAdmins) saveCoAdmins(coAdmins);
+    if (chats) saveChats(chats);
+    if (callLogs) localStorage.setItem(CALL_LOGS_KEY, JSON.stringify(callLogs));
+    if (notifications) saveNotifications(notifications);
+    if (feedbacks) saveFeedbacks(feedbacks);
+    if (terms) saveTerms(terms);
+    if (posts) savePosts(posts);
+    if (offices) saveOffices(offices);
+    if (districts) saveDistricts(districts);
+
+    return true;
+  } catch (err) {
+    console.error('Error restoring backup slot', err);
+    throw err;
+  }
+};
+
+// ---------------- PHONE NUMBER PRIVACY & PERMISSION SYSTEM ----------------
+const PHONE_PERMISSIONS_KEY = 'police_directory_phone_permissions_v1';
+
+export const getStoredPhonePermissions = () => {
+  try {
+    const saved = localStorage.getItem(PHONE_PERMISSIONS_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch (err) {
+    return [];
+  }
+};
+
+export const savePhonePermissions = (perms) => {
+  try {
+    localStorage.setItem(PHONE_PERMISSIONS_KEY, JSON.stringify(perms));
+  } catch (err) {}
+};
+
+export const requestPhonePermission = (requester, targetOfficer) => {
+  const current = getStoredPhonePermissions();
+  // Check if an existing request is already there
+  const existing = current.find(p => p.requesterId === requester.id && p.targetId === targetOfficer.id);
+  if (existing) {
+    return { success: false, status: existing.status, message: `अनुरोध पहले से भेजा जा चुका है (${existing.status})` };
+  }
+
+  const newReq = {
+    id: `perm-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    requesterId: requester.id,
+    requesterName: requester.name,
+    requesterPost: requester.post,
+    requesterDistrict: requester.district,
+    requesterPhone: requester.phone,
+    targetId: targetOfficer.id,
+    targetName: targetOfficer.name,
+    status: 'pending', // 'pending' | 'approved' | 'rejected'
+    requestedAt: new Date().toISOString()
+  };
+
+  const updated = [newReq, ...current];
+  savePhonePermissions(updated);
+  return { success: true, request: newReq };
+};
+
+export const respondPhonePermission = (requestId, newStatus) => {
+  const current = getStoredPhonePermissions();
+  const updated = current.map(p => p.id === requestId ? { ...p, status: newStatus, respondedAt: new Date().toISOString() } : p);
+  savePhonePermissions(updated);
+  return updated;
+};
+
+export const canViewPhoneNumber = (viewer, targetOfficer, permissions = []) => {
+  if (!viewer || !targetOfficer) return false;
+
+  // Super Admin can always view all numbers
+  if (viewer.role === 'admin') return true;
+
+  // Co-Admin can always view all numbers in their district
+  if (viewer.role === 'co_admin' && viewer.district === targetOfficer.district) return true;
+
+  // Viewing self
+  if (viewer.id === targetOfficer.id) return true;
+
+  // If user has not hidden their phone and no privacy gate is enabled
+  if (!targetOfficer.isPhoneHidden) {
+    // If user marked as not hidden, visible to police peers
+    return true;
+  }
+
+  // If user has hidden their phone, check if approved permission exists
+  const hasApprovedPerm = permissions.some(p => 
+    p.requesterId === viewer.id && 
+    p.targetId === targetOfficer.id && 
+    p.status === 'approved'
+  );
+
+  return hasApprovedPerm;
+};
+
+// ---------------- 2FA FOR ADMIN PANEL ----------------
+const TWO_FACTOR_KEY = 'police_directory_2fa_config_v1';
+
+export const getStored2FAConfig = () => {
+  try {
+    const saved = localStorage.getItem(TWO_FACTOR_KEY);
+    return saved ? JSON.parse(saved) : { enabled: true, secretPin: '998877' };
+  } catch (err) {
+    return { enabled: true, secretPin: '998877' };
+  }
+};
+
+export const save2FAConfig = (config) => {
+  try {
+    localStorage.setItem(TWO_FACTOR_KEY, JSON.stringify(config));
+  } catch (err) {}
+};

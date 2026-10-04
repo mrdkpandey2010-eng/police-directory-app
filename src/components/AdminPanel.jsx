@@ -3,9 +3,14 @@ import {
   X, Lock, Unlock, FileSpreadsheet, Download, Upload, CheckCircle, 
   XCircle, Edit3, Trash2, Clock, Users, Shield, KeyRound, Plus, 
   ShieldCheck, Settings, Power, UserCheck, Award, Building2, MapPin,
-  FileText
+  FileText, PhoneCall, HardDrive, Eye, RefreshCw
 } from 'lucide-react';
-import { downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS } from '../utils/storage';
+import { 
+  downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS,
+  getStoredCallLogs, clearCallLogs, getStoredBackups, createBackupSlot,
+  restoreBackupSlot, getStored2FAConfig, save2FAConfig,
+  getStoredPhonePermissions, respondPhonePermission
+} from '../utils/storage';
 
 export default function AdminPanel({ 
   isOpen, 
@@ -42,9 +47,25 @@ export default function AdminPanel({
   const isCoAdmin = currentUser?.role === 'co_admin';
   const myDistrict = isCoAdmin ? currentUser.district : null;
 
-  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'manage' | 'excel' | 'coadmins' | 'master' | 'terms'
+  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'manage' | 'excel' | 'coadmins' | 'master' | 'terms' | 'call_logs' | 'backups' | 'phone_perms' | '2fa_settings'
   const [masterSubTab, setMasterSubTab] = useState('posts'); // 'posts' | 'offices' | 'districts'
   
+  // Call Logs state
+  const [callLogs, setCallLogs] = useState([]);
+  const [callLogSearch, setCallLogSearch] = useState('');
+
+  // Backups state
+  const [backups, setBackups] = useState([]);
+  const [backupNotice, setBackupNotice] = useState('');
+
+  // 2FA state
+  const [twoFactorConfig, setTwoFactorConfig] = useState({ enabled: true, secretPin: '998877' });
+  const [pinChangeInput, setPinChangeInput] = useState('');
+  const [twoFaMsg, setTwoFaMsg] = useState('');
+
+  // Phone Permissions state
+  const [phonePermissions, setPhonePermissions] = useState([]);
+
   // Excel upload states
   const [excelFile, setExcelFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -82,6 +103,17 @@ export default function AdminPanel({
   const [editableTerms, setEditableTerms] = useState(terms || DEFAULT_TERMS);
   const [termsSavedMsg, setTermsSavedMsg] = useState('');
   const [newRuleInput, setNewRuleInput] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setCallLogs(getStoredCallLogs());
+      setBackups(getStoredBackups());
+      const cfg = getStored2FAConfig();
+      setTwoFactorConfig(cfg);
+      setPinChangeInput(cfg.secretPin || '998877');
+      setPhonePermissions(getStoredPhonePermissions());
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (terms) {
@@ -325,6 +357,40 @@ export default function AdminPanel({
               <FileText size={16} />
               गोपनीय नियम व शर्तें
             </button>
+
+            <button 
+              className={`admin-tab ${activeTab === 'call_logs' ? 'active' : ''}`}
+              onClick={() => setActiveTab('call_logs')}
+            >
+              <PhoneCall size={16} />
+              कॉल लॉग्स ({callLogs.length})
+            </button>
+
+            <button 
+              className={`admin-tab ${activeTab === 'backups' ? 'active' : ''}`}
+              onClick={() => setActiveTab('backups')}
+            >
+              <HardDrive size={16} />
+              6-घंटे ऑटो बैकअप ({backups.length}/5)
+            </button>
+
+            <button 
+              className={`admin-tab ${activeTab === 'phone_perms' ? 'active' : ''}`}
+              onClick={() => setActiveTab('phone_perms')}
+            >
+              <Eye size={16} />
+              नंबर अनुमति ({phonePermissions.filter(p => p.status === 'pending').length})
+            </button>
+
+            {isAdmin && (
+              <button 
+                className={`admin-tab ${activeTab === '2fa_settings' ? 'active' : ''}`}
+                onClick={() => setActiveTab('2fa_settings')}
+              >
+                <KeyRound size={16} />
+                2FA सुरक्षा
+              </button>
+            )}
           </div>
 
           {/* TAB 1: PENDING APPROVALS */}
@@ -1080,6 +1146,472 @@ export default function AdminPanel({
                   </button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {/* TAB: CALL LOGS */}
+          {activeTab === 'call_logs' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{
+                background: 'rgba(30, 58, 138, 0.25)',
+                border: '1px solid rgba(196, 151, 86, 0.3)',
+                padding: '0.85rem 1rem',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div>
+                  <h4 style={{ margin: 0, color: 'var(--khaki-light, #dfb97e)', fontSize: '0.95rem' }}>
+                    📞 इन-ऐप वॉइस कॉल निगरानी एवं सुरक्षा लॉग्स
+                  </h4>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.76rem', color: '#94a3b8' }}>
+                    सभी पीयर-टू-पीयर कॉल्स की विस्तृत ऑडिट ट्रेल (अधिकतम 05 मिनट प्रति कॉल सीमा लागू)
+                  </p>
+                </div>
+                {isAdmin && callLogs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('क्या आप सुनिश्चित हैं कि समस्त कॉल लॉग्स साफ़ करना चाहते हैं?')) {
+                        clearCallLogs();
+                        setCallLogs([]);
+                      }
+                    }}
+                    style={{
+                      background: 'rgba(239,68,68,0.2)',
+                      border: '1px solid #ef4444',
+                      color: '#fca5a5',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🗑️ सभी लॉग्स साफ़ करें
+                  </button>
+                )}
+              </div>
+
+              {/* Search in call logs */}
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="कॉलर, रिसीवर या PNO द्वारा खोजें..."
+                  value={callLogSearch}
+                  onChange={e => setCallLogSearch(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+              </div>
+
+              {/* Call Logs Table */}
+              <div style={{ overflowX: 'auto', background: 'rgba(0,0,0,0.25)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <table className="admin-table" style={{ width: '100%', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr>
+                      <th>समय (Timestamp)</th>
+                      <th>कॉलर (Caller)</th>
+                      <th>रिसीवर (Receiver)</th>
+                      <th>अवधि (Duration)</th>
+                      <th>स्थिति (Status)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {callLogs.filter(log => {
+                      if (isCoAdmin) {
+                        const inMyDist = log.callerDistrict === myDistrict || log.receiverDistrict === myDistrict;
+                        if (!inMyDist) return false;
+                      }
+                      if (!callLogSearch.trim()) return true;
+                      const q = callLogSearch.toLowerCase();
+                      return (log.callerName || '').toLowerCase().includes(q) ||
+                        (log.receiverName || '').toLowerCase().includes(q) ||
+                        (log.callerPno || '').toLowerCase().includes(q) ||
+                        (log.receiverPno || '').toLowerCase().includes(q);
+                    }).length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8' }}>
+                          कोई कॉल लॉग दर्ज नहीं है।
+                        </td>
+                      </tr>
+                    ) : (
+                      callLogs.filter(log => {
+                        if (isCoAdmin) {
+                          const inMyDist = log.callerDistrict === myDistrict || log.receiverDistrict === myDistrict;
+                          if (!inMyDist) return false;
+                        }
+                        if (!callLogSearch.trim()) return true;
+                        const q = callLogSearch.toLowerCase();
+                        return (log.callerName || '').toLowerCase().includes(q) ||
+                          (log.receiverName || '').toLowerCase().includes(q) ||
+                          (log.callerPno || '').toLowerCase().includes(q) ||
+                          (log.receiverPno || '').toLowerCase().includes(q);
+                      }).map((log, idx) => {
+                        const formatDur = (secs) => {
+                          if (!secs) return '00:00';
+                          const m = Math.floor(secs / 60);
+                          const s = secs % 60;
+                          return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                        };
+                        return (
+                          <tr key={log.id || idx}>
+                            <td style={{ color: '#cbd5e1', fontSize: '0.76rem' }}>
+                              {new Date(log.timestamp).toLocaleString('hi-IN')}
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 700, color: '#f8fafc' }}>{log.callerName || 'अज्ञात'}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--khaki-light)' }}>{log.callerPost || ''} • {log.callerDistrict || ''}</div>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 700, color: '#f8fafc' }}>{log.receiverName || 'अज्ञात'}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--khaki-light)' }}>{log.receiverPost || ''} • {log.receiverDistrict || ''}</div>
+                            </td>
+                            <td style={{ fontWeight: 800, color: log.durationSeconds >= 300 ? '#f59e0b' : '#34d399', fontFamily: 'monospace' }}>
+                              {formatDur(log.durationSeconds)}
+                              {log.durationSeconds >= 300 && <span style={{ fontSize: '0.68rem', display: 'block', color: '#f59e0b' }}>(5m कटऑफ)</span>}
+                            </td>
+                            <td>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                background: log.status === 'completed' ? 'rgba(16,185,129,0.2)' : log.status === 'missed' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
+                                color: log.status === 'completed' ? '#34d399' : log.status === 'missed' ? '#fca5a5' : '#fcd34d'
+                              }}>
+                                {log.status === 'completed' ? 'सम्पन्न (Completed)' : log.status === 'missed' ? 'मिस्ड (Missed)' : log.status === 'declined' ? 'अस्वीकृत' : log.status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: BACKUPS (6-Hour Rolling, Max 5 Slots) */}
+          {activeTab === 'backups' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{
+                background: 'rgba(14, 30, 60, 0.6)',
+                border: '1px solid var(--khaki-primary, #c49756)',
+                padding: '1rem',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div>
+                  <h4 style={{ margin: 0, color: 'var(--khaki-light, #dfb97e)', fontSize: '0.98rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <HardDrive size={18} color="var(--khaki-primary)" />
+                    <span>स्वचालित 6-घंटे का आवधिक बैकअप (Rolling Backup System)</span>
+                  </h4>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+                    प्रत्येक 6 घंटे में संपूर्ण डेटाबेस का पूर्ण स्नैपशॉट स्वतः सुरक्षित किया जाता है। अधिकतम <strong>05 बैकअप स्लॉट</strong> सुरक्षित रहते हैं; 05 से अधिक होने पर सबसे पुराना बैकअप स्वतः रीसायकल (ओवरराइट) होता है।
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = createBackupSlot('मैन्युअल प्रशासक बैकअप (Manual Admin Backup)');
+                    setBackups(updated);
+                    setBackupNotice('✅ नया बैकअप स्लॉट सफलतापूर्वक तैयार कर लिया गया है!');
+                    setTimeout(() => setBackupNotice(''), 3500);
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #c49756, #8e6833)',
+                    color: '#0a1020',
+                    border: 'none',
+                    fontWeight: 800,
+                    padding: '0.55rem 1.15rem',
+                    borderRadius: '8px',
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <RefreshCw size={14} />
+                  <span>अभी तुरंत बैकअप लें</span>
+                </button>
+              </div>
+
+              {backupNotice && (
+                <div style={{
+                  background: 'rgba(16,185,129,0.2)',
+                  border: '1px solid #10b981',
+                  color: '#34d399',
+                  padding: '0.65rem',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem'
+                }}>
+                  {backupNotice}
+                </div>
+              )}
+
+              {/* Backup Slots List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <h5 style={{ margin: 0, color: '#f8fafc', fontSize: '0.88rem' }}>
+                  सक्रिय बैकअप स्लॉट्स ({backups.length} / 5 अधिकतम)
+                </h5>
+
+                {backups.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', color: '#94a3b8' }}>
+                    वर्तमान में कोई बैकअप स्लॉट उपलब्ध नहीं है। कृपया "अभी तुरंत बैकअप लें" पर क्लिक करें।
+                  </div>
+                ) : (
+                  backups.map((slot, index) => (
+                    <div key={slot.id} style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(196,151,86,0.3)',
+                      borderRadius: '10px',
+                      padding: '0.85rem 1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '0.75rem'
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            background: 'rgba(196,151,86,0.2)',
+                            color: 'var(--khaki-light)',
+                            border: '1px solid var(--khaki-primary)',
+                            padding: '2px 7px',
+                            borderRadius: '4px',
+                            fontWeight: 800,
+                            fontSize: '0.72rem'
+                          }}>
+                            स्लॉट #{index + 1}
+                          </span>
+                          <span style={{ fontWeight: 700, color: '#f8fafc', fontSize: '0.88rem' }}>
+                            {slot.label || 'आवधिक 6-घंटे बैकअप'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: '4px' }}>
+                          समय: <strong>{new Date(slot.timestamp).toLocaleString('hi-IN')}</strong> • कार्मिक रिकॉर्ड: {slot.counts?.contacts || 0} • चैट संवाद: {slot.counts?.chats || 0} • कॉल लॉग्स: {slot.counts?.callLogs || 0}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`चेतावनी: क्या आप बैकअप स्लॉट #${index + 1} (${new Date(slot.timestamp).toLocaleString('hi-IN')}) से संपूर्ण डेटाबेस पुनर्स्थापित (Restore) करना चाहते हैं?`)) {
+                            try {
+                              restoreBackupSlot(slot.id);
+                              alert('✅ डेटाबेस सफलतापूर्वक पुनर्स्थापित (Restored) हो गया है! पृष्ठ पुनः लोड हो रहा है...');
+                              window.location.reload();
+                            } catch (e) {
+                              alert('पुनर्स्थापन त्रुटि: ' + e.message);
+                            }
+                          }
+                        }}
+                        style={{
+                          background: 'rgba(16,185,129,0.15)',
+                          border: '1px solid #10b981',
+                          color: '#34d399',
+                          padding: '5px 12px',
+                          borderRadius: '6px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        पुनर्स्थापित करें (Restore)
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: PHONE NUMBER PERMISSION REQUESTS */}
+          {activeTab === 'phone_perms' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{
+                background: 'rgba(30, 58, 138, 0.25)',
+                border: '1px solid rgba(196, 151, 86, 0.3)',
+                padding: '0.85rem 1rem',
+                borderRadius: '10px'
+              }}>
+                <h4 style={{ margin: 0, color: 'var(--khaki-light, #dfb97e)', fontSize: '0.95rem' }}>
+                  👁️ गोपनीय फोन नंबर देखने हेतु अनुमति अनुरोध
+                </h4>
+                <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                  {isCoAdmin ? `जनपद ${myDistrict} के अंतर्गत कार्मिकों द्वारा भेजे गए नंबर एक्सेस अनुरोध` : 'राज्य भर के समस्त कार्मिकों द्वारा भेजे गए नंबर एक्सेस अनुरोध'}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                {phonePermissions.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', color: '#94a3b8' }}>
+                    वर्तमान में कोई अनुमति अनुरोध लंबित नहीं है।
+                  </div>
+                ) : (
+                  phonePermissions.map((req) => (
+                    <div key={req.id} style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: '8px',
+                      padding: '0.75rem 1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '0.5rem'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '0.84rem', color: '#fff', fontWeight: 700 }}>
+                          {req.requesterName} ({req.requesterPost}) • {req.requesterDistrict}
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--khaki-light)', marginTop: '2px' }}>
+                          अनुरोधित अधिकारी: <strong>{req.targetName}</strong> • समय: {new Date(req.requestedAt).toLocaleString('hi-IN')}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          background: req.status === 'approved' ? 'rgba(16,185,129,0.2)' : req.status === 'rejected' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
+                          color: req.status === 'approved' ? '#34d399' : req.status === 'rejected' ? '#fca5a5' : '#fcd34d'
+                        }}>
+                          {req.status === 'approved' ? 'स्वीकृत' : req.status === 'rejected' ? 'अस्वीकृत' : 'लंबित (Pending)'}
+                        </span>
+
+                        {req.status === 'pending' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = respondPhonePermission(req.id, 'approved');
+                                setPhonePermissions(updated);
+                              }}
+                              style={{
+                                background: '#10b981',
+                                color: '#fff',
+                                border: 'none',
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                cursor: 'pointer',
+                                fontWeight: 700
+                              }}
+                            >
+                              स्वीकृत करें
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = respondPhonePermission(req.id, 'rejected');
+                                setPhonePermissions(updated);
+                              }}
+                              style={{
+                                background: '#ef4444',
+                                color: '#fff',
+                                border: 'none',
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                cursor: 'pointer',
+                                fontWeight: 700
+                              }}
+                            >
+                              अस्वीकृत करें
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: 2FA SETTINGS (Super Admin Only) */}
+          {isAdmin && activeTab === '2fa_settings' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '600px' }}>
+              <div style={{
+                background: 'rgba(30, 58, 138, 0.25)',
+                border: '1px solid var(--khaki-primary, #c49756)',
+                padding: '1rem',
+                borderRadius: '10px'
+              }}>
+                <h4 style={{ margin: 0, color: 'var(--khaki-light, #dfb97e)', fontSize: '0.98rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <KeyRound size={18} color="var(--khaki-primary)" />
+                  <span>प्रशासक Two-Factor Authentication (2FA) सेटिंग्स</span>
+                </h4>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: '#cbd5e1' }}>
+                  एडमिन एवं को-एडमिन पोर्टल सुरक्षा हेतु द्वि-चरणीय सत्यापन पिन निर्धारित करें।
+                </p>
+              </div>
+
+              {twoFaMsg && (
+                <div style={{ background: 'rgba(16,185,129,0.2)', border: '1px solid #10b981', color: '#34d399', padding: '0.65rem', borderRadius: '8px', fontSize: '0.82rem' }}>
+                  {twoFaMsg}
+                </div>
+              )}
+
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.86rem', color: '#fff' }}>
+                  <input
+                    type="checkbox"
+                    checked={twoFactorConfig.enabled}
+                    onChange={(e) => setTwoFactorConfig({ ...twoFactorConfig, enabled: e.target.checked })}
+                    style={{ width: '16px', height: '16px', accentColor: 'var(--khaki-primary)' }}
+                  />
+                  <span>एडमिन पैनल खोलने हेतु 2FA सुरक्षा अनिवार्य रखें (Enforce 2FA on Entry)</span>
+                </label>
+
+                <div>
+                  <label className="form-label">मास्टर 2FA सुरक्षा पिन (6-अंक):</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    className="form-input"
+                    value={pinChangeInput}
+                    onChange={(e) => setPinChangeInput(e.target.value.replace(/\D/g, ''))}
+                    placeholder="उदा. 998877"
+                    style={{ fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '1.1rem' }}
+                  />
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                    वर्तमान पिन: <code>{twoFactorConfig.secretPin || '998877'}</code>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pinChangeInput.length < 4) {
+                      alert('कृपया कम से कम 4 से 6 अंकों का पिन दर्ज करें।');
+                      return;
+                    }
+                    const updated = { enabled: twoFactorConfig.enabled, secretPin: pinChangeInput };
+                    save2FAConfig(updated);
+                    setTwoFactorConfig(updated);
+                    setTwoFaMsg('✅ 2FA सुरक्षा सेटिंग्स सफलतापूर्वक अपडेट की गईं!');
+                    setTimeout(() => setTwoFaMsg(''), 3500);
+                  }}
+                  className="btn btn-primary"
+                  style={{ alignSelf: 'flex-start', padding: '0.55rem 1.25rem' }}
+                >
+                  सुरक्षा पिन सहेजें (Save PIN)
+                </button>
+              </div>
             </div>
           )}
         </div>

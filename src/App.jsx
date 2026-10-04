@@ -13,6 +13,11 @@ import MessageBoxModal from './components/MessageBoxModal';
 import FirebaseSetupModal from './components/FirebaseSetupModal';
 import UniformPhotoGate from './components/UniformPhotoGate';
 import AuthGateway from './components/AuthGateway';
+import PolicyModal from './components/PolicyModal';
+import LoginDisclaimerModal from './components/LoginDisclaimerModal';
+import Admin2FAModal from './components/Admin2FAModal';
+import ActiveCallModal from './components/ActiveCallModal';
+import HeaderMenuDrawer from './components/HeaderMenuDrawer';
 import {
   isFirebaseConfigured,
   subscribeToFirestoreChats,
@@ -66,10 +71,15 @@ import {
   resetToDefaultContacts,
   getStoredTerms,
   saveTerms,
-  DEFAULT_TERMS
+  DEFAULT_TERMS,
+  checkAndTrigger6HourBackup,
+  createBackupSlot,
+  getStoredBackups,
+  getStoredPhonePermissions,
+  getStored2FAConfig
 } from './utils/storage';
 import TermsFooter from './components/TermsFooter';
-import { MapPin, Shield, Search } from 'lucide-react';
+import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall } from 'lucide-react';
 
 export default function App() {
   const [contacts, setContacts] = useState([]);
@@ -98,6 +108,8 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [isAdmin2FAModalOpen, setIsAdmin2FAModalOpen] = useState(false);
+  const [is2FAVerifiedThisSession, setIs2FAVerifiedThisSession] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isNotifsModalOpen, setIsNotifsModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
@@ -105,6 +117,20 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState(null);
   const [isFirebaseSetupOpen, setIsFirebaseSetupOpen] = useState(false);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(isFirebaseConfigured());
+
+  // Policy Modal
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
+  const [activePolicyType, setActivePolicyType] = useState('disclaimer');
+
+  // Post-Login Mandatory Disclaimer Gate
+  const [isDisclaimerModalOpen, setIsDisclaimerModalOpen] = useState(false);
+  const [disclaimerAgreed, setDisclaimerAgreed] = useState(false);
+
+  // Toggle Slide Menu Drawer
+  const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false);
+
+  // Phone privacy permissions
+  const [phonePermissions, setPhonePermissions] = useState([]);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
@@ -128,7 +154,53 @@ export default function App() {
     setOffices(getStoredOffices());
     setDistricts(getStoredDistricts());
     setTerms(getStoredTerms());
+    setPhonePermissions(getStoredPhonePermissions());
     
+    // Check and trigger rolling 6-hour automated backup
+    checkAndTrigger6HourBackup();
+
+    // Setup periodic backup check every 30 minutes
+    const backupInterval = setInterval(() => {
+      checkAndTrigger6HourBackup();
+    }, 30 * 60 * 1000);
+
+    // Anti-Screenshot & Screen Recording Protections (IT Act & Police Regulations)
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      showToast('⚠️ शासकीय सुरक्षा सूचना: पोर्टल पर राइट-क्लिक एवं सामग्री प्रतिलिपि पूर्णतः प्रतिबंधित है।');
+      return false;
+    };
+
+    const handleKeyDown = (e) => {
+      // PrintScreen Key Block
+      if (e.key === 'PrintScreen' || e.keyCode === 44) {
+        e.preventDefault();
+        try { navigator.clipboard.writeText(''); } catch(err) {}
+        alert('⚠️ शासकीय सुरक्षा सूचना: उत्तर प्रदेश पुलिस पोर्टल का स्क्रीनशॉट या स्क्रीन रिकॉर्डिंग पूर्णतः प्रतिबंधित है। विभागीय नियमावली एवं आईटी एक्ट 2000 के अंतर्गत आपका सत्र एवं पहचान सुरक्षित की जा रही है।');
+        return false;
+      }
+
+      // Print (Ctrl+P), Save (Ctrl+S), View Source (Ctrl+U)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 's' || e.key === 'u')) {
+        e.preventDefault();
+        showToast('⚠️ शासकीय सुरक्षा सूचना: इस पृष्ठ का प्रिंट अथवा लोकल सेव प्रतिबंधित है।');
+        return false;
+      }
+
+      // Developer Tools: F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C
+      if (
+        e.key === 'F12' ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C'))
+      ) {
+        e.preventDefault();
+        showToast('⚠️ डेवलपर टूल्स का उपयोग प्रतिबंधित है।');
+        return false;
+      }
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('keydown', handleKeyDown);
+
     // Check if user session already exists
     const savedUser = getStoredSession();
     if (savedUser) {
@@ -136,10 +208,23 @@ export default function App() {
       if (savedUser.role === 'user') {
         setSelectedDistrict(savedUser.district || '');
       }
+      const agreed = sessionStorage.getItem(`police_disclaimer_agreed_${savedUser.id}`) === 'true';
+      if (!agreed) {
+        setIsDisclaimerModalOpen(true);
+        setDisclaimerAgreed(false);
+      } else {
+        setDisclaimerAgreed(true);
+      }
     } else {
       // Mandatory front screen login wall
       setCurrentUser(null);
     }
+
+    return () => {
+      clearInterval(backupInterval);
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   // Listen to real-time chat updates from Firebase Firestore
@@ -211,70 +296,56 @@ export default function App() {
     } else {
       setSelectedDistrict('');
     }
+
+    // Check mandatory post-login disclaimer
+    const alreadyAgreed = sessionStorage.getItem(`police_disclaimer_agreed_${userObj.id}`) === 'true';
+    if (!alreadyAgreed) {
+      setIsDisclaimerModalOpen(true);
+      setDisclaimerAgreed(false);
+    } else {
+      setIsDisclaimerModalOpen(false);
+      setDisclaimerAgreed(true);
+    }
+
     showToast(`सफलतापूर्वक लॉगिन: ${userObj.name} (${userObj.role === 'admin' ? 'Super Admin' : userObj.role === 'co_admin' ? `Co-Admin ${userObj.district}` : 'User'})`);
+  };
+
+  const handleAgreeDisclaimer = () => {
+    if (currentUser) {
+      sessionStorage.setItem(`police_disclaimer_agreed_${currentUser.id}`, 'true');
+    }
+    setDisclaimerAgreed(true);
+    setIsDisclaimerModalOpen(false);
+    showToast('✅ आपने आधिकारिक अस्वीकरण एवं सेवा शर्तों को स्वीकार कर लिया है।');
+  };
+
+  const handleOpenAdminPanel = () => {
+    const cfg = getStored2FAConfig();
+    if (cfg.enabled && !is2FAVerifiedThisSession) {
+      setIsAdmin2FAModalOpen(true);
+    } else {
+      setIsAdminModalOpen(true);
+    }
+  };
+
+  const handle2FASuccess = () => {
+    setIs2FAVerifiedThisSession(true);
+    setIsAdmin2FAModalOpen(false);
+    setIsAdminModalOpen(true);
+    showToast('✅ 2FA द्वि-चरणीय सत्यापन सफल! एडमिन कंट्रोल पैनल सक्रिय।');
+  };
+
+  const handleOpenPolicy = (type = 'disclaimer') => {
+    setActivePolicyType(type);
+    setIsPolicyModalOpen(true);
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     saveSession(null);
     setIsChatModalOpen(false);
+    setIs2FAVerifiedThisSession(false);
     showToast('आप पोर्टल से लॉगआउट हो गए हैं। सुरक्षा हेतु विवरण छुपा दिए गए हैं।');
-  };
-
-  // Quick Role Switcher for instant testing
-  const handleQuickRoleSwitch = (roleKey) => {
-    if (roleKey === 'admin') {
-      const adminObj = {
-        role: 'admin',
-        name: 'मुख्यालय पुलिस महानिदेशक (Super Admin)',
-        district: 'सभी ज़िले (All Districts)',
-        id: 'super-admin'
-      };
-      setCurrentUser(adminObj);
-      saveSession(adminObj);
-      setSelectedDistrict('');
-      showToast('👑 सक्रिय रोल: Super Admin (सभी जनपदों का पूर्ण अधिकार)');
-    } else if (roleKey === 'co_admin_lk') {
-      const lkCo = coAdmins.find(c => c.district === 'लखनऊ') || coAdmins[0];
-      const coObj = { role: 'co_admin', ...lkCo };
-      setCurrentUser(coObj);
-      saveSession(coObj);
-      setSelectedDistrict('लखनऊ');
-      showToast('🛡️ सक्रिय रोल: Co-Admin (लखनऊ जनपद)');
-    } else if (roleKey === 'co_admin_kn') {
-      const knCo = coAdmins.find(c => c.district === 'कानपुर नगर') || coAdmins[1];
-      const coObj = { role: 'co_admin', ...knCo };
-      setCurrentUser(coObj);
-      saveSession(coObj);
-      setSelectedDistrict('कानपुर नगर');
-      showToast('🛡️ सक्रिय रोल: Co-Admin (कानपुर नगर जनपद)');
-    } else if (roleKey === 'user') {
-      const sampleUser = contacts.find(c => c.pno === 'PNO-012849103') || contacts[2];
-      const userObj = { role: 'user', ...sampleUser };
-      setCurrentUser(userObj);
-      saveSession(userObj);
-      setUserDistrictScope('my_district');
-      setSelectedDistrict(sampleUser.district || 'लखनऊ');
-      showToast(`👮 सक्रिय रोल: User (${sampleUser.name} - ${sampleUser.district})`);
-    } else if (roleKey === 'user_no_photo') {
-      const noPhotoUser = contacts.find(c => c.id === 'pol-115') || {
-        id: 'pol-115',
-        name: 'विकास यादव (फोटो अपलोड अपेक्षित)',
-        pno: 'PNO-999000111',
-        post: 'आरक्षी (Constable)',
-        district: 'लखनऊ',
-        office: 'थाना विभूति खंड',
-        phone: '9454401999',
-        status: 'approved',
-        uniformPhoto: null
-      };
-      const userObj = { role: 'user', ...noPhotoUser };
-      setCurrentUser(userObj);
-      saveSession(userObj);
-      setUserDistrictScope('my_district');
-      setSelectedDistrict('लखनऊ');
-      showToast('⚠️ सक्रिय रोल: विकास यादव (बिना वर्दी फोटो - अनिवार्य फोटो सत्यापन गेट सक्रिय)');
-    }
   };
 
   // Filtered approved & active contacts (Scoped by role & district)
@@ -724,6 +795,14 @@ export default function App() {
           districts={districts}
           offices={offices}
           terms={terms}
+          onOpenPolicy={handleOpenPolicy}
+        />
+
+        {/* Policy Details Modal */}
+        <PolicyModal
+          isOpen={isPolicyModalOpen}
+          activePolicy={activePolicyType}
+          onClose={() => setIsPolicyModalOpen(false)}
         />
 
         {/* Google Firebase Cloud Live Chat Setup Modal (Accessible on Login Screen) */}
@@ -763,7 +842,39 @@ export default function App() {
         />
       )}
 
-      {/* Header with Active User Profile & Logout */}
+      {/* Subtle Anti-Screenshot & Screen Recording Security Watermark */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        pointerEvents: 'none',
+        zIndex: 9995,
+        overflow: 'hidden',
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignContent: 'space-around',
+        justifyContent: 'space-around',
+        opacity: 0.035,
+        userSelect: 'none'
+      }}>
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div key={i} style={{
+            transform: 'rotate(-25deg)',
+            fontSize: '1rem',
+            fontWeight: 800,
+            color: '#c49756',
+            textAlign: 'center',
+            padding: '2.5rem',
+            whiteSpace: 'nowrap'
+          }}>
+            UP POLICE CONFIDENTIAL • {currentUser ? `${currentUser.name} (PNO: ${currentUser.pno || 'N/A'})` : 'OFFICIAL'} • SCREENSHOT / RECORDING STRICTLY PROHIBITED
+          </div>
+        ))}
+      </div>
+
+      {/* Header with Active User Profile, Menu Drawer Trigger, & Logout */}
       <Header
         currentUser={currentUser}
         totalApprovedCount={approvedCount}
@@ -774,13 +885,13 @@ export default function App() {
         onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
         onOpenLogin={() => setIsLoginModalOpen(true)}
         onOpenRegister={() => setIsRegisterModalOpen(true)}
-        onOpenAdmin={() => setIsAdminModalOpen(true)}
+        onOpenAdmin={handleOpenAdminPanel}
         onOpenProfile={() => setIsProfileModalOpen(true)}
         onOpenNotifications={() => setIsNotifsModalOpen(true)}
         onOpenFeedback={() => setIsFeedbackModalOpen(true)}
         onOpenChat={() => setIsChatModalOpen(true)}
+        onOpenMenu={() => setIsMenuDrawerOpen(true)}
         onLogout={handleLogout}
-        onQuickRoleSwitch={handleQuickRoleSwitch}
         onResetData={handleResetData}
       />
 
@@ -875,6 +986,7 @@ export default function App() {
       <ContactList
         contacts={filteredContacts}
         currentUser={currentUser}
+        permissions={phonePermissions}
         onEditContact={handleStartEdit}
         onToggleBlockContact={handleToggleBlock}
         onToggleActiveContact={handleToggleUserActive}
@@ -882,13 +994,15 @@ export default function App() {
         onDeleteContact={handleDeleteContact}
         onResetFilters={handleResetFilters}
         onOpenChatWithContact={handleOpenChatWithContact}
+        onPermissionUpdated={() => setPhonePermissions(getStoredPhonePermissions())}
       />
 
       {/* Confidentiality Rules and Terms & Conditions Footer on Main Dashboard */}
       <TermsFooter 
         terms={terms} 
         canEdit={currentUser?.role === 'admin' || currentUser?.role === 'co_admin'}
-        onOpenAdminTermsEdit={() => setIsAdminModalOpen(true)}
+        onOpenAdminTermsEdit={handleOpenAdminPanel}
+        onOpenPolicy={handleOpenPolicy}
       />
 
       {/* Police Message Box & Group Messaging Modal */}
@@ -1023,6 +1137,60 @@ export default function App() {
         posts={posts}
         districts={districts}
         offices={offices}
+      />
+
+      {/* In-App Peer-to-Peer Voice Call Active/Ringing Screen (Max 5 mins, WebRTC) */}
+      <ActiveCallModal
+        currentUser={currentUser}
+        onCallEnded={() => {}}
+      />
+
+      {/* Mandatory Post-Login Official Disclaimer Gate */}
+      <LoginDisclaimerModal
+        isOpen={isDisclaimerModalOpen && !disclaimerAgreed}
+        user={currentUser}
+        onAgree={handleAgreeDisclaimer}
+        onOpenPolicy={handleOpenPolicy}
+      />
+
+      {/* Admin / Co-Admin 2FA Security Gate */}
+      <Admin2FAModal
+        isOpen={isAdmin2FAModalOpen}
+        currentUser={currentUser}
+        onClose={() => setIsAdmin2FAModalOpen(false)}
+        onSuccess={handle2FASuccess}
+      />
+
+      {/* Official Government Policy Documents Modal */}
+      <PolicyModal
+        isOpen={isPolicyModalOpen}
+        activePolicy={activePolicyType}
+        onClose={() => setIsPolicyModalOpen(false)}
+      />
+
+      {/* Slide-over Clean Role-based Navigation Drawer */}
+      <HeaderMenuDrawer
+        isOpen={isMenuDrawerOpen}
+        onClose={() => setIsMenuDrawerOpen(false)}
+        currentUser={currentUser}
+        pendingCount={pendingCount}
+        notifCount={notifications.length}
+        chatsCount={unreadMessagesCount}
+        isFirebaseConnected={isFirebaseConnected}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
+        onOpenAdmin={handleOpenAdminPanel}
+        onOpenChat={() => setIsChatModalOpen(true)}
+        onOpenNotifications={() => setIsNotifsModalOpen(true)}
+        onOpenFeedback={() => setIsFeedbackModalOpen(true)}
+        onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
+        onOpenPolicy={handleOpenPolicy}
+        onLogout={handleLogout}
+        onOpenLogin={() => setIsLoginModalOpen(true)}
+        onOpenRegister={() => setIsRegisterModalOpen(true)}
+        onTriggerBackup={() => {
+          createBackupSlot('मैन्युअल बैकअप (Manual Backup)');
+          showToast('✅ 6-घंटे का सुरक्षित बैकअप स्लॉट तैयार हो गया!');
+        }}
       />
     </div>
   );
