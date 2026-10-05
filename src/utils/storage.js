@@ -26,7 +26,6 @@ import {
   isFirebaseConfigured, 
   deleteFirestoreContact 
 } from './firebase';
-import * as XLSX from 'xlsx';
 
 const CONTACTS_KEY = 'police_directory_contacts_v2';
 const COADMINS_KEY = 'police_directory_coadmins_v2';
@@ -1443,7 +1442,8 @@ export const resetCoAdminPassword = (coAdminId, newPassword = '1234') => {
 };
 
 // ---------------- EXCEL BULK IMPORT ----------------
-export const importContactsFromExcel = (file, existingContacts, districtFilter = null) => {
+export const importContactsFromExcel = async (file, existingContacts, districtFilter = null) => {
+  const XLSX = await import('xlsx');
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -1540,7 +1540,8 @@ export const importContactsFromExcel = (file, existingContacts, districtFilter =
   });
 };
 
-export const downloadSampleExcel = () => {
+export const downloadSampleExcel = async () => {
+  const XLSX = await import('xlsx');
   const sampleData = [
     {
       "PNO": "PNO-948120099",
