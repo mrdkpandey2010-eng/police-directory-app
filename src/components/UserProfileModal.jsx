@@ -4,6 +4,7 @@ import {
   CheckCircle2, ShieldCheck, Camera, Upload, ArrowRightLeft, Clock, Send
 } from 'lucide-react';
 import { OFFICES } from '../data/mockContacts';
+import { validateFileSize, compressImage } from '../utils/imageCompressor';
 
 export default function UserProfileModal({ 
   user, 
@@ -50,7 +51,7 @@ export default function UserProfileModal({
 
   if (!isOpen || !user) return null;
 
-  const handleUniformPhotoUpload = (e) => {
+  const handleUniformPhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -59,19 +60,28 @@ export default function UserProfileModal({
       return;
     }
 
-    if (file.size > 3 * 1024 * 1024) {
-      setNotice({ type: 'error', text: 'कृपया 3 MB से छोटी फ़ोटो चुनें।' });
+    const sizeCheck = validateFileSize(file, 'photo');
+    if (!sizeCheck.valid) {
+      setNotice({ type: 'error', text: sizeCheck.error });
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
+    try {
+      const compressed = await compressImage(file, 480, 480, 0.75);
       if (onUpdateUniformPhoto) {
-        onUpdateUniformPhoto(user.id, event.target.result);
+        onUpdateUniformPhoto(user.id, compressed);
         setNotice({ type: 'success', text: 'वर्दी फोटो सफलतापूर्वक अपडेट की गई!' });
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (onUpdateUniformPhoto) {
+          onUpdateUniformPhoto(user.id, event.target.result);
+          setNotice({ type: 'success', text: 'वर्दी फोटो सफलतापूर्वक अपडेट की गई!' });
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleEditSubmit = (e) => {

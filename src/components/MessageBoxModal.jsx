@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { getChatsForUser, getUnreadCountForChat } from '../utils/storage';
 import { callManager } from '../utils/webrtc';
+import { validateFileSize, compressImage } from '../utils/imageCompressor';
 
 export default function MessageBoxModal({ 
   isOpen, 
@@ -128,24 +129,59 @@ export default function MessageBoxModal({
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      alert('कृपया 10 MB से छोटी फ़ाइल चुनें।');
+    // Category-specific strict file size checks
+    // Photo max 1 MB, PDF max 30 MB, Word or Excel max 3 MB
+    let sizeCheck;
+    if (isImage) {
+      sizeCheck = validateFileSize(file, 'photo');
+    } else if (isPdf) {
+      sizeCheck = validateFileSize(file, 'pdf');
+    } else if (isWord) {
+      sizeCheck = validateFileSize(file, 'word');
+    } else if (isExcel) {
+      sizeCheck = validateFileSize(file, 'excel');
+    }
+
+    if (sizeCheck && !sizeCheck.valid) {
+      alert(sizeCheck.error);
       if (e.target) e.target.value = '';
       return;
     }
 
     const detectedType = isImage ? 'image' : isPdf ? 'pdf' : isWord ? 'word' : 'excel';
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setAttachedFile({
-        name: file.name,
-        type: detectedType,
-        size: `${Math.round(file.size / 1024)} KB`,
-        url: event.target.result
+    if (isImage) {
+      compressImage(file, 600, 600, 0.8).then(compressedUrl => {
+        setAttachedFile({
+          name: file.name,
+          type: 'image',
+          size: `${Math.round(file.size / 1024)} KB`,
+          url: compressedUrl
+        });
+      }).catch(() => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setAttachedFile({
+            name: file.name,
+            type: detectedType,
+            size: `${Math.round(file.size / 1024)} KB`,
+            url: event.target.result
+          });
+        };
+        reader.readAsDataURL(file);
       });
-    };
-    reader.readAsDataURL(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setAttachedFile({
+          name: file.name,
+          type: detectedType,
+          size: file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+          url: event.target.result
+        });
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // Send message

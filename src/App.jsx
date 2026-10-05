@@ -23,10 +23,14 @@ import {
   subscribeToFirestoreChats,
   saveFirestoreChat,
   markFirestoreChatAsRead,
-  playNotificationChime
+  playNotificationChime,
+  subscribeToFirestoreContacts,
+  saveFirestoreContact,
+  deleteFirestoreContact
 } from './utils/firebase';
 import { 
   getStoredContacts, 
+  saveContacts,
   getStoredCoAdmins,
   getStoredNotifications,
   getStoredFeedbacks,
@@ -83,10 +87,12 @@ import {
   createBackupSlot,
   getStoredBackups,
   getStoredPhonePermissions,
+  respondPhonePermission,
   getStored2FAConfig
 } from './utils/storage';
 import TermsFooter from './components/TermsFooter';
-import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall } from 'lucide-react';
+import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall, PhoneMissed } from 'lucide-react';
+import { callManager } from './utils/webrtc';
 
 export default function App() {
   const [contacts, setContacts] = useState([]);
@@ -208,10 +214,15 @@ export default function App() {
     window.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
 
-    // Check if user session already exists
+    // Check if user session already exists and is within 30 minutes of activity
     const savedUser = getStoredSession();
-    if (savedUser) {
+    const lastActiveStr = localStorage.getItem('police_last_activity_time');
+    const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : 0;
+    const isSessionExpired = lastActive && (Date.now() - lastActive > 30 * 60 * 1000);
+
+    if (savedUser && !isSessionExpired) {
       setCurrentUser(savedUser);
+      localStorage.setItem('police_last_activity_time', String(Date.now()));
       if (savedUser.role === 'user') {
         setSelectedDistrict(savedUser.district || '');
       }
@@ -223,6 +234,9 @@ export default function App() {
         setDisclaimerAgreed(true);
       }
     } else {
+      if (savedUser && isSessionExpired) {
+        saveSession(null);
+      }
       // Mandatory front screen login wall
       setCurrentUser(null);
     }
@@ -233,6 +247,94 @@ export default function App() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
+
+  // ---------------- AUTO LOGOUT SESSION (30 MINUTES INACTIVITY) ----------------
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    const ACTIVITY_KEY = 'police_last_activity_time';
+
+    const updateActivity = () => {
+      localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
+    };
+
+    updateActivity();
+
+    const activityEvents = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'];
+    const handleUserActivity = () => {
+      updateActivity();
+    };
+
+    activityEvents.forEach(evt => {
+      window.addEventListener(evt, handleUserActivity, { passive: true });
+    });
+
+    // Inactivity checker interval (runs every 15 seconds)
+    const checkInterval = setInterval(() => {
+      const lastActiveStr = localStorage.getItem(ACTIVITY_KEY);
+      const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : Date.now();
+      const elapsed = Date.now() - lastActive;
+
+      if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+        clearInterval(checkInterval);
+        handleLogout();
+        alert('⏱️ सुरक्षा सत्र समाप्त (Session Expired):\n30 मिनट तक कोई गतिविधि न होने के कारण सुरक्षा नियमावली के अंतर्गत आपका सत्र स्वतः समाप्त (Auto Logout) कर दिया गया है।\nकृपया पुनः लॉगिन करें।');
+      }
+    }, 15000);
+
+    return () => {
+      activityEvents.forEach(evt => {
+        window.removeEventListener(evt, handleUserActivity);
+      });
+      clearInterval(checkInterval);
+    };
+  }, [currentUser]);
+
+  // ---------------- FIRESTORE CONTACTS REAL-TIME SYNC (PERMANENT RETENTION) ----------------
+  useEffect(() => {
+    const isConfigured = isFirebaseConfigured();
+    if (!isConfigured) return;
+
+    const unsubscribe = subscribeToFirestoreContacts((cloudContacts) => {
+      if (!Array.isArray(cloudContacts) || cloudContacts.length === 0) return;
+
+      setContacts((prevContacts) => {
+        const contactMap = new Map();
+        (prevContacts || []).forEach(c => contactMap.set(c.id, c));
+
+        let hasChange = false;
+        cloudContacts.forEach(cloudC => {
+          if (!cloudC || !cloudC.id) return;
+          // Filter out any legacy dummy mock records
+          if (/^pol-1(0[1-9]|1[0-5])$/.test(cloudC.id)) return;
+
+          const local = contactMap.get(cloudC.id);
+          if (!local) {
+            contactMap.set(cloudC.id, cloudC);
+            hasChange = true;
+          } else {
+            const isCloudNewer = cloudC.updatedAt && (!local.updatedAt || cloudC.updatedAt > local.updatedAt);
+            if (isCloudNewer || cloudC.status !== local.status) {
+              contactMap.set(cloudC.id, { ...local, ...cloudC });
+              hasChange = true;
+            }
+          }
+        });
+
+        if (hasChange) {
+          const merged = Array.from(contactMap.values());
+          saveContacts(merged);
+          return merged;
+        }
+        return prevContacts;
+      });
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isFirebaseConnected]);
 
   // Listen to real-time chat updates from Firebase Firestore
   useEffect(() => {
@@ -295,6 +397,7 @@ export default function App() {
   const handleLoginSuccess = (userObj) => {
     setCurrentUser(userObj);
     saveSession(userObj);
+    localStorage.setItem('police_last_activity_time', String(Date.now()));
     if (userObj.role === 'user') {
       setUserDistrictScope('my_district');
       setSelectedDistrict(userObj.district || '');
@@ -350,6 +453,7 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     saveSession(null);
+    localStorage.removeItem('police_last_activity_time');
     setIsChatModalOpen(false);
     setIs2FAVerifiedThisSession(false);
     showToast('आप पोर्टल से लॉगआउट हो गए हैं। सुरक्षा हेतु विवरण छुपा दिए गए हैं।');
@@ -413,8 +517,11 @@ export default function App() {
 
   // Handler: Self Registration
   const handleRegistrationSubmit = (formData) => {
-    const { updatedList } = registerNewOfficer(contacts, formData);
+    const { updatedList, newOfficer } = registerNewOfficer(contacts, formData);
     setContacts(updatedList);
+    if (isFirebaseConfigured() && newOfficer) {
+      saveFirestoreContact(newOfficer);
+    }
     showToast('पंजीकरण सबमिट हो गया है! Admin / Co-Admin Approval के बाद प्रोफ़ाइल एक्टिव होगी।');
   };
 
@@ -422,6 +529,10 @@ export default function App() {
   const handleApproveContact = (id) => {
     const updated = approveOfficer(contacts, id);
     setContacts(updated);
+    const target = updated.find(c => c.id === id);
+    if (isFirebaseConfigured() && target) {
+      saveFirestoreContact(target);
+    }
     showToast('कर्मचारी की प्रोफ़ाइल सफलतापूर्वक स्वीकृत (Approved) की गई!');
   };
 
@@ -430,6 +541,9 @@ export default function App() {
     if (window.confirm('क्या आप इस आवेदन को निरस्त (Reject) करना चाहते हैं?')) {
       const updated = rejectOfficer(contacts, id);
       setContacts(updated);
+      if (isFirebaseConfigured()) {
+        deleteFirestoreContact(id);
+      }
       showToast('आवेदन निरस्त (Rejected) कर दिया गया।');
     }
   };
@@ -443,6 +557,10 @@ export default function App() {
   const handleSaveEdit = (updatedData) => {
     const updated = editOfficerProfile(contacts, updatedData);
     setContacts(updated);
+    const target = updated.find(c => c.id === updatedData.id);
+    if (isFirebaseConfigured() && target) {
+      saveFirestoreContact(target);
+    }
     showToast('अधिकारी प्रोफ़ाइल अद्यतन (Updated) कर दी गई है!');
   };
 
@@ -450,6 +568,10 @@ export default function App() {
   const handleUserProfileUpdateRequest = (userId, updatedFields) => {
     const updated = requestUserProfileUpdate(contacts, userId, updatedFields);
     setContacts(updated);
+    const target = updated.find(c => c.id === userId);
+    if (isFirebaseConfigured() && target) {
+      saveFirestoreContact(target);
+    }
     if (currentUser && currentUser.id === userId) {
       setCurrentUser(prev => ({ ...prev, ...updatedFields, status: 'pending' }));
     }
@@ -462,7 +584,10 @@ export default function App() {
     setContacts(updated);
     setCoAdmins(getStoredCoAdmins());
     const target = updated.find(c => c.id === id);
-    const isNowActive = target.status === 'approved' || target.status === 'active';
+    if (isFirebaseConfigured() && target) {
+      saveFirestoreContact(target);
+    }
+    const isNowActive = target && (target.status === 'approved' || target.status === 'active');
     showToast(isNowActive ? 'कर्मचारी को सक्रिय (Active) कर दिया गया!' : 'कर्मचारी को निष्क्रिय (Inactive) कर दिया गया!');
   };
 
@@ -472,7 +597,10 @@ export default function App() {
     setContacts(updated);
     setCoAdmins(getStoredCoAdmins());
     const target = updated.find(c => c.id === id);
-    showToast(target.status === 'blocked' ? 'लॉगिन एवं प्रोफ़ाइल ब्लॉक की गई! मुख्य पैनल से हटा दिया गया।' : 'प्रोफ़ाइल अनब्लॉक कर दी गई!');
+    if (isFirebaseConfigured() && target) {
+      saveFirestoreContact(target);
+    }
+    showToast(target?.status === 'blocked' ? 'लॉगिन एवं प्रोफ़ाइल ब्लॉक की गई! मुख्य पैनल से हटा दिया गया।' : 'प्रोफ़ाइल अनब्लॉक कर दी गई!');
   };
 
   // Handler: District Transfer Workflow (Strict 2-tier approval chain)
@@ -497,6 +625,10 @@ export default function App() {
     const updated = approveDistrictTransferByAdmin(contacts, userId, adminName);
     setContacts(updated);
     setCoAdmins(getStoredCoAdmins());
+    const target = updated.find(c => c.id === userId);
+    if (isFirebaseConfigured() && target) {
+      saveFirestoreContact(target);
+    }
     if (currentUser && currentUser.id === userId) {
       const updatedUser = updated.find(c => c.id === userId);
       setCurrentUser(updatedUser);
@@ -521,6 +653,9 @@ export default function App() {
     if (window.confirm('क्या आप इस संपर्क को हमेशा के लिए डिलीट करना चाहते हैं?')) {
       const updated = deleteOfficerProfile(contacts, id);
       setContacts(updated);
+      if (isFirebaseConfigured()) {
+        deleteFirestoreContact(id);
+      }
       showToast('संपर्क डिलीट कर दिया गया!');
     }
   };
@@ -755,6 +890,10 @@ export default function App() {
   const handleUpdateUniformPhoto = (userId, photoBase64) => {
     const updatedContacts = updateUserUniformPhoto(contacts, userId, photoBase64);
     setContacts(updatedContacts);
+    const target = updatedContacts.find(c => c.id === userId);
+    if (isFirebaseConfigured() && target) {
+      saveFirestoreContact(target);
+    }
     if (currentUser && currentUser.id === userId) {
       const updatedUser = { 
         ...currentUser, 
@@ -778,6 +917,13 @@ export default function App() {
     const updated = deleteNotification(id);
     setNotifications(updated);
     showToast('सूचना हटा दी गई।');
+  };
+
+  // Handler: Phone Access Permission Response
+  const handleRespondPhonePermission = (requestId, status) => {
+    const updated = respondPhonePermission(requestId, status);
+    setPhonePermissions(updated);
+    showToast(status === 'approved' ? '✅ फोन नंबर देखने की अनुमति स्वीकृत कर दी गई!' : '❌ अनुरोध अस्वीकार कर दिया गया।');
   };
 
   // Handler: Feedback
@@ -840,6 +986,12 @@ export default function App() {
 
   const approvedCount = contacts.filter(c => c.status === 'approved' || c.status === 'active').length;
   const unreadMessagesCount = getUnreadMessagesCountForUser(chats, currentUser?.id);
+
+  // Real-time unhandled missed calls for logged-in user
+  const missedCallAlerts = useMemo(() => {
+    if (!currentUser) return [];
+    return notifications.filter(n => n.type === 'missed_call' && n.targetUserId === currentUser.id);
+  }, [notifications, currentUser]);
 
   // ---------------- SECURITY CHECK: MANDATORY LOGIN GATEWAY ----------------
   if (!currentUser) {
@@ -1032,6 +1184,106 @@ export default function App() {
         </div>
       )}
 
+      {/* Real-time In-App Missed Call Alert Banner */}
+      {missedCallAlerts.length > 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(185, 28, 28, 0.95), rgba(153, 27, 27, 0.98))',
+          border: '1.5px solid #ef4444',
+          borderRadius: 'var(--radius-md)',
+          padding: '0.85rem 1.25rem',
+          color: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '1rem',
+          boxShadow: '0 8px 24px rgba(220, 38, 38, 0.4)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              background: '#fff',
+              color: '#dc2626',
+              borderRadius: '50%',
+              padding: '8px',
+              display: 'flex'
+            }}>
+              <PhoneMissed size={20} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '0.98rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>🚨 मिस्ड कॉल अलर्ट (Missed Call Alert)</span>
+                <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.25)', padding: '2px 8px', borderRadius: '12px' }}>
+                  {missedCallAlerts.length} कॉल छूटी
+                </span>
+              </div>
+              <div style={{ fontSize: '0.82rem', opacity: 0.95, marginTop: '2px' }}>
+                {missedCallAlerts[0].content}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {missedCallAlerts[0].callerData && (
+              <button
+                className="btn"
+                style={{
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '6px 14px',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)'
+                }}
+                onClick={() => {
+                  callManager.startCall(currentUser, missedCallAlerts[0].callerData);
+                }}
+              >
+                <PhoneCall size={14} />
+                वापस कॉल करें (Call Back)
+              </button>
+            )}
+            <button
+              className="btn"
+              style={{
+                background: 'rgba(255,255,255,0.18)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.35)',
+                padding: '6px 12px',
+                fontSize: '0.8rem',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+              onClick={() => handleDeleteNotification(missedCallAlerts[0].id)}
+            >
+              खारिज करें
+            </button>
+            {missedCallAlerts.length > 1 && (
+              <button
+                className="btn"
+                style={{
+                  background: 'rgba(0,0,0,0.35)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '6px 12px',
+                  fontSize: '0.8rem',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setIsNotifsModalOpen(true)}
+              >
+                सभी {missedCallAlerts.length} देखें
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Multi-Criteria Search & Filter Controls */}
       <SearchFilters
         searchQuery={searchQuery}
@@ -1186,6 +1438,9 @@ export default function App() {
         currentUser={currentUser}
         onAddNotification={handleAddNotification}
         onDeleteNotification={handleDeleteNotification}
+        phonePermissions={phonePermissions}
+        onRespondPhonePermission={handleRespondPhonePermission}
+        onStartCall={(targetOfficer) => callManager.startCall(currentUser, targetOfficer)}
         onOpenChat={(chatId) => {
           setIsNotifsModalOpen(false);
           if (chatId) setActiveChatId(chatId);

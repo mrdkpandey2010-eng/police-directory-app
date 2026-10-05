@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload } from 'lucide-react';
+import { validateFileSize, compressImage } from '../utils/imageCompressor';
 
 export default function RegistrationModal({ 
   isOpen, 
@@ -44,7 +45,7 @@ export default function RegistrationModal({
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handlePhotoUpload = (e) => {
+  const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -53,17 +54,23 @@ export default function RegistrationModal({
       return;
     }
 
-    if (file.size > 3 * 1024 * 1024) {
-      setErrorMsg('कृपया 3 MB से छोटी फ़ोटो अपलोड करें।');
+    const sizeCheck = validateFileSize(file, 'photo');
+    if (!sizeCheck.valid) {
+      setErrorMsg(sizeCheck.error);
       return;
     }
 
     setErrorMsg('');
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setFormData(prev => ({ ...prev, uniformPhoto: event.target.result }));
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressedUrl = await compressImage(file, 480, 480, 0.75);
+      setFormData(prev => ({ ...prev, uniformPhoto: compressedUrl }));
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setFormData(prev => ({ ...prev, uniformPhoto: event.target.result }));
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = (e) => {

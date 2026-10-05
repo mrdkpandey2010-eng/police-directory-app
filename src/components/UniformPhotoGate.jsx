@@ -3,6 +3,7 @@ import {
   ShieldAlert, Camera, Upload, CheckCircle2, AlertTriangle, 
   User, Shield, LogOut 
 } from 'lucide-react';
+import { validateFileSize, compressImage } from '../utils/imageCompressor';
 
 export default function UniformPhotoGate({ 
   currentUser, 
@@ -14,7 +15,7 @@ export default function UniformPhotoGate({
   const [isUploading, setIsUploading] = useState(false);
 
   // File change handler
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -23,17 +24,23 @@ export default function UniformPhotoGate({
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('कृपया 5 MB से छोटी फ़ोटो अपलोड करें।');
+    const sizeCheck = validateFileSize(file, 'photo');
+    if (!sizeCheck.valid) {
+      setErrorMsg(sizeCheck.error);
       return;
     }
 
     setErrorMsg('');
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setPhotoPreview(event.target.result);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressedUrl = await compressImage(file, 480, 480, 0.75);
+      setPhotoPreview(compressedUrl);
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setPhotoPreview(event.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // Submit and verify photo

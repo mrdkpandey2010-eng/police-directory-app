@@ -5,7 +5,8 @@ import {
   ChevronDown, X, ChevronRight, FileText
 } from 'lucide-react';
 import TermsFooter from './TermsFooter';
-import { getStoredAdminMasterPin } from '../utils/storage';
+import { getStoredAdminMasterPin, getStoredContacts } from '../utils/storage';
+import { validateFileSize, compressImage } from '../utils/imageCompressor';
 
 export default function AuthGateway({ 
   onLoginSuccess, 
@@ -98,11 +99,22 @@ export default function AuthGateway({
       return;
     }
 
-    const matchedUser = contacts.find(c => 
+    const activeList = (contacts && contacts.length > 0) ? contacts : getStoredContacts();
+    let matchedUser = activeList.find(c => 
       (c.pno && c.pno.toLowerCase() === idClean) ||
       (c.phone && c.phone.replace(/\D/g, '') === idClean.replace(/\D/g, '')) ||
       (c.email && c.email.toLowerCase() === idClean)
     );
+
+    if (!matchedUser) {
+      // Also double-check latest stored contacts directly
+      const latestStored = getStoredContacts();
+      matchedUser = latestStored.find(c => 
+        (c.pno && c.pno.toLowerCase() === idClean) ||
+        (c.phone && c.phone.replace(/\D/g, '') === idClean.replace(/\D/g, '')) ||
+        (c.email && c.email.toLowerCase() === idClean)
+      );
+    }
 
     if (!matchedUser) {
       setErrorMsg('यह PNO/मोबाइल नंबर पंजीकृत नहीं है। कृपया सही विवरण भरें या नया पंजीकरण करें।');
@@ -188,7 +200,7 @@ export default function AuthGateway({
     }
   };
 
-  const handlePhotoUpload = (e) => {
+  const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -197,17 +209,25 @@ export default function AuthGateway({
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('कृपया 5 MB से छोटी फ़ोटो अपलोड करें।');
+    // Maximum 1 MB limit for photo
+    const sizeCheck = validateFileSize(file, 'photo');
+    if (!sizeCheck.valid) {
+      setErrorMsg(sizeCheck.error);
       return;
     }
 
     setErrorMsg('');
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setRegForm(prev => ({ ...prev, uniformPhoto: event.target.result }));
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Auto-compress photo via canvas to ~30KB (480x480 max)
+      const compressedUrl = await compressImage(file, 480, 480, 0.75);
+      setRegForm(prev => ({ ...prev, uniformPhoto: compressedUrl }));
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setRegForm(prev => ({ ...prev, uniformPhoto: event.target.result }));
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // Self Registration Handler

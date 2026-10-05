@@ -12,6 +12,7 @@ import {
   getStoredPhonePermissions, respondPhonePermission,
   getStoredAdminMasterPin, saveAdminMasterPin
 } from '../utils/storage';
+import { validateFileSize } from '../utils/imageCompressor';
 
 export default function AdminPanel({ 
   isOpen, 
@@ -211,6 +212,12 @@ export default function AdminPanel({
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
+      const check = validateFileSize(file, 'excel');
+      if (!check.valid) {
+        alert(check.error);
+        if (e.target) e.target.value = '';
+        return;
+      }
       setExcelFile(file);
       setImportStatusMsg(null);
     }

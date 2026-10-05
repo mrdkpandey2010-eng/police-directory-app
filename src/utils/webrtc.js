@@ -1,6 +1,6 @@
 // In-App Peer-to-Peer Voice Calling Engine using native WebRTC & AudioContext
-import { saveCallLog } from './storage';
-import { getFirebaseDB } from './firebase';
+import { saveCallLog, addNotification } from './storage';
+import { getFirebaseDB, addFirestoreNotification } from './firebase';
 import { collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const ICE_SERVERS = {
@@ -139,6 +139,7 @@ class InAppCallManager {
     this.listeners = new Set();
     this.firestoreUnsub = null;
     this.broadcastChannel = null;
+    this.ringTimeout = null;
 
     try {
       this.broadcastChannel = new BroadcastChannel('up_police_webrtc_calls');
@@ -268,6 +269,15 @@ class InAppCallManager {
     this.notify();
     callAudio.startOutgoingRingback();
 
+    // Ringing timeout: 30 seconds cutoff for unanswered calls
+    if (this.ringTimeout) clearTimeout(this.ringTimeout);
+    this.ringTimeout = setTimeout(() => {
+      if (this.activeCall && this.activeCall.status === 'calling') {
+        console.warn('Outgoing call timed out after 30s of ringing. Marking as missed call.');
+        this.endCall(true, 'missed');
+      }
+    }, 30000);
+
     try {
       // Get local microphone stream
       this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -320,6 +330,10 @@ class InAppCallManager {
       // If WebRTC setup fails, simulate ringing connection for evaluation
       setTimeout(() => {
         if (this.activeCall && this.activeCall.status === 'calling') {
+          if (this.ringTimeout) {
+            clearTimeout(this.ringTimeout);
+            this.ringTimeout = null;
+          }
           this.activeCall.status = 'connected';
           this.activeCall.startedAt = Date.now();
           callAudio.stop();
@@ -332,6 +346,10 @@ class InAppCallManager {
   // Accept incoming call
   async acceptCall() {
     if (!this.activeCall) return;
+    if (this.ringTimeout) {
+      clearTimeout(this.ringTimeout);
+      this.ringTimeout = null;
+    }
     callAudio.stop();
     this.activeCall.status = 'connected';
     this.activeCall.startedAt = Date.now();
@@ -387,6 +405,10 @@ class InAppCallManager {
   // Reject incoming call
   rejectCall() {
     if (!this.activeCall) return;
+    if (this.ringTimeout) {
+      clearTimeout(this.ringTimeout);
+      this.ringTimeout = null;
+    }
     callAudio.stop();
     callAudio.playDisconnect();
 
@@ -396,12 +418,15 @@ class InAppCallManager {
       status: 'rejected'
     });
 
-    this.logCompletedCall('rejected', 0);
-    this.cleanup();
+    this.endCall(false, 'missed');
   }
 
-  // End active call
+  // End active call (with missed call alert logging)
   endCall(broadcast = true, finalStatus = 'completed') {
+    if (this.ringTimeout) {
+      clearTimeout(this.ringTimeout);
+      this.ringTimeout = null;
+    }
     callAudio.stop();
     callAudio.playDisconnect();
 
@@ -409,16 +434,54 @@ class InAppCallManager {
       ? Math.floor((Date.now() - this.activeCall.startedAt) / 1000) 
       : 0;
 
+    const isMissed = finalStatus === 'missed' || 
+                     (finalStatus === 'rejected' && (!this.activeCall?.startedAt || duration === 0)) ||
+                     (!this.activeCall?.startedAt && duration === 0 && finalStatus !== 'completed');
+
+    const recordedStatus = isMissed ? 'missed' : finalStatus;
+
     if (broadcast && this.activeCall) {
       this.broadcastSignal({
         callId: this.activeCall.callId,
-        type: 'hangup',
-        status: 'ended',
+        type: isMissed ? 'reject' : 'hangup',
+        status: isMissed ? 'missed' : 'ended',
         duration
       });
     }
 
-    this.logCompletedCall(finalStatus, duration);
+    // Generate Missed Call Alert for receiver if call went unanswered or disconnected
+    if (isMissed && this.activeCall) {
+      const { caller, receiver } = this.activeCall;
+      if (caller && receiver) {
+        try {
+          const notifId = `notif-missed-${Date.now()}`;
+          const missedNotif = {
+            id: notifId,
+            title: '🚨 मिस्ड कॉल अलर्ट (Missed Call Alert)',
+            content: `अधिकारी ${caller.name} (${caller.post}, जनपद: ${caller.district}) द्वारा आपको इन-ऐप सुरक्षित वॉइस कॉल किया गया था जो अनुत्तरित (Missed Call) रहा। समय: ${new Date().toLocaleTimeString('hi-IN')}`,
+            district: receiver.district || 'सभी ज़िले (All Districts)',
+            postedBy: `${caller.name} (${caller.post})`,
+            postedAt: new Date().toISOString(),
+            type: 'missed_call',
+            targetUserId: receiver.id,
+            senderId: caller.id,
+            callerData: {
+              id: caller.id,
+              name: caller.name,
+              post: caller.post,
+              district: caller.district,
+              phone: caller.phone
+            }
+          };
+          addNotification(missedNotif);
+          addFirestoreNotification(missedNotif);
+        } catch (e) {
+          console.error('Error creating missed call notification', e);
+        }
+      }
+    }
+
+    this.logCompletedCall(recordedStatus, duration);
     this.cleanup();
   }
 
@@ -463,6 +526,10 @@ class InAppCallManager {
   }
 
   cleanup() {
+    if (this.ringTimeout) {
+      clearTimeout(this.ringTimeout);
+      this.ringTimeout = null;
+    }
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => track.stop());
       this.localStream = null;

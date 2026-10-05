@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { X, Bell, PlusCircle, Send, Trash2, Calendar, MapPin, CheckCircle, ShieldAlert, MessageSquare, Shield } from 'lucide-react';
+import { 
+  X, Bell, PlusCircle, Send, Trash2, Calendar, MapPin, 
+  CheckCircle, ShieldAlert, MessageSquare, Shield, PhoneCall, PhoneMissed, KeyRound 
+} from 'lucide-react';
 import { DISTRICTS } from '../data/mockContacts';
+import { callManager } from '../utils/webrtc';
 
 export default function NotificationsModal({ 
   isOpen, 
@@ -9,7 +13,10 @@ export default function NotificationsModal({
   currentUser, 
   onAddNotification, 
   onDeleteNotification,
-  onOpenChat
+  onOpenChat,
+  phonePermissions = [],
+  onRespondPhonePermission,
+  onStartCall
 }) {
   const [activeTab, setActiveTab] = useState('list'); // 'list' | 'alerts' | 'create' | 'request'
   const [districtFilter, setDistrictFilter] = useState('all');
@@ -43,6 +50,13 @@ export default function NotificationsModal({
 
   // Filter notifications visible to current user
   const userVisibleNotifs = notifications.filter(n => {
+    // 0. Personal targeted notifications (missed calls, phone permissions)
+    if (n.targetUserId) {
+      if (currentUser?.id === n.targetUserId) return true;
+      if (isAdmin) return true;
+      return false;
+    }
+
     // 1. Direct Message notification visibility
     if (n.type === 'direct_message') {
       if (n.targetUserId && currentUser?.id === n.targetUserId) return true;
@@ -60,17 +74,17 @@ export default function NotificationsModal({
       return false; // Hidden from non-supervisory uninvolved users
     }
 
-    // 2. District filter dropdown (if applied)
+    // 3. District filter dropdown (if applied)
     if (districtFilter !== 'all' && n.district !== districtFilter && n.district !== 'सभी ज़िले (All Districts)') {
       return false;
     }
 
-    // 3. Co-Admin scoping
+    // 4. Co-Admin scoping
     if (isCoAdmin && n.district !== currentUser.district && n.district !== 'सभी ज़िले (All Districts)') {
       return false;
     }
 
-    // 4. Regular User scoping: their posted district + statewide circulars
+    // 5. Regular User scoping: their posted district + statewide circulars
     if (currentUser?.role === 'user' && n.district !== currentUser?.district && n.district !== 'सभी ज़िले (All Districts)') {
       return false;
     }
@@ -225,27 +239,42 @@ export default function NotificationsModal({
                   {displayedNotifs.map(n => {
                     const isInterAlert = n.type === 'inter_district_alert';
                     const isRequest = n.type === 'request';
+                    const isMissedCall = n.type === 'missed_call';
+                    const isPhonePermission = n.type === 'phone_permission';
+
+                    let cardBg = 'rgba(15, 23, 42, 0.7)';
+                    let cardBorder = '1px solid var(--glass-border-light)';
+                    let cardShadow = 'none';
+
+                    if (isMissedCall) {
+                      cardBg = 'linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(220, 38, 38, 0.22))';
+                      cardBorder = '1px solid rgba(239, 68, 68, 0.55)';
+                      cardShadow = '0 4px 14px rgba(239, 68, 68, 0.2)';
+                    } else if (isPhonePermission) {
+                      cardBg = 'linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(245, 158, 11, 0.18))';
+                      cardBorder = '1px solid rgba(245, 158, 11, 0.5)';
+                      cardShadow = '0 4px 14px rgba(245, 158, 11, 0.15)';
+                    } else if (isInterAlert) {
+                      cardBg = 'linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(185, 28, 28, 0.2))';
+                      cardBorder = '1px solid rgba(239, 68, 68, 0.5)';
+                      cardShadow = '0 4px 14px rgba(239, 68, 68, 0.15)';
+                    } else if (isRequest) {
+                      cardBg = 'rgba(245, 158, 11, 0.08)';
+                      cardBorder = '1px solid rgba(245, 158, 11, 0.3)';
+                    }
 
                     return (
                       <div 
                         key={n.id}
                         style={{
-                          background: isInterAlert 
-                            ? 'linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(185, 28, 28, 0.2))'
-                            : isRequest 
-                              ? 'rgba(245, 158, 11, 0.08)' 
-                              : 'rgba(15, 23, 42, 0.7)',
-                          border: isInterAlert 
-                            ? '1px solid rgba(239, 68, 68, 0.5)'
-                            : isRequest 
-                              ? '1px solid rgba(245, 158, 11, 0.3)' 
-                              : '1px solid var(--glass-border-light)',
+                          background: cardBg,
+                          border: cardBorder,
                           borderRadius: '10px',
                           padding: '1rem',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '0.6rem',
-                          boxShadow: isInterAlert ? '0 4px 14px rgba(239, 68, 68, 0.15)' : 'none'
+                          boxShadow: cardShadow
                         }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
@@ -269,7 +298,45 @@ export default function NotificationsModal({
                               </div>
                             )}
 
-                            <h4 style={{ color: isInterAlert ? '#fee2e2' : 'var(--text-bright)', fontSize: '1rem', fontWeight: 700 }}>
+                            {isMissedCall && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                                <span style={{ 
+                                  fontSize: '0.72rem', 
+                                  fontWeight: 800, 
+                                  color: '#fca5a5', 
+                                  background: 'rgba(239, 68, 68, 0.3)', 
+                                  padding: '2px 8px', 
+                                  borderRadius: '4px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  <PhoneMissed size={12} color="#ef4444" />
+                                  🚨 अनुत्तरित इन-ऐप वॉइस कॉल (Missed Call Alert)
+                                </span>
+                              </div>
+                            )}
+
+                            {isPhonePermission && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                                <span style={{ 
+                                  fontSize: '0.72rem', 
+                                  fontWeight: 800, 
+                                  color: '#fde68a', 
+                                  background: 'rgba(245, 158, 11, 0.25)', 
+                                  padding: '2px 8px', 
+                                  borderRadius: '4px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  <KeyRound size={12} color="#f59e0b" />
+                                  📲 अंतर-जनपद संपर्क नंबर अनुरोध
+                                </span>
+                              </div>
+                            )}
+
+                            <h4 style={{ color: (isInterAlert || isMissedCall) ? '#fee2e2' : isPhonePermission ? '#fef08a' : 'var(--text-bright)', fontSize: '1rem', fontWeight: 700 }}>
                               {n.title}
                             </h4>
                             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
@@ -281,7 +348,7 @@ export default function NotificationsModal({
                             </div>
                           </div>
 
-                          {canPublish && (
+                          {(canPublish || isMissedCall || isPhonePermission) && (
                             <button 
                               className="btn btn-danger"
                               onClick={() => onDeleteNotification(n.id)}
@@ -321,6 +388,88 @@ export default function NotificationsModal({
                               <MessageSquare size={14} />
                               संबंधित चैट एवं फ़ाइलें देखें
                             </button>
+                          </div>
+                        )}
+
+                        {/* Actions for Missed Call: Call Back */}
+                        {isMissedCall && (
+                          <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                            {n.callerData && (
+                              <button 
+                                className="btn btn-primary"
+                                style={{ 
+                                  padding: '6px 14px', 
+                                  fontSize: '0.82rem', 
+                                  background: 'linear-gradient(135deg, #059669, #10b981)', 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: '6px',
+                                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                                }}
+                                onClick={() => {
+                                  onClose();
+                                  if (onStartCall) {
+                                    onStartCall(n.callerData);
+                                  } else {
+                                    callManager.startCall(currentUser, n.callerData);
+                                  }
+                                }}
+                              >
+                                <PhoneCall size={14} />
+                                वापस कॉल करें (Call Back)
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Actions for Phone Permission: Approve / Reject */}
+                        {isPhonePermission && (
+                          <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {(() => {
+                              const perm = (phonePermissions || []).find(p => p.id === n.permissionId || (p.requesterId === n.senderId && p.targetId === currentUser?.id));
+                              const status = perm?.status || 'pending';
+                              if (status === 'approved') {
+                                return (
+                                  <span style={{ fontSize: '0.8rem', color: '#34d399', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                    <CheckCircle size={15} /> अनुमति स्वीकृत (Approved)
+                                  </span>
+                                );
+                              }
+                              if (status === 'rejected') {
+                                return (
+                                  <span style={{ fontSize: '0.8rem', color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                    ❌ अनुमति अस्वीकृत (Rejected)
+                                  </span>
+                                );
+                              }
+                              return (
+                                <>
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ padding: '5px 12px', fontSize: '0.8rem', color: '#fca5a5', borderColor: '#ef4444' }}
+                                    onClick={() => {
+                                      if (onRespondPhonePermission) {
+                                        onRespondPhonePermission(perm ? perm.id : n.permissionId, 'rejected');
+                                      }
+                                    }}
+                                  >
+                                    अस्वीकार करें
+                                  </button>
+                                  <button
+                                    className="btn btn-primary"
+                                    style={{ padding: '5px 12px', fontSize: '0.8rem', background: 'linear-gradient(135deg, #059669, #10b981)', display: 'flex', alignItems: 'center', gap: '5px' }}
+                                    onClick={() => {
+                                      if (onRespondPhonePermission) {
+                                        onRespondPhonePermission(perm ? perm.id : n.permissionId, 'approved');
+                                      }
+                                    }}
+                                  >
+                                    <CheckCircle size={14} />
+                                    स्वीकार करें (नंबर दिखाएं)
+                                  </button>
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>

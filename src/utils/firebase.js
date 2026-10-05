@@ -8,6 +8,7 @@ import {
   getDocs, 
   onSnapshot, 
   updateDoc, 
+  deleteDoc,
   arrayUnion, 
   serverTimestamp 
 } from 'firebase/firestore';
@@ -321,3 +322,77 @@ export const addFirestoreNotification = async (notif) => {
     return false;
   }
 };
+
+// ---------------- FIRESTORE CONTACTS SYNC (PERMANENT RETENTION RULE) ----------------
+// Rule: Manually entered & registered officers are never automatically wiped
+
+export const subscribeToFirestoreContacts = (onUpdate, onError) => {
+  const db = getFirebaseDB();
+  if (!db) return () => {};
+
+  try {
+    const contactsCol = collection(db, 'police_contacts');
+    return onSnapshot(contactsCol, (snapshot) => {
+      const list = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      if (list.length > 0) {
+        onUpdate(list);
+      }
+    }, (err) => {
+      console.warn('Firestore contacts subscription notice:', err);
+      if (onError) onError(err);
+    });
+  } catch (err) {
+    console.error('Failed to subscribe to contacts in Firestore:', err);
+    return () => {};
+  }
+};
+
+export const saveFirestoreContact = async (contact) => {
+  const db = getFirebaseDB();
+  if (!db || !contact || !contact.id) return false;
+
+  try {
+    const contactDocRef = doc(db, 'police_contacts', contact.id);
+    await setDoc(contactDocRef, { ...contact, updatedAt: new Date().toISOString() }, { merge: true });
+    return true;
+  } catch (err) {
+    console.error('Error saving contact to Firestore:', err);
+    return false;
+  }
+};
+
+export const deleteFirestoreContact = async (contactId) => {
+  const db = getFirebaseDB();
+  if (!db || !contactId) return false;
+
+  try {
+    const contactDocRef = doc(db, 'police_contacts', contactId);
+    await deleteDoc(contactDocRef);
+    return true;
+  } catch (err) {
+    console.error('Error deleting contact from Firestore:', err);
+    return false;
+  }
+};
+
+export const syncAllContactsToFirestore = async (contacts) => {
+  const db = getFirebaseDB();
+  if (!db || !Array.isArray(contacts)) return false;
+
+  try {
+    for (const c of contacts) {
+      if (c && c.id) {
+        const docRef = doc(db, 'police_contacts', c.id);
+        await setDoc(docRef, c, { merge: true });
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to sync contacts to Firestore:', err);
+    return false;
+  }
+};
+

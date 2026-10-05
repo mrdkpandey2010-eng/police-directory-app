@@ -18,6 +18,22 @@ const NOTIFS_KEY = 'police_directory_notifs_v2';
 const FEEDBACKS_KEY = 'police_directory_feedbacks_v2';
 const SESSION_KEY = 'police_directory_session_v2';
 const CHATS_KEY = 'police_directory_chats_v2';
+const CLEAN_DB_FLAG = 'police_directory_clean_fresh_v3';
+
+// One-time fresh database purge of legacy mock data
+try {
+  if (!localStorage.getItem(CLEAN_DB_FLAG)) {
+    localStorage.removeItem('police_directory_contacts_v1');
+    localStorage.removeItem('police_directory_chats_v1');
+    localStorage.removeItem('police_directory_notifs_v1');
+    localStorage.removeItem('police_directory_feedbacks_v1');
+    localStorage.setItem(CONTACTS_KEY, JSON.stringify([]));
+    localStorage.setItem(NOTIFS_KEY, JSON.stringify([]));
+    localStorage.setItem(CHATS_KEY, JSON.stringify([]));
+    localStorage.setItem(FEEDBACKS_KEY, JSON.stringify([]));
+    localStorage.setItem(CLEAN_DB_FLAG, 'true');
+  }
+} catch (e) {}
 
 // Master data keys for dynamic in-app configuration
 const POSTS_KEY = 'police_directory_master_posts_v1';
@@ -372,50 +388,37 @@ export const deleteDistrict = (distName) => {
   return updated;
 };
 
-// ---------------- CONTACTS ----------------
+// ---------------- CONTACTS (PERMANENT RETENTION & FRESH DATABASE) ----------------
 export const getStoredContacts = () => {
   try {
     const saved = localStorage.getItem(CONTACTS_KEY);
     if (!saved) {
-      localStorage.setItem(CONTACTS_KEY, JSON.stringify(initialContacts));
-      return initialContacts;
+      localStorage.setItem(CONTACTS_KEY, JSON.stringify([]));
+      return [];
     }
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem(CONTACTS_KEY, JSON.stringify(initialContacts));
-      return initialContacts;
+    if (!Array.isArray(parsed)) {
+      localStorage.setItem(CONTACTS_KEY, JSON.stringify([]));
+      return [];
     }
-    let patched = false;
-    const result = parsed.map(c => {
-      const initMatch = initialContacts.find(ic => ic.id === c.id);
-      if (initMatch && initMatch.uniformPhoto && !c.uniformPhoto && c.id !== 'pol-115') {
-        patched = true;
-        return { ...c, uniformPhoto: initMatch.uniformPhoto, uniformPhotoUploaded: true };
-      }
-      return c;
-    });
-    if (!result.some(c => c.id === 'pol-115')) {
-      const pol115 = initialContacts.find(ic => ic.id === 'pol-115');
-      if (pol115) {
-        result.push(pol115);
-        patched = true;
-      }
+    // Filter out any lingering mock IDs (pol-101 to pol-115) from previous mock data
+    const cleanList = parsed.filter(c => !/^pol-1(0[1-9]|1[0-5])$/.test(c.id));
+    if (cleanList.length !== parsed.length) {
+      localStorage.setItem(CONTACTS_KEY, JSON.stringify(cleanList));
     }
-    if (patched) {
-      localStorage.setItem(CONTACTS_KEY, JSON.stringify(result));
-    }
-    return result;
+    return cleanList;
   } catch (err) {
     console.error('Error reading contacts', err);
-    return initialContacts;
+    return [];
   }
 };
 
 export const saveContacts = (contacts) => {
   try {
-    localStorage.setItem(CONTACTS_KEY, JSON.stringify(contacts));
+    const validList = Array.isArray(contacts) ? contacts : [];
+    localStorage.setItem(CONTACTS_KEY, JSON.stringify(validList));
   } catch (err) {
-    console.error('Error saving contacts', err);
+    console.error('Error saving contacts to localStorage:', err);
   }
 };
 
@@ -678,16 +681,18 @@ export const saveNotifications = (notifs) => {
 export const addNotification = (notifData) => {
   const current = getStoredNotifications();
   const newNotif = {
-    id: `notif-${Date.now()}`,
-    title: notifData.title.trim(),
-    content: notifData.content.trim(),
+    id: notifData.id || `notif-${Date.now()}`,
+    title: notifData.title ? notifData.title.trim() : '',
+    content: notifData.content ? notifData.content.trim() : '',
     district: notifData.district || 'सभी ज़िले (All Districts)',
     postedBy: notifData.postedBy || 'Admin',
-    postedAt: new Date().toISOString(),
+    postedAt: notifData.postedAt || new Date().toISOString(),
     type: notifData.type || 'official',
     targetUserId: notifData.targetUserId || null,
     senderId: notifData.senderId || null,
-    chatId: notifData.chatId || null
+    chatId: notifData.chatId || null,
+    permissionId: notifData.permissionId || null,
+    callerData: notifData.callerData || null
   };
   const updated = [newNotif, ...current];
   saveNotifications(updated);
@@ -775,124 +780,24 @@ export const saveSession = (user) => {
 };
 
 // ---------------- CHATS & GROUP MESSAGING WITH SUPERVISORY CHAIN ----------------
-export const initialChats = [
-  {
-    id: "chat-dir-pol103-pol106",
-    type: "direct",
-    title: "अंतर-जनपद संवाद: प्रिया वर्मा ➔ राकेश कुमार",
-    participants: ["pol-103", "pol-106"],
-    district: "कानपुर नगर",
-    supervisoryChain: {
-      recipientDistrict: "कानपुर नगर",
-      recipientOffice: "थाना कोतवाली",
-      roles: ["थाना प्रभारी (Inspector)", "क्षेत्राधिकारी (DSP)", "वरिष्ठ पुलिस अधीक्षक (SSP)"]
-    },
-    lastMessage: "अवगत कराया जाता है कि वांछित अभियुक्त के कानपुर में होने की सूचना है, कृपया सत्यापन करें।",
-    lastUpdated: "2026-09-30T16:30:00.000Z",
-    messages: [
-      {
-        id: "msg-1",
-        senderId: "pol-103",
-        senderName: "प्रिया वर्मा",
-        senderPost: "क्षेत्राधिकारी (DSP)",
-        senderDistrict: "लखनऊ",
-        senderPno: "PNO-012849103",
-        text: "जय हिंद मुख्य आरक्षी राकेश जी। लखनऊ थाना हजरतगंज के मु.अ.सं. 112/26 में एक वांछित अभियुक्त के कानपुर कोतवाली क्षेत्र में देखे जाने की सूचना प्राप्त हुई है।",
-        file: null,
-        timestamp: "2026-09-30T16:20:00.000Z",
-        supervisoryAlert: true
-      },
-      {
-        id: "msg-2",
-        senderId: "pol-103",
-        senderName: "प्रिया वर्मा",
-        senderPost: "क्षेत्राधिकारी (DSP)",
-        senderDistrict: "लखनऊ",
-        senderPno: "PNO-012849103",
-        text: "अभियुक्त का विवरण संलग्न फ़ोटो एवं वारंट प्रतिलिपि में देखें। कृपया तत्काल तस्दीक कर आख्या दें। (पर्यवेक्षी प्रतिलिपि: SHO कोतवाली, CO, SSP कानपुर)",
-        file: {
-          name: "Accused_Suspect_Photo.jpg",
-          type: "image",
-          size: "142 KB",
-          url: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='200' viewBox='0 0 320 200'><rect width='100%' height='100%' fill='%230f172a'/><circle cx='160' cy='85' r='45' fill='%23334155'/><path d='M90,175 C90,135 130,135 160,135 C190,135 230,135 230,175 Z' fill='%231e3a8a'/><text x='50%' y='30' fill='%23e5b842' font-size='14' font-family='sans-serif' text-anchor='middle' font-weight='bold'>UP POLICE CRIME EVIDENCE</text><text x='50%' y='190' fill='%2394a3b8' font-size='12' font-family='sans-serif' text-anchor='middle'>अभियुक्त पहचान फोटोग्राफ (JPG)</text></svg>"
-        },
-        timestamp: "2026-09-30T16:25:00.000Z",
-        supervisoryAlert: true
-      },
-      {
-        id: "msg-3",
-        senderId: "pol-106",
-        senderName: "राकेश कुमार",
-        senderPost: "मुख्य आरक्षी (Head Constable)",
-        senderDistrict: "कानपुर नगर",
-        senderPno: "PNO-182940196",
-        text: "महोदया, जय हिंद। प्राप्त विवरणानुसार थाना कोतवाली क्षेत्र में मुखबिर तंत्र सक्रिय कर दिया गया है। SHO महोदय एवं CO महोदय को भी अवगत करा दिया गया है।",
-        file: null,
-        timestamp: "2026-09-30T16:30:00.000Z",
-        supervisoryAlert: true
-      }
-    ]
-  },
-  {
-    id: "group-special-task-up",
-    type: "group",
-    title: "🚨 आगामी त्योहार सुरक्षा टास्क ग्रुप (UP Police Inter-District)",
-    description: "समस्त संवेदनशील जनपदों (लखनऊ, कानपुर, वाराणसी, आगरा) के लिए संयुक्त सुरक्षा व समन्वय ग्रुप",
-    createdBy: "pol-101",
-    participants: ["pol-101", "pol-102", "pol-103", "pol-104", "pol-106", "pol-107", "pol-108", "pol-110"],
-    district: "सभी ज़िले (All Districts)",
-    lastMessage: "त्योहार ड्युटी चार्ट एवं सुरक्षा एसओपी (PDF) संलग्न की गई है।",
-    lastUpdated: "2026-09-30T18:00:00.000Z",
-    messages: [
-      {
-        id: "grp-msg-1",
-        senderId: "pol-101",
-        senderName: "विक्रम सिंह (IPS)",
-        senderPost: "पुलिस अधीक्षक (SP)",
-        senderDistrict: "लखनऊ",
-        senderPno: "PNO-948120011",
-        text: "जय हिंद सभी अधिकारियों एवं कार्मिकों को। आगामी त्योहारों के दृष्टिगत अंतर-जनपद समन्वय एवं त्वरित आसूचना साझा करने हेतु यह ग्रुप गठित किया गया है।",
-        file: null,
-        timestamp: "2026-09-30T17:45:00.000Z",
-        supervisoryAlert: false
-      },
-      {
-        id: "grp-msg-2",
-        senderId: "pol-101",
-        senderName: "विक्रम सिंह (IPS)",
-        senderPost: "पुलिस अधीक्षक (SP)",
-        senderDistrict: "लखनऊ",
-        senderPno: "PNO-948120011",
-        text: "मुख्यालय द्वारा जारी सुरक्षा दिशानिर्देश एवं एसओपी की प्रतिलिपि नीचे संलग्न है। सभी थाना प्रभारी व क्षेत्राधिकारी इसका कड़ाई से अनुपालन सुनिश्चित करें।",
-        file: {
-          name: "Festival_Security_SOP_2026.pdf",
-          type: "pdf",
-          size: "348 KB",
-          url: "data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjQgMCBvYmoKPDwgL0xlbmd0aCA0OSAvRmlsdGVyIC9GbGF0ZURlY29kZSA+PgpzdHJlYW0KeJwrVAh2DQ3yVfB0dAn29Vdw93RXcPd09/X3BwA5mgeRCmVuZHN0cmVhbQplbmRvYmoK"
-        },
-        timestamp: "2026-09-30T18:00:00.000Z",
-        supervisoryAlert: false
-      }
-    ]
-  }
-];
+export const initialChats = [];
 
 export const getStoredChats = () => {
   try {
     const saved = localStorage.getItem(CHATS_KEY);
     if (!saved) {
-      localStorage.setItem(CHATS_KEY, JSON.stringify(initialChats));
-      return initialChats;
+      localStorage.setItem(CHATS_KEY, JSON.stringify([]));
+      return [];
     }
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem(CHATS_KEY, JSON.stringify(initialChats));
-      return initialChats;
+    if (!Array.isArray(parsed)) {
+      localStorage.setItem(CHATS_KEY, JSON.stringify([]));
+      return [];
     }
     return parsed;
   } catch (err) {
     console.error('Error reading chats', err);
-    return initialChats;
+    return [];
   }
 };
 
@@ -1624,7 +1529,8 @@ export const requestPhonePermission = (requester, targetOfficer) => {
   // Check if an existing request is already there
   const existing = current.find(p => p.requesterId === requester.id && p.targetId === targetOfficer.id);
   if (existing) {
-    return { success: false, status: existing.status, message: `अनुरोध पहले से भेजा जा चुका है (${existing.status})` };
+    const statusText = existing.status === 'approved' ? 'स्वीकृत' : existing.status === 'rejected' ? 'अस्वीकृत' : 'लंबित';
+    return { success: false, status: existing.status, message: `अनुरोध पहले से भेजा जा चुका है (${statusText})` };
   }
 
   const newReq = {
@@ -1642,6 +1548,22 @@ export const requestPhonePermission = (requester, targetOfficer) => {
 
   const updated = [newReq, ...current];
   savePhonePermissions(updated);
+
+  // Notify target officer about the incoming phone access request
+  try {
+    const notifId = `notif-perm-${newReq.id}`;
+    addNotification({
+      id: notifId,
+      title: '📲 संपर्क नंबर देखने हेतु अनुमति अनुरोध',
+      content: `अधिकारी ${requester.name} (${requester.post}, जनपद: ${requester.district}) ने आपका गोपनीय मोबाइल नंबर देखने हेतु अनुमति मांगी है।`,
+      district: targetOfficer.district,
+      type: 'phone_permission',
+      targetUserId: targetOfficer.id,
+      senderId: requester.id,
+      permissionId: newReq.id
+    });
+  } catch (e) {}
+
   return { success: true, request: newReq };
 };
 
@@ -1658,26 +1580,37 @@ export const canViewPhoneNumber = (viewer, targetOfficer, permissions = []) => {
   // Super Admin can always view all numbers
   if (viewer.role === 'admin') return true;
 
-  // Co-Admin can always view all numbers in their district
-  if (viewer.role === 'co_admin' && viewer.district === targetOfficer.district) return true;
-
   // Viewing self
   if (viewer.id === targetOfficer.id) return true;
 
-  // If user has not hidden their phone and no privacy gate is enabled
-  if (!targetOfficer.isPhoneHidden) {
-    // If user marked as not hidden, visible to police peers
-    return true;
+  // Co-Admin can always view all numbers in their assigned district
+  if (viewer.role === 'co_admin' && viewer.district === targetOfficer.district) return true;
+
+  // STRICT CROSS-DISTRICT RULE:
+  // If the viewer is from a DIFFERENT district, the number is STRICTLY HIDDEN
+  // It is ONLY visible if the target officer has approved their permission request
+  if (viewer.district && targetOfficer.district && viewer.district !== targetOfficer.district) {
+    const hasApprovedPerm = (permissions || []).some(p => 
+      p.requesterId === viewer.id && 
+      p.targetId === targetOfficer.id && 
+      p.status === 'approved'
+    );
+    return hasApprovedPerm;
   }
 
-  // If user has hidden their phone, check if approved permission exists
-  const hasApprovedPerm = permissions.some(p => 
-    p.requesterId === viewer.id && 
-    p.targetId === targetOfficer.id && 
-    p.status === 'approved'
-  );
+  // SAME DISTRICT RULE:
+  // If user has explicitly hidden their phone, check if approved permission exists
+  if (targetOfficer.isPhoneHidden) {
+    const hasApprovedPerm = (permissions || []).some(p => 
+      p.requesterId === viewer.id && 
+      p.targetId === targetOfficer.id && 
+      p.status === 'approved'
+    );
+    return hasApprovedPerm;
+  }
 
-  return hasApprovedPerm;
+  // Same district peer viewing allowed by default
+  return true;
 };
 
 // ---------------- 2FA FOR ADMIN PANEL ----------------
