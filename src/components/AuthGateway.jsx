@@ -1185,11 +1185,6 @@ export default function AuthGateway({
           </>
         )}
       </div>
-
-      {/* Confidentiality Rules and Terms & Conditions Footer on Login Gateway */}
-      <div style={{ width: '100%', maxWidth: '580px' }}>
-        <TermsFooter terms={terms} />
-      </div>
     </div>
   );
 }

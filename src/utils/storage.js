@@ -78,6 +78,129 @@ export const saveTerms = (termsData) => {
   }
 };
 
+// ---------------- DYNAMIC POLICIES & CUSTOM LINKS CMS ----------------
+const POLICIES_KEY = 'police_directory_policies_v2';
+
+export const DEFAULT_POLICIES = [
+  {
+    id: "disclaimer",
+    title: "Disclaimer",
+    hindiTitle: "अस्वीकरण",
+    isBuiltIn: true,
+    content: `यह पोर्टल एवं संपर्क निर्देशिका केवल उत्तर प्रदेश पुलिस के सेवारत अधिकृत पुलिस कार्मिकों के शासकीय समन्वय एवं आपातकालीन कार्यों हेतु विकसित की गई है।\n\nमहत्वपूर्ण सूचना: इस पोर्टल पर प्रदर्शित समस्त कार्मिक विवरण, पदस्थापना एवं संपर्क नंबर आधिकारिक शासकीय रिकॉर्ड पर आधारित हैं। इसे किसी भी अनधिकृत तीसरे पक्ष अथवा सार्वजनिक माध्यम पर साझा करना भारतीय टेलीग्राफ अधिनियम एवं आईटी एक्ट के अंतर्गत दंडात्मक अपराध है।\n\nउत्तर प्रदेश पुलिस विभाग किसी भी ऐसे व्यक्ति के विरुद्ध कड़ी वैधानिक एवं अनुशासनात्मक कार्यवाही करने का अधिकार सुरक्षित रखता है जो इस पोर्टल के डेटा का अनधिकृत संग्रह, स्क्रीन रिकॉर्डिंग, स्क्रीनशॉट या व्यावसायिक उपयोग करता है।`,
+    lastUpdated: new Date().toISOString().split('T')[0]
+  },
+  {
+    id: "terms",
+    title: "Terms and Condition",
+    hindiTitle: "नियम एवं शर्तें",
+    isBuiltIn: true,
+    content: `उत्तर प्रदेश पुलिस संपर्क पोर्टल के उपयोग हेतु निम्नलिखित शर्तों की पाबंदी अनिवार्य है:\n\n1. अधिकृत पहुँच: केवल वैध PNO एवं पुलिस पहचान पत्र धारक पुलिस कार्मिक ही पोर्टल में प्रवेश के पात्र हैं।\n2. वर्दी फोटो अनिवार्यता: प्रत्येक कार्मिक द्वारा अपनी आधिकारिक वर्दी वाली स्पष्ट फोटो अपलोड एवं सत्यापित कराना अनिवार्य है। बिना वर्दी फोटो के पोर्टल का संचालन प्रतिबंधित रहेगा।\n3. कॉलिंग एवं संचार मर्यादा: इन-ऐप कॉलिंग एवं मैसेज बॉक्स का उपयोग पूर्णतः शासकीय, आधिकारिक एवं गरिमामय संवाद हेतु ही किया जाएगा।\n4. अधिकतम कॉल सीमा: नेटवर्क एवं सर्वर सुरक्षा के दृष्टिगत प्रति कॉल अधिकतम 05 मिनट की सीमा निर्धारित है।\n5. गोपनीयता भंग पर कार्रवाई: किसी भी सहकर्मी का फोन नंबर बिना अनुमति सार्वजनिक करने पर विभागीय जांच एवं सेवा समाप्ति की अनुशंसा की जा सकेगी।\n6. सत्र सुरक्षा: 30 मिनट तक अक्रिय रहने पर पोर्टल स्वतः लॉगआउट हो जाता है।`,
+    lastUpdated: new Date().toISOString().split('T')[0]
+  },
+  {
+    id: "copyright",
+    title: "Copyright Policy",
+    hindiTitle: "कॉपीराइट नीति",
+    isBuiltIn: true,
+    content: `इस पोर्टल पर उपलब्ध समस्त सामग्री, डिज़ाइन, लोगो, डेटाबेस संरचना, एवं सॉफ्टवेयर कोड उत्तर प्रदेश पुलिस मुख्यालय, लखनऊ के अनन्य स्वामित्व एवं कॉपीराइट के अधीन हैं।\n\nसक्षम प्राधिकारी की पूर्व लिखित अनुमति के बिना इस पोर्टल की किसी भी सामग्री, डेटाबेस सूची, या कार्मिक जानकारी का किसी भी रूप में पुनरुत्पादन, डाउनलोड, प्रतिलिपि, या अन्यत्र प्रकाशन पूर्णतः प्रतिबंधित है।\n\n© ${new Date().getFullYear()} उत्तर प्रदेश पुलिस (Uttar Pradesh Police). सर्वाधिकार सुरक्षित।`,
+    lastUpdated: new Date().toISOString().split('T')[0]
+  },
+  {
+    id: "privacy",
+    title: "Privacy Policy",
+    hindiTitle: "गोपनीयता नीति",
+    isBuiltIn: true,
+    content: `यह पोर्टल उपयोगकर्ता पुलिस कार्मिकों की निजता एवं शासकीय डेटा सुरक्षा के उच्चतम मानकों का पालन करता है।\n\n1. नंबर सुरक्षा एवं प्राइवेसी: अन्य जनपद के अधिकारियों के मोबाइल नंबर डिफ़ॉल्ट रूप से मास्क (XXXXXXXX) रहते हैं। संबंधित अधिकारी द्वारा अनुमति स्वीकार करने पर ही नंबर दृश्यमान होता है।\n2. सहमति आधारित पहुँच: व्यक्तिगत या गोपनीय नंबर देखने हेतु विधिवत अनुमति अनुरोध (Permission Request) भेजना अनिवार्य है।\n3. कॉल एवं सुरक्षा ऑडिट: सुरक्षा एवं ऑडिट हेतु इन-ऐप कॉल का समय, अवधि एवं सहभागी लॉग्स एन्क्रिप्टेड रूप में सुरक्षित रखे जाते हैं। ऑडियो का अनधिकृत तीसरे पक्ष पर भंडारण नहीं होता।\n4. स्क्रीन सुरक्षा: पोर्टल पर स्क्रीनशॉट एवं स्क्रीन रिकॉर्डिंग अवरोधन (Anti-Screenshot Protection) तकनीक सक्रिय है।`,
+    lastUpdated: new Date().toISOString().split('T')[0]
+  },
+  {
+    id: "hyperlinking",
+    title: "Hyperlinking Policy",
+    hindiTitle: "हाइपरलिंकिंग नीति",
+    isBuiltIn: true,
+    content: `बाह्य वेबसाइटों के लिंक: इस पोर्टल से केवल उत्तर प्रदेश शासन अथवा भारत सरकार की आधिकारिक वेबसाइटों (उदा. uppolice.gov.in, up.gov.in) के अधिकृत लिंक ही संदर्भित किए जा सकते हैं।\n\nइस पोर्टल हेतु लिंकिंग अनुमति: किसी भी बाह्य पोर्टल अथवा ऐप द्वारा इस आंतरिक पोर्टल के किसी भी पृष्ठ को फ्रेम या हाइपरलिंक करने की अनुमति पूर्व लिखित शासकीय आदेश के बिना पूर्णतः अमान्य है।\n\nहम यह गारंटी नहीं देते कि बाह्य लिंक हर समय सक्रिय रहेंगे तथा लिंक किए गए बाहरी पृष्ठों की सामग्री पर हमारा कोई नियंत्रण नहीं है।`,
+    lastUpdated: new Date().toISOString().split('T')[0]
+  },
+  {
+    id: "confidentiality",
+    title: "शासकीय गोपनीयता नीति एवं सेवा शर्तें",
+    hindiTitle: "गोपनीयता नीति एवं सेवा शर्तें",
+    isBuiltIn: true,
+    content: `1. यह पोर्टल एवं संपर्क निर्देशिका केवल उत्तर प्रदेश पुलिस के सेवारत अधिकृत पुलिस कार्मिकों के शासकीय एवं आपातकालीन समन्वय हेतु है।\n2. पोर्टल में उपलब्ध किसी भी अधिकारी अथवा कर्मचारी का व्यक्तिगत फोन नंबर, पता, या विवरण किसी अनधिकृत व्यक्ति अथवा सार्वजनिक सोशल मीडिया पर साझा करना पूर्णतः वर्जित है।\n3. सभी कार्मिकों के लिए पोर्टल में अपनी नवीनतम आधिकारिक वर्दी (Uniform) वाली स्पष्ट फोटो अपलोड एवं सत्यापित कराना अनिवार्य है। बिना वर्दी फोटो के ऐप का उपयोग प्रतिबंधित रहेगा।\n4. लॉगिन क्रेडेंशियल्स (PNO, मोबाइल नंबर, पासवर्ड) पूर्णतः व्यक्तिगत एवं गोपनीय हैं। अपने क्रेडेंशियल्स किसी अन्य के साथ साझा न करें।\n5. नियमों के उल्लंघन अथवा डेटा के दुरुपयोग की स्थिति में भारतीय सूचना प्रौद्योगिकी अधिनियम (IT Act) एवं पुलिस आचरण नियमावली के अंतर्गत कठोर दंडात्मक व विभागीय कार्यवाही की जाएगी।`,
+    lastUpdated: new Date().toISOString().split('T')[0]
+  }
+];
+
+export const getStoredPolicies = () => {
+  try {
+    const saved = localStorage.getItem(POLICIES_KEY);
+    if (!saved) {
+      localStorage.setItem(POLICIES_KEY, JSON.stringify(DEFAULT_POLICIES));
+      return DEFAULT_POLICIES;
+    }
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_POLICIES;
+    return parsed;
+  } catch (err) {
+    return DEFAULT_POLICIES;
+  }
+};
+
+export const savePolicies = (policiesList) => {
+  try {
+    localStorage.setItem(POLICIES_KEY, JSON.stringify(policiesList));
+  } catch (err) {
+    console.error('Error saving policies', err);
+  }
+};
+
+export const addCustomPolicy = (policyData) => {
+  const current = getStoredPolicies();
+  const slug = (policyData.title || `link-${Date.now()}`)
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-') || `link-${Date.now()}`;
+
+  const newPolicy = {
+    id: `custom-${slug}-${Date.now()}`,
+    title: policyData.title.trim(),
+    hindiTitle: (policyData.hindiTitle || policyData.title).trim(),
+    isBuiltIn: false,
+    content: (policyData.content || '').trim(),
+    lastUpdated: new Date().toISOString().split('T')[0]
+  };
+  const updated = [...current, newPolicy];
+  savePolicies(updated);
+  return updated;
+};
+
+export const editPolicyItem = (policyId, updatedData) => {
+  const current = getStoredPolicies();
+  const updated = current.map(p => {
+    if (p.id === policyId) {
+      return {
+        ...p,
+        title: updatedData.title ? updatedData.title.trim() : p.title,
+        hindiTitle: updatedData.hindiTitle ? updatedData.hindiTitle.trim() : p.hindiTitle,
+        content: updatedData.content !== undefined ? updatedData.content.trim() : p.content,
+        lastUpdated: new Date().toISOString().split('T')[0]
+      };
+    }
+    return p;
+  });
+  savePolicies(updated);
+  return updated;
+};
+
+export const deleteCustomPolicyItem = (policyId) => {
+  const current = getStoredPolicies();
+  const updated = current.filter(p => p.id !== policyId || p.isBuiltIn);
+  savePolicies(updated);
+  return updated;
+};
+
 // ---------------- MASTER CONFIGURATION (POSTS, OFFICES, DISTRICTS) ----------------
 export const getStoredPosts = () => {
   try {

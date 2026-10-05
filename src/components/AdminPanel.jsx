@@ -3,14 +3,16 @@ import {
   X, Lock, Unlock, FileSpreadsheet, Download, Upload, CheckCircle, 
   XCircle, Edit3, Trash2, Clock, Users, Shield, KeyRound, Plus, 
   ShieldCheck, Settings, Power, UserCheck, Award, Building2, MapPin,
-  FileText, PhoneCall, HardDrive, Eye, RefreshCw
+  FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe
 } from 'lucide-react';
 import { 
   downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS,
   getStoredCallLogs, clearCallLogs, getStoredBackups, createBackupSlot,
   restoreBackupSlot, getStored2FAConfig, save2FAConfig,
   getStoredPhonePermissions, respondPhonePermission,
-  getStoredAdminMasterPin, saveAdminMasterPin
+  getStoredAdminMasterPin, saveAdminMasterPin,
+  getStoredPolicies, DEFAULT_POLICIES, addCustomPolicy,
+  editPolicyItem, deleteCustomPolicyItem
 } from '../utils/storage';
 import { validateFileSize } from '../utils/imageCompressor';
 
@@ -25,6 +27,11 @@ export default function AdminPanel({
   districts,
   terms,
   onSaveTerms,
+  policies = [],
+  onAddPolicy,
+  onEditPolicy,
+  onDeletePolicy,
+  onSavePolicies,
   onApprove,
   onReject,
   onEditContact,
@@ -129,6 +136,13 @@ export default function AdminPanel({
   const [termsSavedMsg, setTermsSavedMsg] = useState('');
   const [newRuleInput, setNewRuleInput] = useState('');
 
+  // Dynamic Policy & Custom Links CMS State
+  const [policiesList, setPoliciesList] = useState(policies || getStoredPolicies());
+  const [editingPolicyItem, setEditingPolicyItem] = useState(null); // { id, title, hindiTitle, content }
+  const [isAddingNewPolicy, setIsAddingNewPolicy] = useState(false);
+  const [newPolicyForm, setNewPolicyForm] = useState({ title: '', hindiTitle: '', content: '' });
+  const [policyNotice, setPolicyNotice] = useState('');
+
   useEffect(() => {
     if (isOpen) {
       setCallLogs(getStoredCallLogs());
@@ -138,8 +152,57 @@ export default function AdminPanel({
       setPinChangeInput(cfg.secretPin || '998877');
       setPhonePermissions(getStoredPhonePermissions());
       setCurrentMasterPin(getStoredAdminMasterPin());
+      if (policies && policies.length > 0) {
+        setPoliciesList(policies);
+      } else {
+        setPoliciesList(getStoredPolicies());
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, policies]);
+
+  const handleAddNewPolicySubmit = (e) => {
+    e.preventDefault();
+    if (!newPolicyForm.title.trim() || !newPolicyForm.content.trim()) return;
+
+    if (onAddPolicy) {
+      onAddPolicy(newPolicyForm);
+    } else {
+      const updated = addCustomPolicy(newPolicyForm);
+      setPoliciesList(updated);
+    }
+    setNewPolicyForm({ title: '', hindiTitle: '', content: '' });
+    setIsAddingNewPolicy(false);
+    setPolicyNotice('✅ नया नीति लिंक एवं सामग्री सफलतापूर्वक जोड़ी गई!');
+    setTimeout(() => setPolicyNotice(''), 3000);
+  };
+
+  const handleSaveEditPolicySubmit = (e) => {
+    e.preventDefault();
+    if (!editingPolicyItem || !editingPolicyItem.title.trim()) return;
+
+    if (onEditPolicy) {
+      onEditPolicy(editingPolicyItem.id, editingPolicyItem);
+    } else {
+      const updated = editPolicyItem(editingPolicyItem.id, editingPolicyItem);
+      setPoliciesList(updated);
+    }
+    setEditingPolicyItem(null);
+    setPolicyNotice('✅ नीति / लिंक सामग्री सफलतापूर्वक अद्यतन हुई!');
+    setTimeout(() => setPolicyNotice(''), 3000);
+  };
+
+  const handleDeletePolicyClick = (policyId, policyTitle) => {
+    if (window.confirm(`क्या आप कस्टम लिंक "${policyTitle}" को हटाना चाहते हैं?`)) {
+      if (onDeletePolicy) {
+        onDeletePolicy(policyId);
+      } else {
+        const updated = deleteCustomPolicyItem(policyId);
+        setPoliciesList(updated);
+      }
+      setPolicyNotice('🗑️ कस्टम लिंक हटा दिया गया।');
+      setTimeout(() => setPolicyNotice(''), 3000);
+    }
+  };
 
   useEffect(() => {
     if (terms) {
@@ -458,8 +521,8 @@ export default function AdminPanel({
               className={`admin-tab ${activeTab === 'terms' ? 'active' : ''}`}
               onClick={() => setActiveTab('terms')}
             >
-              <FileText size={16} />
-              गोपनीय नियम व शर्तें
+              <Globe size={16} />
+              नीतियां व कस्टम लिंक्स ({policiesList.length})
             </button>
 
             <button 
@@ -1590,27 +1653,51 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* TAB 6: TERMS & CONDITIONS (Editable by Admin & Co-Admin) */}
+          {/* TAB 6: POLICIES & CUSTOM LINKS CMS */}
           {activeTab === 'terms' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div style={{
                 background: 'rgba(30,58,138,0.25)',
                 border: '1px solid rgba(196,151,86,0.35)',
-                padding: '0.75rem 1rem',
+                padding: '0.85rem 1.15rem',
                 borderRadius: '10px',
-                fontSize: '0.82rem',
+                fontSize: '0.84rem',
                 color: 'var(--khaki-light)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px'
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '10px'
               }}>
-                <FileText size={20} color="var(--khaki-primary)" style={{ flexShrink: 0 }} />
-                <div>
-                  <strong>शासकीय गोपनीयता नीति एवं सेवा शर्तें संशोधन:</strong> यहाँ से {isAdmin ? 'Super Admin' : `Co-Admin (${myDistrict})`} पोर्टल की आधिकारिक नियम व शर्तों को अद्यतन कर सकते हैं। यह संशोधन पोर्टल के नीचे फुटर में लाइव प्रदर्शित होता है।
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Globe size={22} color="var(--khaki-primary)" style={{ flexShrink: 0 }} />
+                  <div>
+                    <strong style={{ fontSize: '0.92rem', color: '#fff' }}>
+                      शासकीय नीतियां, नियम एवं कस्टम लिंक्स प्रबंधन (CMS):
+                    </strong>
+                    <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '2px' }}>
+                      यहाँ से आप सभी डिफ़ॉल्ट नीतियों की सामग्री बदल सकते हैं तथा <strong>नये कस्टम लिंक्स व पेज़ सामग्री</strong> जोड़ सकते हैं। नए लिंक्स बिना कोड बदले स्वतः फूटर एवं पॉपअप में प्रदर्शित होंगे।
+                    </div>
+                  </div>
                 </div>
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.82rem', padding: '0.45rem 1rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    onClick={() => {
+                      setIsAddingNewPolicy(!isAddingNewPolicy);
+                      setEditingPolicyItem(null);
+                    }}
+                  >
+                    <Plus size={15} />
+                    {isAddingNewPolicy ? 'फ़ॉर्म बंद करें' : '➕ नया लिंक / नीति जोड़ें'}
+                  </button>
+                )}
               </div>
 
-              {termsSavedMsg && (
+              {policyNotice && (
                 <div style={{
                   background: 'rgba(16, 185, 129, 0.2)',
                   border: '1px solid #10b981',
@@ -1618,158 +1705,252 @@ export default function AdminPanel({
                   padding: '0.65rem 1rem',
                   borderRadius: '8px',
                   fontSize: '0.85rem',
-                  fontWeight: 600
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
                 }}>
-                  {termsSavedMsg}
+                  <CheckCircle size={16} />
+                  <span>{policyNotice}</span>
                 </div>
               )}
 
-              <form onSubmit={handleSaveTermsSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {/* Header Titles */}
-                <div style={{
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  border: '1px solid var(--glass-border-light)',
+              {/* FORM 1: ADD NEW CUSTOM POLICY / LINK */}
+              {isAddingNewPolicy && (
+                <form onSubmit={handleAddNewPolicySubmit} style={{
+                  background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(8, 14, 26, 0.98))',
+                  border: '1.5px solid var(--khaki-primary, #c49756)',
                   borderRadius: '10px',
-                  padding: '1rem',
+                  padding: '1.15rem',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.75rem'
+                  gap: '0.85rem',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
                 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 style={{ margin: 0, color: 'var(--khaki-light)', fontSize: '0.98rem', fontWeight: 800 }}>
+                      ➕ नया लिंक व सामग्री जोड़ें (Add New Dynamic Policy/Link)
+                    </h4>
+                    <button type="button" className="close-btn" onClick={() => setIsAddingNewPolicy(false)}><X size={16} /></button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">लिंक / नीति का शीर्षक (Link / Policy Title in English/Hindi) *</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="उदा. Cyber Security Policy / आरटीआई नियमावली"
+                        value={newPolicyForm.title}
+                        onChange={e => setNewPolicyForm({ ...newPolicyForm, title: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">हिंदी शीर्षक / उपशीर्षक (Hindi Title / Subtitle)</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="उदा. साइबर सुरक्षा नीति"
+                        value={newPolicyForm.hindiTitle}
+                        onChange={e => setNewPolicyForm({ ...newPolicyForm, hindiTitle: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
                   <div className="form-group">
-                    <label className="form-label">नीति का मुख्य शीर्षक (Policy Title)</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={editableTerms?.title || ''}
-                      onChange={e => setEditableTerms({ ...editableTerms, title: e.target.value })}
-                      placeholder="उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तें"
+                    <label className="form-label">विस्तृत नियम, शर्तें व पेज़ सामग्री (Content / Detailed Matters) *</label>
+                    <textarea
+                      className="form-textarea"
+                      rows={6}
+                      placeholder="इस लिंक पर क्लिक करने पर दिखने वाली विस्तृत नियमावली, निर्देश अथवा पैराग्राफ यहाँ लिखें..."
+                      value={newPolicyForm.content}
+                      onChange={e => setNewPolicyForm({ ...newPolicyForm, content: e.target.value })}
                       required
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label className="form-label">उप-शीर्षक / विवरण (Subtitle / Scope)</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={editableTerms?.subtitle || ''}
-                      onChange={e => setEditableTerms({ ...editableTerms, subtitle: e.target.value })}
-                      placeholder="Official Confidentiality Policy • केवल अधिकृत पुलिस कार्मिकों हेतु"
-                    />
-                  </div>
-                </div>
-
-                {/* List of Rules */}
-                <div style={{
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  border: '1px solid var(--glass-border-light)',
-                  borderRadius: '10px',
-                  padding: '1rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.75rem'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-bright)', fontWeight: 700 }}>
-                      📋 सक्रिय नियम एवं शर्तें ({editableTerms?.rules?.length || 0})
-                    </h4>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                      प्रत्येक नियम को संपादित कर सकते हैं
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                    {editableTerms?.rules?.map((rule, idx) => (
-                      <div 
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '8px',
-                          background: 'rgba(0,0,0,0.25)',
-                          padding: '0.6rem 0.75rem',
-                          borderRadius: '8px',
-                          border: '1px solid rgba(255,255,255,0.06)'
-                        }}
-                      >
-                        <span style={{
-                          fontWeight: 700,
-                          color: 'var(--khaki-primary)',
-                          fontSize: '0.85rem',
-                          marginTop: '6px',
-                          flexShrink: 0
-                        }}>
-                          {idx + 1}.
-                        </span>
-                        <textarea
-                          className="form-textarea"
-                          rows={2}
-                          value={rule}
-                          onChange={e => handleRuleChange(idx, e.target.value)}
-                          style={{ flexGrow: 1, fontSize: '0.84rem' }}
-                          required
-                        />
-                        <button
-                          type="button"
-                          className="btn btn-danger"
-                          onClick={() => handleRemoveRule(idx)}
-                          style={{ padding: '6px 8px', alignSelf: 'flex-start' }}
-                          title="यह नियम हटाएं"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Add New Rule Form */}
-                  <div style={{
-                    marginTop: '0.5rem',
-                    paddingTop: '0.75rem',
-                    borderTop: '1px dashed rgba(255,255,255,0.1)',
-                    display: 'flex',
-                    gap: '0.5rem',
-                    alignItems: 'center'
-                  }}>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="नया नियम या शर्त यहाँ लिखें..."
-                      value={newRuleInput}
-                      onChange={e => setNewRuleInput(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={handleAddRule}
-                      style={{ whiteSpace: 'nowrap', padding: '0.55rem 0.95rem' }}
-                    >
-                      <Plus size={15} />
-                      नियम जोड़ें
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                    <button type="button" className="btn btn-secondary" onClick={() => setIsAddingNewPolicy(false)}>
+                      रद्द करें
+                    </button>
+                    <button type="submit" className="btn btn-primary" style={{ padding: '0.5rem 1.25rem' }}>
+                      <CheckCircle size={15} />
+                      लिंक व कंटेंट प्रकाशित करें
                     </button>
                   </div>
+                </form>
+              )}
+
+              {/* FORM 2: EDIT EXISTING POLICY MODAL / INLINE */}
+              {editingPolicyItem && (
+                <form onSubmit={handleSaveEditPolicySubmit} style={{
+                  background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(8, 14, 26, 0.98))',
+                  border: '1.5px solid #3b82f6',
+                  borderRadius: '10px',
+                  padding: '1.15rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.85rem',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 style={{ margin: 0, color: '#93c5fd', fontSize: '0.98rem', fontWeight: 800 }}>
+                      ✏️ नीति संपादित करें: {editingPolicyItem.title}
+                    </h4>
+                    <button type="button" className="close-btn" onClick={() => setEditingPolicyItem(null)}><X size={16} /></button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">नीति का शीर्षक (Title)</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={editingPolicyItem.title}
+                        onChange={e => setEditingPolicyItem({ ...editingPolicyItem, title: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">हिंदी शीर्षक / उपशीर्षक (Hindi Title)</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={editingPolicyItem.hindiTitle || ''}
+                        onChange={e => setEditingPolicyItem({ ...editingPolicyItem, hindiTitle: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">विस्तृत सामग्री (Detailed Matters / Content)</label>
+                    <textarea
+                      className="form-textarea"
+                      rows={8}
+                      value={editingPolicyItem.content}
+                      onChange={e => setEditingPolicyItem({ ...editingPolicyItem, content: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                    <button type="button" className="btn btn-secondary" onClick={() => setEditingPolicyItem(null)}>
+                      रद्द करें
+                    </button>
+                    <button type="submit" className="btn btn-primary" style={{ padding: '0.5rem 1.25rem' }}>
+                      <CheckCircle size={15} />
+                      संशोधन सुरक्षित करें
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* LIST OF ALL ACTIVE POLICIES & LINKS */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.92rem', color: 'var(--text-bright)', fontWeight: 700 }}>
+                    📋 सक्रिय नीतियां व फूटर लिंक्स ({policiesList.length})
+                  </h4>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                    ये सभी लिंक्स पोर्टल के फूटर एवं डायलॉग में स्वतः दिखाई देते हैं
+                  </span>
                 </div>
 
-                {/* Save and Reset Actions */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={handleResetDefaultTerms}
-                    style={{ fontSize: '0.82rem' }}
-                  >
-                    डिफ़ॉल्ट नियम रीसेट करें
-                  </button>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '0.85rem' }}>
+                  {policiesList.map((p, idx) => (
+                    <div key={p.id || idx} style={{
+                      background: 'rgba(15, 23, 42, 0.75)',
+                      border: p.isBuiltIn ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(196,151,86,0.4)',
+                      borderRadius: '10px',
+                      padding: '0.85rem 1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '0.65rem'
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '4px' }}>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: p.isBuiltIn ? 'rgba(59,130,246,0.18)' : 'rgba(16,185,129,0.18)',
+                            color: p.isBuiltIn ? '#93c5fd' : '#6ee7b7',
+                            border: p.isBuiltIn ? '1px solid rgba(59,130,246,0.3)' : '1px solid rgba(16,185,129,0.3)'
+                          }}>
+                            {p.isBuiltIn ? 'बिल्ट-इन नीति' : '➕ कस्टम लिंक'}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                            अंतिम संपादन: {p.lastUpdated || '2026-10-05'}
+                          </span>
+                        </div>
 
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    style={{ padding: '0.65rem 1.4rem', fontSize: '0.9rem' }}
-                  >
-                    💾 नियम व शर्तें सुरक्षित करें (Save Terms)
-                  </button>
+                        <h4 style={{ margin: '4px 0 2px 0', fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-bright)' }}>
+                          {p.title}
+                        </h4>
+                        {p.hindiTitle && p.hindiTitle !== p.title && (
+                          <div style={{ fontSize: '0.74rem', color: 'var(--khaki-light)', marginBottom: '4px' }}>
+                            {p.hindiTitle}
+                          </div>
+                        )}
+
+                        <p style={{
+                          fontSize: '0.78rem',
+                          color: '#94a3b8',
+                          margin: '4px 0 0 0',
+                          lineHeight: 1.45,
+                          maxHeight: '4.2em',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: 'vertical'
+                        }}>
+                          {p.content}
+                        </p>
+                      </div>
+
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        gap: '6px',
+                        borderTop: '1px solid rgba(255,255,255,0.06)',
+                        paddingTop: '0.5rem',
+                        marginTop: '0.25rem'
+                      }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '3px 9px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          onClick={() => {
+                            setEditingPolicyItem(p);
+                            setIsAddingNewPolicy(false);
+                          }}
+                          title="सामग्री संशोधित करें"
+                        >
+                          <Edit3 size={12} />
+                          <span>संशोधित करें</span>
+                        </button>
+
+                        {!p.isBuiltIn && (
+                          <button
+                            type="button"
+                            className="btn btn-danger"
+                            style={{ padding: '3px 8px', fontSize: '0.75rem' }}
+                            onClick={() => handleDeletePolicyClick(p.id, p.title)}
+                            title="यह कस्टम लिंक हटाएं"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </form>
+              </div>
             </div>
           )}
 

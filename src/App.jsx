@@ -88,7 +88,12 @@ import {
   getStoredBackups,
   getStoredPhonePermissions,
   respondPhonePermission,
-  getStored2FAConfig
+  getStored2FAConfig,
+  getStoredPolicies,
+  DEFAULT_POLICIES,
+  addCustomPolicy,
+  editPolicyItem,
+  deleteCustomPolicyItem
 } from './utils/storage';
 import TermsFooter from './components/TermsFooter';
 import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall, PhoneMissed } from 'lucide-react';
@@ -102,6 +107,7 @@ export default function App() {
   const [chats, setChats] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [terms, setTerms] = useState(DEFAULT_TERMS);
+  const [policies, setPolicies] = useState(DEFAULT_POLICIES);
 
   // Dynamic Master Configuration Lists
   const [posts, setPosts] = useState([]);
@@ -167,6 +173,7 @@ export default function App() {
     setOffices(getStoredOffices());
     setDistricts(getStoredDistricts());
     setTerms(getStoredTerms());
+    setPolicies(getStoredPolicies());
     setPhonePermissions(getStoredPhonePermissions());
     
     // Check and trigger rolling 6-hour automated backup
@@ -945,6 +952,24 @@ export default function App() {
     showToast('📜 शासकीय गोपनीयता नियम व शर्तें सफलतापूर्वक अपडेट हुईं!');
   };
 
+  const handleAddPolicy = (newPolicyData) => {
+    const updated = addCustomPolicy(newPolicyData);
+    setPolicies(updated);
+    showToast('✅ नई नीति / कस्टम लिंक सफलतापूर्वक जोड़ा गया!');
+  };
+
+  const handleEditPolicy = (policyId, updatedData) => {
+    const updated = editPolicyItem(policyId, updatedData);
+    setPolicies(updated);
+    showToast('✅ नीति / लिंक सामग्री सफलतापूर्वक अद्यतन हुई!');
+  };
+
+  const handleDeletePolicy = (policyId) => {
+    const updated = deleteCustomPolicyItem(policyId);
+    setPolicies(updated);
+    showToast('🗑️ कस्टम लिंक हटा दिया गया!');
+  };
+
   // Demo Data Reset
   const handleResetData = () => {
     if (window.confirm('क्या आप डिफ़ॉल्ट पुलिस संपर्क, Co-Admins, सूचनाएं, चैट एवं ग्रुप्स रीसेट करना चाहते हैं?')) {
@@ -1021,6 +1046,7 @@ export default function App() {
         <PolicyModal
           isOpen={isPolicyModalOpen}
           activePolicy={activePolicyType}
+          policies={policies}
           onClose={() => setIsPolicyModalOpen(false)}
         />
 
@@ -1319,8 +1345,8 @@ export default function App() {
 
       {/* Confidentiality Rules and Terms & Conditions Footer on Main Dashboard */}
       <TermsFooter 
-        terms={terms} 
-        canEdit={currentUser?.role === 'admin' || currentUser?.role === 'co_admin'}
+        policies={policies}
+        canEdit={currentUser?.role === 'admin'}
         onOpenAdminTermsEdit={handleOpenAdminPanel}
         onOpenPolicy={handleOpenPolicy}
       />
@@ -1403,6 +1429,10 @@ export default function App() {
         districts={districts}
         terms={terms}
         onSaveTerms={handleSaveTerms}
+        policies={policies}
+        onAddPolicy={handleAddPolicy}
+        onEditPolicy={handleEditPolicy}
+        onDeletePolicy={handleDeletePolicy}
         onApprove={handleApproveContact}
         onReject={handleRejectContact}
         onEditContact={handleStartEdit}
@@ -1498,6 +1528,9 @@ export default function App() {
       <PolicyModal
         isOpen={isPolicyModalOpen}
         activePolicy={activePolicyType}
+        policies={policies}
+        canEdit={currentUser?.role === 'admin'}
+        onOpenAdminPolicyEdit={handleOpenAdminPanel}
         onClose={() => setIsPolicyModalOpen(false)}
       />
 
@@ -1506,6 +1539,7 @@ export default function App() {
         isOpen={isMenuDrawerOpen}
         onClose={() => setIsMenuDrawerOpen(false)}
         currentUser={currentUser}
+        policies={policies}
         pendingCount={pendingCount}
         notifCount={notifications.length}
         chatsCount={unreadMessagesCount}
