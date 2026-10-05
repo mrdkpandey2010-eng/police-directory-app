@@ -1398,13 +1398,8 @@ export default function App() {
         onPermissionUpdated={() => setPhonePermissions(getStoredPhonePermissions())}
       />
 
-      {/* Confidentiality Rules and Terms & Conditions Footer on Main Dashboard */}
-      <TermsFooter 
-        policies={policies}
-        canEdit={currentUser?.role === 'admin'}
-        onOpenAdminTermsEdit={handleOpenAdminPanel}
-        onOpenPolicy={handleOpenPolicy}
-      />
+      {/* Official Departmental Copyright Footer */}
+      <TermsFooter />
 
       {/* Lazy-Loaded Modals Section */}
       <Suspense fallback={null}>

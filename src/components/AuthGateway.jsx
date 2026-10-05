@@ -4,7 +4,6 @@ import {
   AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload, Cloud,
   ChevronDown, X, ChevronRight, FileText
 } from 'lucide-react';
-import TermsFooter from './TermsFooter';
 import { getStoredAdminMasterPin, getStoredContacts } from '../utils/storage';
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
 
