@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import Header from './components/Header';
 import SearchFilters from './components/SearchFilters';
 import ContactList from './components/ContactList';
@@ -7,6 +7,7 @@ import AuthGateway from './components/AuthGateway';
 import HeaderMenuDrawer from './components/HeaderMenuDrawer';
 import MobileBottomNav from './components/MobileBottomNav';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
+import { initNativeApp, setupHardwareBackButton } from './utils/nativeBridge';
 
 // Dynamic / Lazy-loaded heavy modal dialogs for 60%+ smaller bundle & fast load speed
 const RegistrationModal = lazy(() => import('./components/RegistrationModal'));
@@ -169,8 +170,80 @@ export default function App() {
     setTimeout(() => setToastMessage(''), 3500);
   };
 
+  // Android Native Hardware Back Button Handler Ref (Modal & Drawer Stack)
+  const backHandlerRef = useRef(null);
+  backHandlerRef.current = () => {
+    if (isPolicyModalOpen) {
+      setIsPolicyModalOpen(false);
+      return true;
+    }
+    if (isEditModalOpen) {
+      setIsEditModalOpen(false);
+      setEditingContact(null);
+      return true;
+    }
+    if (isMenuDrawerOpen) {
+      setIsMenuDrawerOpen(false);
+      return true;
+    }
+    if (isFirebaseSetupOpen) {
+      setIsFirebaseSetupOpen(false);
+      return true;
+    }
+    if (isFeedbackModalOpen) {
+      setIsFeedbackModalOpen(false);
+      return true;
+    }
+    if (isNotifsModalOpen) {
+      setIsNotifsModalOpen(false);
+      return true;
+    }
+    if (isChatModalOpen) {
+      if (activeChatId) {
+        setActiveChatId(null);
+        return true;
+      }
+      setIsChatModalOpen(false);
+      return true;
+    }
+    if (isProfileModalOpen) {
+      setIsProfileModalOpen(false);
+      return true;
+    }
+    if (isAdmin2FAModalOpen) {
+      setIsAdmin2FAModalOpen(false);
+      return true;
+    }
+    if (isAdminModalOpen) {
+      setIsAdminModalOpen(false);
+      return true;
+    }
+    if (isRegisterModalOpen) {
+      setIsRegisterModalOpen(false);
+      return true;
+    }
+    if (isLoginModalOpen) {
+      setIsLoginModalOpen(false);
+      return true;
+    }
+    if (searchQuery && searchQuery.trim() !== '') {
+      setSearchQuery('');
+      return true;
+    }
+    return false;
+  };
+
   // Load all data on mount
   useEffect(() => {
+    // Native Android Engine Setup (Status Bar & Splash Screen)
+    initNativeApp();
+
+    // Android Hardware / Gesture Back Button
+    const cleanupBackButton = setupHardwareBackButton(
+      () => (backHandlerRef.current ? backHandlerRef.current() : false),
+      showToast
+    );
+
     setContacts(getStoredContacts());
     setCoAdmins(getStoredCoAdmins());
     setNotifications(getStoredNotifications());
@@ -283,6 +356,7 @@ export default function App() {
     }
 
     return () => {
+      cleanupBackButton();
       clearInterval(backupInterval);
       window.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);

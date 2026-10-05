@@ -1,0 +1,62 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer Gold Glow Ring / Shield Contour -->
+    <path
+        android:fillColor="#C49756"
+        android:pathData="M54,20 C72,20 84,26 84,46 C84,72 66,86 54,92 C42,86 24,72 24,46 C24,26 36,20 54,20 Z" />
+
+    <!-- Inner Shield Navy Body -->
+    <path
+        android:fillColor="#0B1C3D"
+        android:pathData="M54,23 C70,23 81,28 81,46 C81,69 64,83 54,88 C44,83 27,69 27,46 C27,28 38,23 54,23 Z" />
+
+    <!-- Left Half Red Distinction (Official UP Police Red-and-Blue Split) -->
+    <path
+        android:fillColor="#991B1B"
+        android:pathData="M54,23 L54,88 C44,83 27,69 27,46 C27,28 38,23 54,23 Z" />
+
+    <!-- Gold Center Division Line -->
+    <path
+        android:strokeColor="#C49756"
+        android:strokeWidth="1.2"
+        android:pathData="M54,23 L54,88" />
+
+    <!-- Central Gold 8-Point Police Star -->
+    <path
+        android:fillColor="#F5E0A3"
+        android:pathData="M54,34 L58,46 L70,47 L61,55 L64,67 L54,61 L44,67 L47,55 L38,47 L50,46 Z" />
+
+    <!-- Center Police Emblem Disc -->
+    <path
+        android:fillColor="#9A6D32"
+        android:pathData="M54,46 C57.3,46 60,48.7 60,52 C60,55.3 57.3,58 54,58 C50.7,58 48,55.3 48,52 C48,48.7 50.7,46 54,46 Z" />
+
+    <path
+        android:fillColor="#FFF1C5"
+        android:pathData="M54,48 C56.2,48 58,49.8 58,52 C58,54.2 56.2,56 54,56 C51.8,56 50,54.2 50,52 C50,49.8 51.8,48 54,48 Z" />
+
+    <!-- Central Ashoka Core Mark -->
+    <path
+        android:fillColor="#0B1C3D"
+        android:pathData="M52,50 L56,50 L55,54 L53,54 Z" />
+
+    <!-- Lower Banner Ribbon: Gold Border & Plaque -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M36,71 L72,71 C73,71 74,72 74,73 L74,77 C74,78 73,79 72,79 L36,79 C35,79 34,78 34,77 L34,73 C34,72 35,71 36,71 Z" />
+    
+    <path
+        android:strokeColor="#C49756"
+        android:strokeWidth="0.8"
+        android:pathData="M36,71 L72,71 C73,71 74,72 74,73 L74,77 C74,78 73,79 72,79 L36,79 C35,79 34,78 34,77 L34,73 C34,72 35,71 36,71 Z" />
+
+    <!-- Banner Inner Gold Star Accent -->
+    <path
+        android:fillColor="#F5E0A3"
+        android:pathData="M54,73.5 L55,75.5 L57,75.5 L55.5,76.5 L56,78.5 L54,77.5 L52,78.5 L52.5,76.5 L51,75.5 L53,75.5 Z" />
+
+</vector>

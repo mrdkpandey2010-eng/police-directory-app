@@ -23,5 +23,15 @@ dist
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
 *.sw?
+
+# Android Builds & Keystores
+android/app/build/
+android/.gradle/
+android/build/
+android/keystore.properties
+*.jks
+*.keystore
+*.aab
+*.apk
+

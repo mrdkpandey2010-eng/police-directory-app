@@ -7,9 +7,19 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "vite build && cap sync android",
+    "cap:open": "cap open android",
+    "android:build": "vite build && cap sync android && cd android && gradlew.bat bundleRelease",
+    "android:apk": "vite build && cap sync android && cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
     "firebase": "^12.19.0",
     "lucide-react": "^1.25.0",
     "react": "^19.2.7",
