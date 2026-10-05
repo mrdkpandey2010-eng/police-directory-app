@@ -60,6 +60,10 @@ import {
   toggleCoAdminActive,
   promoteUserToCoAdmin,
   revokeCoAdmin,
+  requestDistrictTransfer,
+  forwardDistrictTransferToAdmin,
+  approveDistrictTransferByAdmin,
+  rejectDistrictTransfer,
   addNotification,
   deleteNotification,
   addFeedback,
@@ -456,6 +460,7 @@ export default function App() {
   const handleToggleUserActive = (id) => {
     const updated = toggleUserActive(contacts, id);
     setContacts(updated);
+    setCoAdmins(getStoredCoAdmins());
     const target = updated.find(c => c.id === id);
     const isNowActive = target.status === 'approved' || target.status === 'active';
     showToast(isNowActive ? 'कर्मचारी को सक्रिय (Active) कर दिया गया!' : 'कर्मचारी को निष्क्रिय (Inactive) कर दिया गया!');
@@ -465,8 +470,50 @@ export default function App() {
   const handleToggleBlock = (id) => {
     const updated = toggleBlockOfficer(contacts, id);
     setContacts(updated);
+    setCoAdmins(getStoredCoAdmins());
     const target = updated.find(c => c.id === id);
-    showToast(target.status === 'blocked' ? 'लॉगिन एवं प्रोफ़ाइल ब्लॉक की गई!' : 'प्रोफ़ाइल अनब्लॉक कर दी गई!');
+    showToast(target.status === 'blocked' ? 'लॉगिन एवं प्रोफ़ाइल ब्लॉक की गई! मुख्य पैनल से हटा दिया गया।' : 'प्रोफ़ाइल अनब्लॉक कर दी गई!');
+  };
+
+  // Handler: District Transfer Workflow (Strict 2-tier approval chain)
+  const handleRequestDistrictTransfer = (userId, toDistrict, reason) => {
+    const updated = requestDistrictTransfer(contacts, userId, toDistrict, reason);
+    setContacts(updated);
+    if (currentUser && currentUser.id === userId) {
+      const updatedUser = updated.find(c => c.id === userId);
+      setCurrentUser(updatedUser);
+      saveSession(updatedUser);
+    }
+    showToast('जनपद स्थानांतरण अनुरोध सबमिट हुआ! वर्तमान ज़िला Co-Admin समीक्षा करेंगे।');
+  };
+
+  const handleForwardDistrictTransfer = (userId, coAdminName) => {
+    const updated = forwardDistrictTransferToAdmin(contacts, userId, coAdminName);
+    setContacts(updated);
+    showToast('स्थानांतरण अनुरोध मुख्यालय (Super Admin) को फ़ॉरवर्ड कर दिया गया!');
+  };
+
+  const handleApproveDistrictTransfer = (userId, adminName) => {
+    const updated = approveDistrictTransferByAdmin(contacts, userId, adminName);
+    setContacts(updated);
+    setCoAdmins(getStoredCoAdmins());
+    if (currentUser && currentUser.id === userId) {
+      const updatedUser = updated.find(c => c.id === userId);
+      setCurrentUser(updatedUser);
+      saveSession(updatedUser);
+    }
+    showToast('स्थानांतरण आधिकारिक रूप से स्वीकृत! कर्मचारी का नया जनपद लागू हुआ।');
+  };
+
+  const handleRejectDistrictTransfer = (userId) => {
+    const updated = rejectDistrictTransfer(contacts, userId);
+    setContacts(updated);
+    if (currentUser && currentUser.id === userId) {
+      const updatedUser = updated.find(c => c.id === userId);
+      setCurrentUser(updatedUser);
+      saveSession(updatedUser);
+    }
+    showToast('स्थानांतरण अनुरोध निरस्त/रद्द कर दिया गया।');
   };
 
   // Handler: Delete Contact
@@ -1011,6 +1058,7 @@ export default function App() {
         onToggleBlockContact={handleToggleBlock}
         onToggleActiveContact={handleToggleUserActive}
         onPromoteCoAdminContact={(userId, district) => handlePromoteUserToCoAdmin(userId, district)}
+        onRevokeCoAdminContact={handleRevokeCoAdmin}
         onDeleteContact={handleDeleteContact}
         onResetFilters={handleResetFilters}
         onOpenChatWithContact={handleOpenChatWithContact}
@@ -1085,6 +1133,9 @@ export default function App() {
         onUpdateProfileRequest={handleUserProfileUpdateRequest}
         onChangePassword={handleChangeMyPassword}
         onUpdateUniformPhoto={handleUpdateUniformPhoto}
+        onRequestDistrictTransfer={handleRequestDistrictTransfer}
+        onCancelDistrictTransfer={handleRejectDistrictTransfer}
+        districts={districts}
         offices={offices}
       />
 
@@ -1113,6 +1164,9 @@ export default function App() {
         onToggleCoAdminActive={handleToggleCoAdminActive}
         onPromoteUserToCoAdmin={handlePromoteUserToCoAdmin}
         onRevokeCoAdmin={handleRevokeCoAdmin}
+        onForwardDistrictTransfer={handleForwardDistrictTransfer}
+        onApproveDistrictTransfer={handleApproveDistrictTransfer}
+        onRejectDistrictTransfer={handleRejectDistrictTransfer}
         onAddPost={handleAddPost}
         onEditPost={handleEditPost}
         onDeletePost={handleDeletePost}

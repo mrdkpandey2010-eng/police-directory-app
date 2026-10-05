@@ -524,23 +524,132 @@ export const promoteUserToCoAdmin = (contacts, coAdmins, userId, assignedDistric
   return { updatedContacts, updatedCoAdmins };
 };
 
-export const revokeCoAdmin = (contacts, coAdmins, coAdminId) => {
-  const targetCoAdmin = coAdmins.find(ca => ca.id === coAdminId);
-  const updatedCoAdmins = coAdmins.filter(ca => ca.id !== coAdminId);
+export const revokeCoAdmin = (contacts, coAdmins, identifier) => {
+  const targetCoAdmin = coAdmins.find(ca => 
+    ca.id === identifier || ca.userId === identifier || ca.id === `coadmin-${identifier}` || (ca.phone && ca.phone === identifier)
+  );
+  const updatedCoAdmins = coAdmins.filter(ca => 
+    ca.id !== identifier && ca.userId !== identifier && ca.id !== `coadmin-${identifier}` && ca.phone !== identifier
+  );
   saveCoAdmins(updatedCoAdmins);
 
-  let updatedContacts = contacts;
-  if (targetCoAdmin) {
-    updatedContacts = contacts.map(c => {
-      if (c.id === targetCoAdmin.userId || c.phone === targetCoAdmin.phone) {
-        return { ...c, isCoAdmin: false };
-      }
-      return c;
-    });
-    saveContacts(updatedContacts);
-  }
+  const updatedContacts = contacts.map(c => {
+    if (
+      c.id === identifier || 
+      (targetCoAdmin && (c.id === targetCoAdmin.userId || c.phone === targetCoAdmin.phone))
+    ) {
+      return { ...c, isCoAdmin: false };
+    }
+    return c;
+  });
+  saveContacts(updatedContacts);
 
   return { updatedContacts, updatedCoAdmins };
+};
+
+// ---------------- DISTRICT TRANSFER WORKFLOW ----------------
+// Step 1: User submits transfer request (status: 'pending_coadmin')
+export const requestDistrictTransfer = (contacts, userId, toDistrict, reason = '') => {
+  const user = contacts.find(c => c.id === userId);
+  if (!user) return contacts;
+
+  const transferData = {
+    id: `transfer-${Date.now()}`,
+    fromDistrict: user.district,
+    toDistrict: toDistrict,
+    reason: (reason || '').trim(),
+    status: 'pending_coadmin', // Pending local Co-Admin forwarding
+    requestedAt: new Date().toISOString(),
+    forwardedAt: null,
+    forwardedBy: null,
+    approvedAt: null,
+    approvedBy: null
+  };
+
+  const updatedContacts = contacts.map(c => {
+    if (c.id === userId) {
+      return {
+        ...c,
+        districtTransfer: transferData
+      };
+    }
+    return c;
+  });
+
+  saveContacts(updatedContacts);
+  return updatedContacts;
+};
+
+// Step 2: Co-Admin reviews and forwards to Super Admin (status: 'pending_admin')
+export const forwardDistrictTransferToAdmin = (contacts, userId, coAdminName = 'Co-Admin') => {
+  const updatedContacts = contacts.map(c => {
+    if (c.id === userId && c.districtTransfer) {
+      return {
+        ...c,
+        districtTransfer: {
+          ...c.districtTransfer,
+          status: 'pending_admin',
+          forwardedAt: new Date().toISOString(),
+          forwardedBy: coAdminName
+        }
+      };
+    }
+    return c;
+  });
+
+  saveContacts(updatedContacts);
+  return updatedContacts;
+};
+
+// Step 3: Super Admin gives final approval (officer's district actually changes)
+export const approveDistrictTransferByAdmin = (contacts, userId, adminName = 'Super Admin') => {
+  const targetUser = contacts.find(c => c.id === userId);
+  if (!targetUser || !targetUser.districtTransfer) return contacts;
+
+  const newDistrict = targetUser.districtTransfer.toDistrict;
+
+  const updatedContacts = contacts.map(c => {
+    if (c.id === userId) {
+      return {
+        ...c,
+        district: newDistrict,
+        // If they were Co-Admin in the old district, revoke Co-Admin role
+        isCoAdmin: false,
+        districtTransfer: null,
+        registrationNotes: `जनपद स्थानांतरण स्वीकृत: ${targetUser.districtTransfer.fromDistrict} ➔ ${newDistrict} (${new Date().toLocaleDateString('hi-IN')})`
+      };
+    }
+    return c;
+  });
+
+  saveContacts(updatedContacts);
+
+  // If officer was Co-Admin in old district, remove from coAdmins
+  try {
+    const coAdmins = getStoredCoAdmins();
+    const updatedCoAdmins = coAdmins.filter(ca => ca.userId !== userId && ca.phone !== targetUser.phone);
+    if (updatedCoAdmins.length !== coAdmins.length) {
+      saveCoAdmins(updatedCoAdmins);
+    }
+  } catch (err) {}
+
+  return updatedContacts;
+};
+
+// Reject District Transfer (Co-Admin or Super Admin)
+export const rejectDistrictTransfer = (contacts, userId) => {
+  const updatedContacts = contacts.map(c => {
+    if (c.id === userId) {
+      return {
+        ...c,
+        districtTransfer: null
+      };
+    }
+    return c;
+  });
+
+  saveContacts(updatedContacts);
+  return updatedContacts;
 };
 
 // ---------------- NOTIFICATIONS ----------------
@@ -1125,14 +1234,29 @@ export const rejectOfficer = (contacts, id) => {
 
 // ---------------- USER ACTIVE / INACTIVE TOGGLE (Admin & Co-Admin) ----------------
 export const toggleUserActive = (contacts, id) => {
+  let newStatus = 'inactive';
   const updatedList = contacts.map(c => {
     if (c.id === id) {
       const isCurrentlyActive = c.status === 'approved' || c.status === 'active';
-      return { ...c, status: isCurrentlyActive ? 'inactive' : 'approved' };
+      newStatus = isCurrentlyActive ? 'inactive' : 'approved';
+      return { ...c, status: newStatus };
     }
     return c;
   });
   saveContacts(updatedList);
+
+  try {
+    const coAdmins = getStoredCoAdmins();
+    const target = contacts.find(c => c.id === id);
+    const updatedCoAdmins = coAdmins.map(ca => {
+      if (ca.userId === id || ca.id === id || ca.id === `coadmin-${id}` || (target && target.phone && ca.phone === target.phone)) {
+        return { ...ca, status: newStatus === 'inactive' ? 'inactive' : 'active' };
+      }
+      return ca;
+    });
+    saveCoAdmins(updatedCoAdmins);
+  } catch (err) {}
+
   return updatedList;
 };
 
@@ -1162,14 +1286,28 @@ export const requestUserProfileUpdate = (contacts, userId, updatedFields) => {
 
 // ---------------- BLOCK / UNBLOCK ----------------
 export const toggleBlockOfficer = (contacts, id) => {
+  let newStatus = 'blocked';
   const updatedList = contacts.map(c => {
     if (c.id === id) {
-      const newStatus = c.status === 'blocked' ? 'approved' : 'blocked';
+      newStatus = c.status === 'blocked' ? 'approved' : 'blocked';
       return { ...c, status: newStatus };
     }
     return c;
   });
   saveContacts(updatedList);
+
+  try {
+    const coAdmins = getStoredCoAdmins();
+    const target = contacts.find(c => c.id === id);
+    const updatedCoAdmins = coAdmins.map(ca => {
+      if (ca.userId === id || ca.id === id || ca.id === `coadmin-${id}` || (target && target.phone && ca.phone === target.phone)) {
+        return { ...ca, status: newStatus === 'blocked' ? 'blocked' : 'active' };
+      }
+      return ca;
+    });
+    saveCoAdmins(updatedCoAdmins);
+  } catch (err) {}
+
   return updatedList;
 };
 

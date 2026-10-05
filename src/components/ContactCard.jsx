@@ -14,6 +14,7 @@ export default function ContactCard({
   onToggleBlock, 
   onToggleActive,
   onPromoteCoAdmin,
+  onRevokeCoAdmin,
   onDelete,
   onOpenChatWithContact,
   onPermissionUpdated
@@ -390,7 +391,13 @@ export default function ContactCard({
               <button
                 className={`btn ${contact.isCoAdmin ? 'btn-danger' : 'btn-secondary'}`}
                 style={{ padding: '3px 6px', fontSize: '0.72rem', borderColor: 'var(--khaki-primary)' }}
-                onClick={() => onPromoteCoAdmin(contact.id, contact.district)}
+                onClick={() => {
+                  if (contact.isCoAdmin) {
+                    if (onRevokeCoAdmin) onRevokeCoAdmin(contact.id);
+                  } else {
+                    if (onPromoteCoAdmin) onPromoteCoAdmin(contact.id, contact.district);
+                  }
+                }}
                 title={contact.isCoAdmin ? "Co-Admin पद हटाएं" : `${contact.district} का Co-Admin बनाएं`}
               >
                 <ShieldCheck size={11} />

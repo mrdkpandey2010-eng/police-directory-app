@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Shield, Lock, User, UserPlus, KeyRound, Building, ArrowRight, 
-  AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload, Cloud
+  AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload, Cloud,
+  ChevronDown, X, ChevronRight, FileText
 } from 'lucide-react';
 import TermsFooter from './TermsFooter';
 
@@ -18,8 +19,13 @@ export default function AuthGateway({
   terms = null,
   onOpenPolicy = null
 }) {
-  const [activeTab, setActiveTab] = useState('user_login'); // 'user_login' | 'register' | 'co_admin' | 'admin'
+  // Public tabs: 'user_login' | 'register' | 'co_admin'
+  const [activeTab, setActiveTab] = useState('user_login'); 
+  const [showModePopup, setShowModePopup] = useState(false);
   
+  // Dedicated Super Admin Page mode (Completely separated from public users)
+  const [isSuperAdminMode, setIsSuperAdminMode] = useState(false);
+
   // Login inputs
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -44,7 +50,17 @@ export default function AuthGateway({
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [regSuccess, setRegSuccess] = useState(false);
 
-  // Filter offices by selected district
+  // Mandatory Terms Agreement & inline expand state for each login mode
+  const [loginTermsAgreed, setLoginTermsAgreed] = useState(false);
+  const [showLoginTermsInline, setShowLoginTermsInline] = useState(false);
+
+  const [coAdminTermsAgreed, setCoAdminTermsAgreed] = useState(false);
+  const [showCoAdminTermsInline, setShowCoAdminTermsInline] = useState(false);
+
+  const [adminTermsAgreed, setAdminTermsAgreed] = useState(false);
+  const [showAdminTermsInline, setShowAdminTermsInline] = useState(false);
+
+  // Filter offices by selected district in self-registration
   const districtOffices = useMemo(() => {
     if (!Array.isArray(offices)) return [];
     return offices.filter(o => {
@@ -53,10 +69,26 @@ export default function AuthGateway({
     }).map(o => typeof o === 'string' ? o : o.name);
   }, [offices, regForm.district]);
 
+  // Mode label helper
+  const getModeLabel = (tab) => {
+    switch (tab) {
+      case 'user_login': return 'कर्मचारी लॉगिन (Departmental Employee)';
+      case 'register': return 'नया स्व-पंजीकरण (New Registration)';
+      case 'co_admin': return 'ज़िला Co-Admin (District Nodal Officer)';
+      default: return 'लॉगिन विकल्प चुनें';
+    }
+  };
+
   // User Login Handler
   const handleUserLogin = (e) => {
     e.preventDefault();
     setErrorMsg('');
+
+    if (!loginTermsAgreed) {
+      setErrorMsg('⚠️ सुरक्षा नीति: कृपया लॉगिन करने से पूर्व "उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तें" वाले चेकबॉक्स पर टिक करके सहमति दें।');
+      return;
+    }
+
     const idClean = identifier.trim().toLowerCase();
     const pwdClean = password.trim();
 
@@ -101,6 +133,12 @@ export default function AuthGateway({
   const handleCoAdminLogin = (e) => {
     e.preventDefault();
     setErrorMsg('');
+
+    if (!coAdminTermsAgreed) {
+      setErrorMsg('⚠️ सुरक्षा नीति: कृपया लॉगिन करने से पूर्व "उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तें" वाले चेकबॉक्स पर टिक करके सहमति दें।');
+      return;
+    }
+
     const targetCoAdmin = coAdmins.find(c => c.id === selectedCoAdminId || c.username === identifier.trim().toLowerCase());
 
     if (!targetCoAdmin) {
@@ -108,8 +146,8 @@ export default function AuthGateway({
       return;
     }
 
-    if (targetCoAdmin.status === 'inactive') {
-      setErrorMsg('यह Co-Admin खाता Super Admin द्वारा निष्क्रिय (Inactive) कर दिया गया है। सक्रियता हेतु मुख्यालय से संपर्क करें।');
+    if (targetCoAdmin.status === 'inactive' || targetCoAdmin.status === 'blocked') {
+      setErrorMsg('यह Co-Admin खाता Super Admin द्वारा निष्क्रिय/ब्लॉक कर दिया गया है। सक्रियता हेतु मुख्यालय से संपर्क करें।');
       return;
     }
 
@@ -124,10 +162,16 @@ export default function AuthGateway({
     });
   };
 
-  // Super Admin Login Handler
+  // Super Admin Login Handler (Dedicated Admin Portal)
   const handleSuperAdminLogin = (e) => {
     e.preventDefault();
     setErrorMsg('');
+
+    if (!adminTermsAgreed) {
+      setErrorMsg('⚠️ सुरक्षा नीति: कृपया लॉगिन करने से पूर्व "उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तें" वाले चेकबॉक्स पर टिक करके सहमति दें।');
+      return;
+    }
+
     if (password.trim() === '1234' || password.trim() === 'admin') {
       onLoginSuccess({
         role: 'admin',
@@ -197,6 +241,88 @@ export default function AuthGateway({
     setRegSuccess(true);
   };
 
+  // Reusable inline policy agreement box component
+  const renderTermsAgreementBox = (checked, setChecked, isExpanded, setIsExpanded) => (
+    <div className="form-group full-width" style={{
+      background: 'rgba(196, 151, 86, 0.08)',
+      border: '1px solid rgba(196, 151, 86, 0.3)',
+      padding: '0.65rem 0.85rem',
+      borderRadius: '8px'
+    }}>
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '0.8rem', color: '#fff' }}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={e => setChecked(e.target.checked)}
+          style={{ marginTop: '3px', accentColor: 'var(--khaki-primary)', cursor: 'pointer', transform: 'scale(1.15)' }}
+        />
+        <div>
+          <span>
+            मैं{' '}
+            <button
+              type="button"
+              onClick={() => onOpenPolicy ? onOpenPolicy('terms') : setIsExpanded(!isExpanded)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--khaki-light)',
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                fontWeight: 700,
+                padding: 0
+              }}
+            >
+              उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तें
+            </button>{' '}
+            को स्वीकार करता हूँ।{' '}
+            <span style={{ color: 'var(--danger-red, #ef4444)', fontWeight: 800 }}>* (लॉगिन हेतु अनिवार्य)</span>
+          </span>
+
+          <div style={{ marginTop: '4px' }}>
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--khaki-primary)',
+                fontSize: '0.73rem',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              {isExpanded ? '▲ शर्तें संक्षिप्त करें (Collapse)' : '▼ शर्तें विस्तार से देखें (Expand to Read)'}
+            </button>
+          </div>
+        </div>
+      </label>
+
+      {isExpanded && (
+        <div style={{
+          marginTop: '0.5rem',
+          paddingTop: '0.5rem',
+          borderTop: '1px dashed rgba(196, 151, 86, 0.25)',
+          fontSize: '0.75rem',
+          color: 'var(--text-secondary, #cbd5e1)',
+          maxHeight: '160px',
+          overflowY: 'auto',
+          lineHeight: 1.45
+        }}>
+          {terms?.rules && terms.rules.map((rule, idx) => (
+            <div key={idx} style={{ marginBottom: '4px', display: 'flex', gap: '5px' }}>
+              <span style={{ color: 'var(--khaki-primary)', fontWeight: 700 }}>{idx + 1}.</span>
+              <span>{rule}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div style={{
       minHeight: '88vh',
@@ -211,7 +337,7 @@ export default function AuthGateway({
         maxWidth: '580px',
         background: 'var(--bg-surface, #111827)',
         border: '1px solid var(--khaki-border, rgba(196, 151, 86, 0.35))',
-        borderTop: '4px solid var(--khaki-primary, #c49756)',
+        borderTop: isSuperAdminMode ? '4px solid #ef4444' : '4px solid var(--khaki-primary, #c49756)',
         borderRadius: 'var(--radius-lg, 12px)',
         padding: '1.25rem 1.5rem',
         boxShadow: 'var(--shadow-card, 0 10px 30px rgba(0,0,0,0.5))',
@@ -219,9 +345,34 @@ export default function AuthGateway({
         flexDirection: 'column',
         gap: '1rem'
       }}>
-        {/* Cloud Setup Button on Login Screen */}
-        {onOpenFirebaseSetup && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '-0.35rem -0.5rem 0 0' }}>
+        {/* Top Sync & Status Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '-0.35rem -0.5rem 0 0' }}>
+          {isSuperAdminMode ? (
+            <button
+              type="button"
+              onClick={() => { setIsSuperAdminMode(false); setErrorMsg(''); }}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: '#cbd5e1',
+                padding: '3px 10px',
+                borderRadius: '16px',
+                fontSize: '0.74rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              ← सामान्य पुलिस पोर्टल
+            </button>
+          ) : (
+            <span style={{ fontSize: '0.72rem', color: 'var(--khaki-primary)', fontWeight: 600 }}>
+              👮 U.P. POLICE OFFICIAL
+            </span>
+          )}
+
+          {onOpenFirebaseSetup && (
             <button
               type="button"
               onClick={onOpenFirebaseSetup}
@@ -241,12 +392,11 @@ export default function AuthGateway({
               <Cloud size={12} />
               <span>{isFirebaseConnected ? 'क्लाउड लाइव चैट' : 'क्लाउड सिंक'}</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Police Branding Header */}
         <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.45rem' }}>
-          {/* Official UP Police Ribbon Accent */}
           <div style={{
             height: '3px',
             width: '60px',
@@ -258,440 +408,56 @@ export default function AuthGateway({
           <div className="police-badge-icon" style={{ 
             width: '54px', 
             height: '54px', 
-            background: 'linear-gradient(145deg, #162c5b, #0b1a30)',
-            border: '2px solid var(--khaki-primary, #c49756)',
-            boxShadow: '0 0 15px rgba(196, 151, 86, 0.35)'
+            background: isSuperAdminMode ? 'linear-gradient(145deg, #7f1d1d, #1e1b4b)' : 'linear-gradient(145deg, #162c5b, #0b1a30)',
+            border: isSuperAdminMode ? '2px solid #ef4444' : '2px solid var(--khaki-primary, #c49756)',
+            boxShadow: isSuperAdminMode ? '0 0 15px rgba(239, 68, 68, 0.4)' : '0 0 15px rgba(196, 151, 86, 0.35)'
           }}>
-            <Shield size={28} color="var(--khaki-light, #dfb97e)" />
+            {isSuperAdminMode ? (
+              <KeyRound size={26} color="#fca5a5" />
+            ) : (
+              <Shield size={28} color="var(--khaki-light, #dfb97e)" />
+            )}
           </div>
+          
           <div>
             <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-bright, #fff)' }}>
-              उत्तर प्रदेश पुलिस संपर्क पोर्टल
+              {isSuperAdminMode ? 'पुलिस महानिदेशक मुख्यालय (Super Admin)' : 'उत्तर प्रदेश पुलिस संपर्क पोर्टल'}
             </h1>
-            <p style={{ fontSize: '0.8rem', color: 'var(--khaki-light, #dfb97e)', marginTop: '1px' }}>
-              आधिकारिक निर्देशिका एवं कॉलर ऐप • अधिकृत विभागीय लॉगिन
+            <p style={{ fontSize: '0.8rem', color: isSuperAdminMode ? '#fca5a5' : 'var(--khaki-light, #dfb97e)', marginTop: '1px' }}>
+              {isSuperAdminMode ? 'मुख्यालय स्तर मास्टर प्रशासनिक नियंत्रण कक्ष' : 'आधिकारिक निर्देशिका एवं कॉलर ऐप • विभागीय लॉगिन'}
             </p>
           </div>
 
           <div style={{ 
-            background: 'rgba(196,151,86,0.1)', 
-            border: '1px solid rgba(196,151,86,0.3)', 
+            background: isSuperAdminMode ? 'rgba(239,68,68,0.1)' : 'rgba(196,151,86,0.1)', 
+            border: isSuperAdminMode ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(196,151,86,0.3)', 
             borderRadius: '6px', 
             padding: '4px 10px', 
             fontSize: '0.74rem', 
-            color: 'var(--khaki-light, #dfb97e)',
+            color: isSuperAdminMode ? '#fca5a5' : 'var(--khaki-light, #dfb97e)',
             display: 'flex',
             alignItems: 'center',
             gap: '5px'
           }}>
-            <Lock size={12} color="var(--khaki-primary, #c49756)" />
-            <span>गोपनीय शासकीय पोर्टल: केवल अधिकृत पुलिस कार्मिकों के उपयोग हेतु।</span>
+            <Lock size={12} color={isSuperAdminMode ? '#ef4444' : 'var(--khaki-primary, #c49756)'} />
+            <span>
+              {isSuperAdminMode ? 'अत्यंत गोपनीय: केवल अधिकृत Super Admin मास्टर पासवर्ड से प्रवेश मान्य।' : 'गोपनीय शासकीय पोर्टल: केवल अधिकृत पुलिस कार्मिकों के उपयोग हेतु।'}
+            </span>
           </div>
         </div>
 
-        {/* Tab Selection */}
-        <div className="admin-tabs" style={{ justifyContent: 'center', gap: '0.35rem' }}>
-          <button 
-            type="button"
-            className={`admin-tab ${activeTab === 'user_login' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('user_login'); setErrorMsg(''); setRegSuccess(false); }}
-            style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem' }}
-          >
-            <User size={14} />
-            कर्मचारी लॉगिन
-          </button>
-
-          <button 
-            type="button"
-            className={`admin-tab ${activeTab === 'register' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('register'); setErrorMsg(''); setRegSuccess(false); }}
-            style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem' }}
-          >
-            <UserPlus size={14} />
-            नया स्व-पंजीकरण
-          </button>
-
-          <button 
-            type="button"
-            className={`admin-tab ${activeTab === 'co_admin' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('co_admin'); setErrorMsg(''); setRegSuccess(false); }}
-            style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem' }}
-          >
-            <Building size={14} />
-            ज़िला Co-Admin
-          </button>
-
-          <button 
-            type="button"
-            className={`admin-tab ${activeTab === 'admin' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('admin'); setErrorMsg(''); setRegSuccess(false); }}
-            style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem' }}
-          >
-            <Shield size={14} />
-            Super Admin
-          </button>
-        </div>
-
-        {errorMsg && (
-          <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red, #ef4444)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
-            {errorMsg}
-          </div>
-        )}
-
-        {/* TAB 1: EMPLOYEE LOGIN */}
-        {activeTab === 'user_login' && (
-          <form onSubmit={handleUserLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            <div className="form-group">
-              <label className="form-label">PNO नंबर या मोबाइल नंबर</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="PNO नंबर या मोबाइल नंबर दर्ज करें"
-                value={identifier}
-                onChange={e => setIdentifier(e.target.value)}
-                autoFocus
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">पासवर्ड</label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder="अपना पासवर्ड दर्ज करें"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
-              <ArrowRight size={15} />
-              लॉगिन करें
-            </button>
-
-            <div style={{ textAlign: 'center', marginTop: '0.2rem' }}>
-              <button 
-                type="button" 
-                onClick={() => { setActiveTab('register'); setErrorMsg(''); }}
-                style={{ background: 'transparent', border: 'none', color: 'var(--khaki-primary, #c49756)', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline' }}
-              >
-                नया पुलिस कर्मचारी खाता? यहाँ स्व-पंजीकरण करें
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* TAB 2: NEW SELF-REGISTRATION */}
-        {activeTab === 'register' && (
-          <div>
-            {regSuccess ? (
-              <div style={{ textAlign: 'center', padding: '1.25rem 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.65rem' }}>
-                <CheckCircle2 size={46} color="var(--success-emerald, #10b981)" />
-                <h3 style={{ color: 'var(--text-bright)', fontSize: '1.1rem', fontWeight: 700 }}>
-                  पंजीकरण सफलतापूर्वक दर्ज हुआ!
-                </h3>
-                <div style={{ background: 'rgba(196,151,86,0.12)', border: '1px solid rgba(196,151,86,0.3)', padding: '0.75rem', borderRadius: '8px', color: 'var(--khaki-light)', fontSize: '0.8rem', lineHeight: 1.45 }}>
-                  <strong>Admin Approval Mandatory:</strong> आपकी प्रोफ़ाइल संबंधित ज़िला Co-Admin / Super Admin के सत्यापन एवं अनुमोदन हेतु भेजी गई है। सत्यापन उपरांत आप पोर्टल में लॉगिन कर सकेंगे।
-                </div>
-                <button 
-                  type="button" 
-                  className="btn btn-primary" 
-                  onClick={() => { setActiveTab('user_login'); setRegSuccess(false); }}
-                  style={{ marginTop: '0.4rem' }}
-                >
-                  लॉगिन स्क्रीन पर जाएं
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--khaki-light)' }}>
-                  📝 पुलिस कर्मचारी अपना आधिकारिक विवरण भरें। सत्यापन के उपरांत आपको अपने जनपद की निर्देशिका का एक्सेस मिलेगा।
-                </div>
-
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label className="form-label">कर्मचारी का नाम <span className="req">*</span></label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="पूरा नाम दर्ज करें"
-                      value={regForm.name}
-                      onChange={e => setRegForm({ ...regForm, name: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">PNO नंबर / बैज नंबर</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="उदा. PNO-948120011"
-                      value={regForm.pno}
-                      onChange={e => setRegForm({ ...regForm, pno: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">पद (Post) <span className="req">*</span></label>
-                    <select
-                      className="form-select"
-                      value={regForm.post}
-                      onChange={e => setRegForm({ ...regForm, post: e.target.value })}
-                    >
-                      {posts.filter((_, idx) => idx > 0).map((p, idx) => (
-                        <option key={idx} value={p}>{p}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">पदस्थापित जनपद (District) <span className="req">*</span></label>
-                    <select
-                      className="form-select"
-                      value={regForm.district}
-                      onChange={e => setRegForm({ ...regForm, district: e.target.value })}
-                    >
-                      {districts.filter((_, idx) => idx > 0).map((d, idx) => (
-                        <option key={idx} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group full-width">
-                    <label className="form-label">कार्यालय / थाना (Office/Thana) <span className="req">*</span></label>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="उदा. थाना कोतवाली / पुलिस लाइन"
-                        value={regForm.office}
-                        onChange={e => setRegForm({ ...regForm, office: e.target.value })}
-                        required
-                      />
-                      <select
-                        className="form-select"
-                        style={{ width: '220px' }}
-                        onChange={e => {
-                          if (e.target.value) setRegForm({ ...regForm, office: e.target.value });
-                        }}
-                      >
-                        <option value="">-- त्वरित चयन ({regForm.district || 'ज़िला'}) --</option>
-                        {districtOffices.map((o, i) => (
-                          <option key={i} value={o}>{o}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">मोबाइल नंबर (Phone) <span className="req">*</span></label>
-                    <input
-                      type="tel"
-                      className="form-input"
-                      placeholder="10 अंकों का मोबाइल नंबर"
-                      value={regForm.phone}
-                      onChange={e => setRegForm({ ...regForm, phone: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">पासवर्ड बनाएं <span className="req">*</span></label>
-                    <input
-                      type="password"
-                      className="form-input"
-                      placeholder="पासवर्ड दर्ज करें"
-                      value={regForm.password}
-                      onChange={e => setRegForm({ ...regForm, password: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  {/* REAL & MANDATORY UNIFORM PHOTO FIELD */}
-                  <div className="form-group full-width" style={{
-                    background: 'rgba(196, 151, 86, 0.08)',
-                    border: '1px solid rgba(196, 151, 86, 0.35)',
-                    padding: '0.65rem 0.85rem',
-                    borderRadius: '8px'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                      <label className="form-label" style={{ margin: 0, color: 'var(--khaki-light)', fontWeight: 700, fontSize: '0.78rem' }}>
-                        👮 वास्तविक वर्दी (यूनिफॉर्म) वाली फोटो * (अनिवार्य / Mandatory)
-                      </label>
-                      {regForm.uniformPhoto ? (
-                        <span style={{ fontSize: '0.7rem', color: 'var(--success-emerald)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                          <CheckCircle2 size={12} />
-                          फ़ोटो संलग्न
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '0.7rem', color: '#fca5a5', fontWeight: 600 }}>
-                          * वास्तविक फ़ोटो अनिवार्य
-                        </span>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <div style={{
-                        width: '56px',
-                        height: '56px',
-                        borderRadius: '50%',
-                        overflow: 'hidden',
-                        border: regForm.uniformPhoto ? '2px solid var(--khaki-primary, #c49756)' : '2px dashed rgba(255,255,255,0.3)',
-                        background: 'rgba(0,0,0,0.3)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0
-                      }}>
-                        {regForm.uniformPhoto ? (
-                          <img src={regForm.uniformPhoto} alt="Uniform" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          <Camera size={22} color="rgba(255,255,255,0.4)" />
-                        )}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                        {/* Real Camera capture option */}
-                        <label style={{
-                          background: 'linear-gradient(135deg, #991b1b, #7f1d1d)',
-                          color: '#fff',
-                          padding: '5px 11px',
-                          borderRadius: '6px',
-                          fontSize: '0.74rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '5px'
-                        }}>
-                          <Camera size={13} />
-                          <span>कैमरा से खींचें</span>
-                          <input type="file" accept="image/*" capture="user" onChange={handlePhotoUpload} style={{ display: 'none' }} />
-                        </label>
-
-                        {/* File/Gallery upload option */}
-                        <label style={{
-                          background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
-                          color: '#fff',
-                          padding: '5px 11px',
-                          borderRadius: '6px',
-                          fontSize: '0.74rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '5px'
-                        }}>
-                          <Upload size={13} />
-                          <span>गैलरी / फ़ाइल से चुनें</span>
-                          <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Privacy: Hide Phone Number Toggle */}
-                <div className="form-group full-width" style={{
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(196, 151, 86, 0.25)',
-                  padding: '0.6rem 0.85rem',
-                  borderRadius: '8px'
-                }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--khaki-light)' }}>
-                    <input
-                      type="checkbox"
-                      name="isPhoneHidden"
-                      checked={regForm.isPhoneHidden}
-                      onChange={e => setRegForm({ ...regForm, isPhoneHidden: e.target.checked })}
-                      style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
-                    />
-                    <span>🔒 <strong>नंबर गोपनीयता:</strong> मेरा मोबाइल नंबर अन्य सामान्य यूज़र्स से छिपाएं (अनुमति उपरांत ही दिखेगा)</span>
-                  </label>
-                </div>
-
-                {/* Mandatory Policy Agreement Checkbox */}
-                <div className="form-group full-width" style={{
-                  background: 'rgba(196, 151, 86, 0.1)',
-                  border: '1px solid var(--khaki-border)',
-                  padding: '0.65rem 0.85rem',
-                  borderRadius: '8px'
-                }}>
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '0.8rem', color: '#fff' }}>
-                    <input
-                      type="checkbox"
-                      checked={termsAgreed}
-                      onChange={e => setTermsAgreed(e.target.checked)}
-                      style={{ marginTop: '2px', accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
-                      required
-                    />
-                    <span>
-                      मैं <button type="button" onClick={() => onOpenPolicy && onOpenPolicy('terms')} style={{ background: 'none', border: 'none', color: 'var(--khaki-light)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 700, padding: 0 }}>उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तों</button> को स्वीकार करता हूँ। <span style={{ color: 'var(--danger-red)' }}>*</span>
-                    </span>
-                  </label>
-                </div>
-
-                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.35rem' }}>
-                  <UserPlus size={15} />
-                  स्व-पंजीकरण सबमिट करें
-                </button>
-              </form>
-            )}
-          </div>
-        )}
-
-        {/* TAB 3: CO-ADMIN LOGIN */}
-        {activeTab === 'co_admin' && (
-          <form onSubmit={handleCoAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.55rem 0.75rem', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--khaki-light)' }}>
-              🛡️ <strong>ज़िला Co-Admin पोर्टल:</strong> अपने संबंधित जनपद के कार्मिकों, पेंडिंग अप्रूवल एवं एक्सेल का अधिकृत प्रबंधन।
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">अपना ज़िला Co-Admin चुनें</label>
-              <select
-                className="form-select"
-                value={selectedCoAdminId}
-                onChange={e => setSelectedCoAdminId(e.target.value)}
-                required
-              >
-                <option value="">-- ज़िला नोडल अधिकारी चुनें --</option>
-                {coAdmins.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.district} जनपद - {c.name} {c.status === 'inactive' ? '(निष्क्रिय)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Co-Admin पासवर्ड</label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder="पासवर्ड दर्ज करें"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
-              <Shield size={15} />
-              ज़िला Co-Admin लॉगिन करें
-            </button>
-          </form>
-        )}
-
-        {/* TAB 4: SUPER ADMIN LOGIN */}
-        {activeTab === 'admin' && (
+        {/* ----------------- DEDICATED SUPER ADMIN PORTAL VIEW ----------------- */}
+        {isSuperAdminMode ? (
           <form onSubmit={handleSuperAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.65rem 0.75rem', borderRadius: '6px', fontSize: '0.78rem', color: 'var(--khaki-light)' }}>
-              👑 <strong>Super Admin Access:</strong> समस्त जनपदों, Co-Admins, मास्टर सेटिंग्स और यूज़र्स का पूर्ण प्रशासनिक नियंत्रण।
+            <div style={{ background: 'rgba(153, 27, 27, 0.25)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.65rem 0.75rem', borderRadius: '6px', fontSize: '0.78rem', color: '#fca5a5' }}>
+              👑 <strong>Super Admin Master Access:</strong> समस्त जनपदों, Co-Admins, मास्टर सेटिंग्स और यूज़र्स का पूर्ण प्रशासनिक नियंत्रण।
             </div>
+
+            {errorMsg && (
+              <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red, #ef4444)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
+                {errorMsg}
+              </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">Master Admin PIN</label>
@@ -703,15 +469,696 @@ export default function AuthGateway({
                 onChange={e => setPassword(e.target.value)}
                 autoFocus
                 required
-                style={{ textAlign: 'center', fontSize: '1.2rem', letterSpacing: '0.2em' }}
+                style={{ textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25em' }}
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
+            {/* Mandatory Policy Agreement for Super Admin */}
+            {renderTermsAgreementBox(adminTermsAgreed, setAdminTermsAgreed, showAdminTermsInline, setShowAdminTermsInline)}
+
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem', background: 'linear-gradient(135deg, #991b1b, #b91c1c)' }}>
               <KeyRound size={15} />
               Super Admin लॉगिन
             </button>
+
+            <button 
+              type="button" 
+              onClick={() => { setIsSuperAdminMode(false); setErrorMsg(''); }}
+              style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline', marginTop: '0.2rem' }}
+            >
+              ← वापस सामान्य पोर्टल पर जाएं
+            </button>
           </form>
+        ) : (
+          /* ----------------- REGULAR PUBLIC LOGIN / REGISTRATION MODES ----------------- */
+          <>
+            {/* MOBILE-RESPONSIVE MODE SWITCHER (POPUP MENU BUTTON) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim, #94a3b8)', fontWeight: 600 }}>
+                प्रवेश विकल्प चुनें (Tap to Switch Login Mode):
+              </div>
+              
+              <button
+                type="button"
+                onClick={() => setShowModePopup(true)}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(135deg, rgba(22,44,91,0.85), rgba(11,26,48,0.95))',
+                  border: '2px solid var(--khaki-primary, #c49756)',
+                  borderRadius: '10px',
+                  padding: '0.65rem 0.9rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '9px', textAlign: 'left' }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'rgba(196, 151, 86, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    {activeTab === 'user_login' && <User size={18} color="var(--khaki-light)" />}
+                    {activeTab === 'register' && <UserPlus size={18} color="var(--khaki-light)" />}
+                    {activeTab === 'co_admin' && <Building size={18} color="var(--khaki-light)" />}
+                  </div>
+                  <div>
+                    <div style={{ color: '#fff', fontSize: '0.88rem', fontWeight: 700 }}>
+                      {activeTab === 'user_login' && 'कर्मचारी लॉगिन'}
+                      {activeTab === 'register' && 'नया स्व-पंजीकरण'}
+                      {activeTab === 'co_admin' && 'ज़िला Co-Admin पोर्टल'}
+                    </div>
+                    <div style={{ color: 'var(--khaki-light, #dfb97e)', fontSize: '0.72rem' }}>
+                      {activeTab === 'user_login' && 'विभागीय पुलिस कार्मिक लॉगिन'}
+                      {activeTab === 'register' && 'नवीन पुलिस कर्मचारी खाता आवेदन'}
+                      {activeTab === 'co_admin' && 'जनपद नोडल अधिकारी प्रवेश'}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{
+                  background: 'var(--khaki-primary, #c49756)',
+                  color: '#0f172a',
+                  padding: '4px 10px',
+                  borderRadius: '16px',
+                  fontSize: '0.74rem',
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <span>बदलें</span>
+                  <ChevronDown size={14} />
+                </div>
+              </button>
+
+              {/* Quick Tab Pills for Tablet / Desktop */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '0.35rem',
+                marginTop: '0.2rem'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('user_login'); setErrorMsg(''); setRegSuccess(false); }}
+                  style={{
+                    padding: '6px 4px',
+                    fontSize: '0.75rem',
+                    fontWeight: activeTab === 'user_login' ? 700 : 500,
+                    borderRadius: '6px',
+                    border: activeTab === 'user_login' ? '1px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
+                    background: activeTab === 'user_login' ? 'rgba(196,151,86,0.2)' : 'rgba(0,0,0,0.2)',
+                    color: activeTab === 'user_login' ? '#fff' : '#94a3b8',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <User size={12} />
+                  <span>कर्मचारी</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('register'); setErrorMsg(''); setRegSuccess(false); }}
+                  style={{
+                    padding: '6px 4px',
+                    fontSize: '0.75rem',
+                    fontWeight: activeTab === 'register' ? 700 : 500,
+                    borderRadius: '6px',
+                    border: activeTab === 'register' ? '1px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
+                    background: activeTab === 'register' ? 'rgba(196,151,86,0.2)' : 'rgba(0,0,0,0.2)',
+                    color: activeTab === 'register' ? '#fff' : '#94a3b8',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <UserPlus size={12} />
+                  <span>पंजीकरण</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('co_admin'); setErrorMsg(''); setRegSuccess(false); }}
+                  style={{
+                    padding: '6px 4px',
+                    fontSize: '0.75rem',
+                    fontWeight: activeTab === 'co_admin' ? 700 : 500,
+                    borderRadius: '6px',
+                    border: activeTab === 'co_admin' ? '1px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
+                    background: activeTab === 'co_admin' ? 'rgba(196,151,86,0.2)' : 'rgba(0,0,0,0.2)',
+                    color: activeTab === 'co_admin' ? '#fff' : '#94a3b8',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Building size={12} />
+                  <span>Co-Admin</span>
+                </button>
+              </div>
+            </div>
+
+            {/* POPUP MODAL SELECTOR FOR MOBILE USERS */}
+            {showModePopup && (
+              <div 
+                className="modal-overlay" 
+                onClick={() => setShowModePopup(false)}
+                style={{ zIndex: 9999 }}
+              >
+                <div 
+                  className="modal-content" 
+                  onClick={e => e.stopPropagation()}
+                  style={{ maxWidth: '420px', padding: '1.25rem' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Shield size={20} color="var(--khaki-primary)" />
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', margin: 0 }}>
+                        प्रवेश विकल्प चुनें (Select Mode)
+                      </h3>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setShowModePopup(false)}
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    {/* Option 1: Employee Login */}
+                    <div
+                      onClick={() => {
+                        setActiveTab('user_login');
+                        setErrorMsg('');
+                        setRegSuccess(false);
+                        setShowModePopup(false);
+                      }}
+                      style={{
+                        padding: '0.85rem',
+                        borderRadius: '8px',
+                        border: activeTab === 'user_login' ? '2px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
+                        background: activeTab === 'user_login' ? 'rgba(196,151,86,0.15)' : 'rgba(15,23,42,0.6)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <User size={18} color="#60a5fa" />
+                        </div>
+                        <div>
+                          <div style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
+                            कर्मचारी लॉगिन
+                          </div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.74rem' }}>
+                            विभागीय पीएनओ / मोबाइल नंबर से प्रवेश
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight size={18} color="var(--khaki-primary)" />
+                    </div>
+
+                    {/* Option 2: Self Registration */}
+                    <div
+                      onClick={() => {
+                        setActiveTab('register');
+                        setErrorMsg('');
+                        setRegSuccess(false);
+                        setShowModePopup(false);
+                      }}
+                      style={{
+                        padding: '0.85rem',
+                        borderRadius: '8px',
+                        border: activeTab === 'register' ? '2px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
+                        background: activeTab === 'register' ? 'rgba(196,151,86,0.15)' : 'rgba(15,23,42,0.6)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(16,185,129,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <UserPlus size={18} color="#34d399" />
+                        </div>
+                        <div>
+                          <div style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
+                            नया स्व-पंजीकरण
+                          </div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.74rem' }}>
+                            नवीन पुलिस कर्मचारी खाता आवेदन (फोटो अनिवार्य)
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight size={18} color="var(--khaki-primary)" />
+                    </div>
+
+                    {/* Option 3: Co-Admin Login */}
+                    <div
+                      onClick={() => {
+                        setActiveTab('co_admin');
+                        setErrorMsg('');
+                        setRegSuccess(false);
+                        setShowModePopup(false);
+                      }}
+                      style={{
+                        padding: '0.85rem',
+                        borderRadius: '8px',
+                        border: activeTab === 'co_admin' ? '2px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
+                        background: activeTab === 'co_admin' ? 'rgba(196,151,86,0.15)' : 'rgba(15,23,42,0.6)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(245,158,11,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Building size={18} color="#fbbf24" />
+                        </div>
+                        <div>
+                          <div style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
+                            ज़िला Co-Admin लॉगिन
+                          </div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.74rem' }}>
+                            जनपद नोडल अधिकारी अधिकृत प्रबंधन
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight size={18} color="var(--khaki-primary)" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {errorMsg && (
+              <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red, #ef4444)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
+                {errorMsg}
+              </div>
+            )}
+
+            {/* TAB 1: EMPLOYEE LOGIN */}
+            {activeTab === 'user_login' && (
+              <form onSubmit={handleUserLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                <div className="form-group">
+                  <label className="form-label">PNO नंबर या मोबाइल नंबर</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="PNO नंबर या 10 अंकों का मोबाइल नंबर दर्ज करें"
+                    value={identifier}
+                    onChange={e => setIdentifier(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">पासवर्ड</label>
+                  <input
+                    type="password"
+                    className="form-input"
+                    placeholder="अपना पासवर्ड दर्ज करें"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {/* Mandatory Policy Agreement Box */}
+                {renderTermsAgreementBox(loginTermsAgreed, setLoginTermsAgreed, showLoginTermsInline, setShowLoginTermsInline)}
+
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
+                  <ArrowRight size={15} />
+                  कर्मचारी लॉगिन करें
+                </button>
+
+                <div style={{ textAlign: 'center', marginTop: '0.2rem' }}>
+                  <button 
+                    type="button" 
+                    onClick={() => { setActiveTab('register'); setErrorMsg(''); }}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--khaki-primary, #c49756)', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    नया पुलिस कर्मचारी खाता? यहाँ स्व-पंजीकरण करें
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB 2: NEW SELF-REGISTRATION */}
+            {activeTab === 'register' && (
+              <div>
+                {regSuccess ? (
+                  <div style={{ textAlign: 'center', padding: '1.25rem 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.65rem' }}>
+                    <CheckCircle2 size={46} color="var(--success-emerald, #10b981)" />
+                    <h3 style={{ color: 'var(--text-bright)', fontSize: '1.1rem', fontWeight: 700 }}>
+                      पंजीकरण सफलतापूर्वक दर्ज हुआ!
+                    </h3>
+                    <div style={{ background: 'rgba(196,151,86,0.12)', border: '1px solid rgba(196,151,86,0.3)', padding: '0.75rem', borderRadius: '8px', color: 'var(--khaki-light)', fontSize: '0.8rem', lineHeight: 1.45 }}>
+                      <strong>Admin Approval Mandatory:</strong> आपकी प्रोफ़ाइल संबंधित ज़िला Co-Admin / Super Admin के सत्यापन एवं अनुमोदन हेतु भेजी गई है। सत्यापन उपरांत आप पोर्टल में लॉगिन कर सकेंगे।
+                    </div>
+                    <button 
+                      type="button" 
+                      className="btn btn-primary" 
+                      onClick={() => { setActiveTab('user_login'); setRegSuccess(false); }}
+                      style={{ marginTop: '0.4rem' }}
+                    >
+                      लॉगिन स्क्रीन पर जाएं
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--khaki-light)' }}>
+                      📝 पुलिस कर्मचारी अपना आधिकारिक विवरण भरें। सत्यापन के उपरांत आपको अपने जनपद की निर्देशिका का एक्सेस मिलेगा।
+                    </div>
+
+                    <div className="form-grid">
+                      <div className="form-group">
+                        <label className="form-label">कर्मचारी का नाम <span className="req">*</span></label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="पूरा नाम दर्ज करें"
+                          value={regForm.name}
+                          onChange={e => setRegForm({ ...regForm, name: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">PNO नंबर / बैज नंबर</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="उदा. PNO-948120011"
+                          value={regForm.pno}
+                          onChange={e => setRegForm({ ...regForm, pno: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">पद (Post) <span className="req">*</span></label>
+                        <select
+                          className="form-select"
+                          value={regForm.post}
+                          onChange={e => setRegForm({ ...regForm, post: e.target.value })}
+                        >
+                          {posts.filter((_, idx) => idx > 0).map((p, idx) => (
+                            <option key={idx} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">पदस्थापित जनपद (District) <span className="req">*</span></label>
+                        <select
+                          className="form-select"
+                          value={regForm.district}
+                          onChange={e => setRegForm({ ...regForm, district: e.target.value })}
+                        >
+                          {districts.filter((_, idx) => idx > 0).map((d, idx) => (
+                            <option key={idx} value={d}>{d}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group full-width">
+                        <label className="form-label">कार्यालय / थाना (Office/Thana) <span className="req">*</span></label>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="उदा. थाना कोतवाली / पुलिस लाइन"
+                            value={regForm.office}
+                            onChange={e => setRegForm({ ...regForm, office: e.target.value })}
+                            required
+                          />
+                          <select
+                            className="form-select"
+                            style={{ width: '220px' }}
+                            onChange={e => {
+                              if (e.target.value) setRegForm({ ...regForm, office: e.target.value });
+                            }}
+                          >
+                            <option value="">-- त्वरित चयन ({regForm.district || 'ज़िला'}) --</option>
+                            {districtOffices.map((o, i) => (
+                              <option key={i} value={o}>{o}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">मोबाइल नंबर (Phone) <span className="req">*</span></label>
+                        <input
+                          type="tel"
+                          className="form-input"
+                          placeholder="10 अंकों का मोबाइल नंबर"
+                          value={regForm.phone}
+                          onChange={e => setRegForm({ ...regForm, phone: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">पासवर्ड बनाएं <span className="req">*</span></label>
+                        <input
+                          type="password"
+                          className="form-input"
+                          placeholder="पासवर्ड दर्ज करें"
+                          value={regForm.password}
+                          onChange={e => setRegForm({ ...regForm, password: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      {/* MANDATORY UNIFORM PHOTO FIELD */}
+                      <div className="form-group full-width" style={{
+                        background: 'rgba(196, 151, 86, 0.08)',
+                        border: '1px solid rgba(196, 151, 86, 0.35)',
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '8px'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                          <label className="form-label" style={{ margin: 0, color: 'var(--khaki-light)', fontWeight: 700, fontSize: '0.78rem' }}>
+                            👮 वास्तविक वर्दी (यूनिफॉर्म) वाली फोटो * (अनिवार्य / Mandatory)
+                          </label>
+                          {regForm.uniformPhoto ? (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--success-emerald)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                              <CheckCircle2 size={12} />
+                              फ़ोटो संलग्न
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.7rem', color: '#fca5a5', fontWeight: 600 }}>
+                              * वास्तविक फ़ोटो अनिवार्य
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: '50%',
+                            overflow: 'hidden',
+                            border: regForm.uniformPhoto ? '2px solid var(--khaki-primary, #c49756)' : '2px dashed rgba(255,255,255,0.3)',
+                            background: 'rgba(0,0,0,0.3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            {regForm.uniformPhoto ? (
+                              <img src={regForm.uniformPhoto} alt="Uniform" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <Camera size={22} color="rgba(255,255,255,0.4)" />
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <label style={{
+                              background: 'linear-gradient(135deg, #991b1b, #7f1d1d)',
+                              color: '#fff',
+                              padding: '5px 11px',
+                              borderRadius: '6px',
+                              fontSize: '0.74rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px'
+                            }}>
+                              <Camera size={13} />
+                              <span>कैमरा से खींचें</span>
+                              <input type="file" accept="image/*" capture="user" onChange={handlePhotoUpload} style={{ display: 'none' }} />
+                            </label>
+
+                            <label style={{
+                              background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
+                              color: '#fff',
+                              padding: '5px 11px',
+                              borderRadius: '6px',
+                              fontSize: '0.74rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px'
+                            }}>
+                              <Upload size={13} />
+                              <span>गैलरी / फ़ाइल से चुनें</span>
+                              <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Privacy: Hide Phone Number Toggle */}
+                    <div className="form-group full-width" style={{
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      border: '1px solid rgba(196, 151, 86, 0.25)',
+                      padding: '0.6rem 0.85rem',
+                      borderRadius: '8px'
+                    }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--khaki-light)' }}>
+                        <input
+                          type="checkbox"
+                          name="isPhoneHidden"
+                          checked={regForm.isPhoneHidden}
+                          onChange={e => setRegForm({ ...regForm, isPhoneHidden: e.target.checked })}
+                          style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                        />
+                        <span>🔒 <strong>नंबर गोपनीयता:</strong> मेरा मोबाइल नंबर अन्य सामान्य यूज़र्स से छिपाएं (अनुमति उपरांत ही दिखेगा)</span>
+                      </label>
+                    </div>
+
+                    {/* Mandatory Policy Agreement Checkbox */}
+                    <div className="form-group full-width" style={{
+                      background: 'rgba(196, 151, 86, 0.1)',
+                      border: '1px solid var(--khaki-border)',
+                      padding: '0.65rem 0.85rem',
+                      borderRadius: '8px'
+                    }}>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '0.8rem', color: '#fff' }}>
+                        <input
+                          type="checkbox"
+                          checked={termsAgreed}
+                          onChange={e => setTermsAgreed(e.target.checked)}
+                          style={{ marginTop: '2px', accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                          required
+                        />
+                        <span>
+                          मैं <button type="button" onClick={() => onOpenPolicy && onOpenPolicy('terms')} style={{ background: 'none', border: 'none', color: 'var(--khaki-light)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 700, padding: 0 }}>उत्तर प्रदेश पुलिस - शासकीय गोपनीयता नीति एवं सेवा शर्तों</button> को स्वीकार करता हूँ। <span style={{ color: 'var(--danger-red)' }}>*</span>
+                        </span>
+                      </label>
+                    </div>
+
+                    <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.35rem' }}>
+                      <UserPlus size={15} />
+                      स्व-पंजीकरण सबमिट करें
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {/* TAB 3: CO-ADMIN LOGIN */}
+            {activeTab === 'co_admin' && (
+              <form onSubmit={handleCoAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.55rem 0.75rem', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--khaki-light)' }}>
+                  🛡️ <strong>ज़िला Co-Admin पोर्टल:</strong> अपने संबंधित जनपद के कार्मिकों, पेंडिंग अप्रूवल एवं एक्सेल का अधिकृत प्रबंधन।
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">अपना ज़िला Co-Admin चुनें</label>
+                  <select
+                    className="form-select"
+                    value={selectedCoAdminId}
+                    onChange={e => setSelectedCoAdminId(e.target.value)}
+                    required
+                  >
+                    <option value="">-- ज़िला नोडल अधिकारी चुनें --</option>
+                    {coAdmins.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.district} जनपद - {c.name} {c.status === 'inactive' ? '(निष्क्रिय)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Co-Admin पासवर्ड</label>
+                  <input
+                    type="password"
+                    className="form-input"
+                    placeholder="पासवर्ड दर्ज करें"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {/* Mandatory Policy Agreement Box */}
+                {renderTermsAgreementBox(coAdminTermsAgreed, setCoAdminTermsAgreed, showCoAdminTermsInline, setShowCoAdminTermsInline)}
+
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem' }}>
+                  <Shield size={15} />
+                  ज़िला Co-Admin लॉगिन करें
+                </button>
+              </form>
+            )}
+
+            {/* Discrete Super Admin Entrance for DGP HQ (Hidden from normal public options) */}
+            <div style={{
+              textAlign: 'center',
+              marginTop: '0.65rem',
+              paddingTop: '0.65rem',
+              borderTop: '1px dashed rgba(255,255,255,0.08)'
+            }}>
+              <button
+                type="button"
+                onClick={() => { setIsSuperAdminMode(true); setErrorMsg(''); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(148, 163, 184, 0.45)',
+                  fontSize: '0.68rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'opacity 0.2s ease'
+                }}
+                title="मुख्यालय प्रशासनिक नियंत्रण कक्ष"
+              >
+                <Lock size={10} />
+                <span>मुख्यालय Master PIN पोर्टल</span>
+              </button>
+            </div>
+          </>
         )}
       </div>
 

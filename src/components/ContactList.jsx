@@ -10,6 +10,7 @@ export default function ContactList({
   onToggleBlockContact, 
   onToggleActiveContact,
   onPromoteCoAdminContact,
+  onRevokeCoAdminContact,
   onDeleteContact,
   onResetFilters,
   onOpenChatWithContact,
@@ -51,6 +52,7 @@ export default function ContactList({
             onToggleBlock={onToggleBlockContact}
             onToggleActive={onToggleActiveContact}
             onPromoteCoAdmin={onPromoteCoAdminContact}
+            onRevokeCoAdmin={onRevokeCoAdminContact}
             onDelete={onDeleteContact}
             onOpenChatWithContact={onOpenChatWithContact}
             onPermissionUpdated={onPermissionUpdated}

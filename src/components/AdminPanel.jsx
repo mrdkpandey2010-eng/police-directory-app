@@ -44,14 +44,18 @@ export default function AdminPanel({
   onDeleteOffice,
   onAddDistrict,
   onEditDistrict,
-  onDeleteDistrict
+  onDeleteDistrict,
+  onForwardDistrictTransfer,
+  onApproveDistrictTransfer,
+  onRejectDistrictTransfer
 }) {
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
   const myDistrict = isCoAdmin ? currentUser.district : null;
 
-  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'manage' | 'excel' | 'coadmins' | 'master' | 'coadmin_offices' | 'terms' | 'call_logs' | 'backups' | 'phone_perms' | '2fa_settings'
+  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'manage' | 'transfers' | 'excel' | 'coadmins' | 'master' | 'coadmin_offices' | 'terms' | 'call_logs' | 'backups' | 'phone_perms' | '2fa_settings'
   const [masterSubTab, setMasterSubTab] = useState('posts'); // 'posts' | 'offices' | 'districts'
+  const [adminStatusFilter, setAdminStatusFilter] = useState('active'); // 'active' | 'all' | 'inactive' | 'blocked'
   
   // Master data edit state
   const [editingPost, setEditingPost] = useState(null); // { oldName, newName }
@@ -191,6 +195,11 @@ export default function AdminPanel({
   const inactiveList = scopedContacts.filter(c => c.status === 'inactive');
   const blockedList = scopedContacts.filter(c => c.status === 'blocked');
 
+  // Pending District Transfer requests (Two-tier approval workflow)
+  const transferList = isCoAdmin
+    ? scopedContacts.filter(c => c.districtTransfer && c.districtTransfer.status === 'pending_coadmin')
+    : contacts.filter(c => c.districtTransfer && (c.districtTransfer.status === 'pending_admin' || c.districtTransfer.status === 'pending_coadmin'));
+
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -312,15 +321,25 @@ export default function AdminPanel({
   };
 
   const filteredAdminContacts = scopedContacts.filter(c => {
+    // Status filter segmentation (active, all, inactive, blocked)
+    if (adminStatusFilter === 'active') {
+      const isActive = c.status === 'approved' || c.status === 'active';
+      if (!isActive) return false;
+    } else if (adminStatusFilter === 'inactive') {
+      if (c.status !== 'inactive') return false;
+    } else if (adminStatusFilter === 'blocked') {
+      if (c.status !== 'blocked') return false;
+    }
+
     if (!adminSearch) return true;
     const q = adminSearch.toLowerCase();
     return (
-      c.name.toLowerCase().includes(q) ||
-      c.pno.toLowerCase().includes(q) ||
-      c.phone.includes(q) ||
-      c.district.toLowerCase().includes(q) ||
-      c.office.toLowerCase().includes(q) ||
-      c.post.toLowerCase().includes(q)
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.pno || '').toLowerCase().includes(q) ||
+      (c.phone || '').includes(q) ||
+      (c.district || '').toLowerCase().includes(q) ||
+      (c.office || '').toLowerCase().includes(q) ||
+      (c.post || '').toLowerCase().includes(q)
     );
   });
 
@@ -367,6 +386,19 @@ export default function AdminPanel({
             >
               <Users size={16} />
               यूज़र्स प्रबंधन ({scopedContacts.length})
+            </button>
+
+            <button 
+              className={`admin-tab ${activeTab === 'transfers' ? 'active' : ''}`}
+              onClick={() => setActiveTab('transfers')}
+            >
+              <MapPin size={16} />
+              जनपद स्थानांतरण
+              {transferList.length > 0 && (
+                <span className="tab-badge" style={{ background: '#f59e0b', color: '#000', fontWeight: 800 }}>
+                  {transferList.length}
+                </span>
+              )}
             </button>
 
             <button 
@@ -559,6 +591,43 @@ export default function AdminPanel({
                 </div>
               </div>
 
+              {/* Status Segmentation Filters */}
+              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '0.45rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600 }}>स्थिति फ़िल्टर:</span>
+                <button
+                  type="button"
+                  onClick={() => setAdminStatusFilter('active')}
+                  className={`btn ${adminStatusFilter === 'active' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '3px 9px', fontSize: '0.74rem' }}
+                >
+                  🟢 सक्रिय (Active) ({approvedList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminStatusFilter('all')}
+                  className={`btn ${adminStatusFilter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '3px 9px', fontSize: '0.74rem' }}
+                >
+                  📋 सभी (All) ({scopedContacts.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminStatusFilter('inactive')}
+                  className={`btn ${adminStatusFilter === 'inactive' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '3px 9px', fontSize: '0.74rem' }}
+                >
+                  ⚪ निष्क्रिय (Inactive) ({inactiveList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminStatusFilter('blocked')}
+                  className={`btn ${adminStatusFilter === 'blocked' ? 'btn-danger' : 'btn-secondary'}`}
+                  style={{ padding: '3px 9px', fontSize: '0.74rem', borderColor: adminStatusFilter === 'blocked' ? '#ef4444' : undefined }}
+                >
+                  🔴 ब्लॉक्ड (Blocked) ({blockedList.length})
+                </button>
+              </div>
+
               {resetSuccessNotice && (
                 <div className="status-tag status-approved" style={{ padding: '0.75rem', width: '100%', fontSize: '0.85rem' }}>
                   <CheckCircle size={16} />
@@ -633,7 +702,7 @@ export default function AdminPanel({
                                   onClick={() => {
                                     if (isUserCoAdmin) {
                                       const matchedCa = coAdmins.find(ca => ca.userId === c.id || ca.phone === c.phone);
-                                      if (matchedCa) onRevokeCoAdmin(matchedCa.id);
+                                      onRevokeCoAdmin(matchedCa ? matchedCa.id : c.id);
                                     } else {
                                       onPromoteUserToCoAdmin(c.id, c.district);
                                     }
@@ -692,6 +761,139 @@ export default function AdminPanel({
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* TAB: DISTRICT TRANSFERS (STRICT 2-TIER APPROVAL CHAIN) */}
+          {activeTab === 'transfers' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{
+                background: 'rgba(30,58,138,0.25)',
+                border: '1px solid rgba(196,151,86,0.3)',
+                padding: '0.85rem 1rem',
+                borderRadius: '10px',
+                fontSize: '0.82rem',
+                color: 'var(--khaki-light)',
+                lineHeight: 1.5
+              }}>
+                {isAdmin ? (
+                  <>
+                    👑 <strong>Super Admin - स्थानांतरण अनुमोदन कक्ष:</strong> समस्त जनपदों के Co-Admins द्वारा अग्रसारित किए गए स्थानांतरण अनुरोध नीचे सूचीबद्ध हैं। 'स्थानांतरण स्वीकृत करें' पर क्लिक करने से कर्मचारी का आधिकारिक जनपद अद्यतन (Update) हो जाएगा।
+                  </>
+                ) : (
+                  <>
+                    🛡️ <strong>ज़िला Co-Admin - स्थानांतरण समीक्षा:</strong> आपके जनपद (<strong>{myDistrict}</strong>) के पुलिस कार्मिकों द्वारा सबमिट किए गए स्थानांतरण अनुरोध। सत्यापन के उपरांत इन्हें पुलिस मुख्यालय Super Admin को अग्रसारित (Forward) करें।
+                  </>
+                )}
+              </div>
+
+              {transferList.length === 0 ? (
+                <div className="empty-state" style={{ padding: '2rem 1rem', textAlign: 'center' }}>
+                  <MapPin size={40} color="var(--khaki-primary)" />
+                  <h4 style={{ color: '#fff', marginTop: '0.5rem' }}>कोई लंबित स्थानांतरण अनुरोध नहीं है</h4>
+                  <p style={{ color: '#94a3b8', fontSize: '0.8rem' }}>वर्तमान में कोई जनपद स्थानांतरण अनुरोध समीक्षाधीन नहीं है।</p>
+                </div>
+              ) : (
+                <div className="admin-table-wrapper">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>PNO / नाम</th>
+                        <th>पद (Post)</th>
+                        <th>वर्तमान जनपद</th>
+                        <th>नवीन लक्षित जनपद</th>
+                        <th>स्थानांतरण कारण / आदेश</th>
+                        <th>स्थिति (Status)</th>
+                        <th>कार्रवाई (Action)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transferList.map((c) => {
+                        const trf = c.districtTransfer;
+                        const isPendingCoAdmin = trf.status === 'pending_coadmin';
+                        const isPendingAdmin = trf.status === 'pending_admin';
+
+                        return (
+                          <tr key={c.id}>
+                            <td>
+                              <div style={{ fontWeight: 700, color: '#fff' }}>{c.name}</div>
+                              <div style={{ fontSize: '0.74rem', color: 'var(--khaki-primary)' }}>{c.pno}</div>
+                            </td>
+                            <td>{c.post}</td>
+                            <td>
+                              <span style={{ fontWeight: 600, color: '#cbd5e1' }}>{trf.fromDistrict}</span>
+                            </td>
+                            <td>
+                              <span style={{ fontWeight: 700, color: 'var(--success-emerald, #10b981)' }}>{trf.toDistrict}</span>
+                            </td>
+                            <td style={{ maxWidth: '240px', fontSize: '0.78rem' }}>
+                              <div style={{ color: '#fff' }}>{trf.reason || 'प्रशासनिक स्थानांतरण'}</div>
+                              <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px' }}>
+                                आवेदन: {trf.requestedAt ? new Date(trf.requestedAt).toLocaleDateString('hi-IN') : ''}
+                              </div>
+                            </td>
+                            <td>
+                              {isPendingCoAdmin && (
+                                <span className="status-tag status-pending" style={{ fontSize: '0.72rem' }}>
+                                  ⏳ स्थानीय Co-Admin समीक्षाधीन
+                                </span>
+                              )}
+                              {isPendingAdmin && (
+                                <span className="status-tag status-approved" style={{ fontSize: '0.72rem', background: 'rgba(59,130,246,0.15)', borderColor: '#3b82f6', color: '#93c5fd' }}>
+                                  📨 मुख्यालय अग्रसारित ({trf.forwardedBy || 'Co-Admin'})
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                {/* Co-Admin Forward Action */}
+                                {isCoAdmin && isPendingCoAdmin && (
+                                  <button
+                                    className="btn btn-primary"
+                                    style={{ padding: '4px 8px', fontSize: '0.74rem' }}
+                                    onClick={() => onForwardDistrictTransfer && onForwardDistrictTransfer(c.id, currentUser.name)}
+                                    title="सत्यापन उपरांत मुख्यालय को फ़ॉरवर्ड करें"
+                                  >
+                                    मुख्यालय को फ़ॉरवर्ड करें &rarr;
+                                  </button>
+                                )}
+
+                                {/* Super Admin Approval Action */}
+                                {isAdmin && (
+                                  <button
+                                    className="btn btn-success"
+                                    style={{ padding: '4px 8px', fontSize: '0.74rem' }}
+                                    onClick={() => onApproveDistrictTransfer && onApproveDistrictTransfer(c.id, currentUser.name)}
+                                    title="स्थानांतरण स्वीकृत करें"
+                                  >
+                                    <CheckCircle size={12} />
+                                    स्वीकृत करें
+                                  </button>
+                                )}
+
+                                {/* Reject Button for both Co-Admin & Super Admin */}
+                                <button
+                                  className="btn btn-danger"
+                                  style={{ padding: '4px 8px', fontSize: '0.74rem' }}
+                                  onClick={() => {
+                                    if (window.confirm('क्या आप इस स्थानांतरण अनुरोध को निरस्त करना चाहते हैं?')) {
+                                      if (onRejectDistrictTransfer) onRejectDistrictTransfer(c.id);
+                                    }
+                                  }}
+                                  title="स्थानांतरण निरस्त करें"
+                                >
+                                  <XCircle size={12} />
+                                  निरस्त
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
