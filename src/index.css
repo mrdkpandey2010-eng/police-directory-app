@@ -830,3 +830,24 @@ body {
   font-size: 0.85rem;
   animation: fadeIn 0.3s ease;
 }
+
+/* Mobile Bottom Navigation Bar Responsive Styles */
+@media (min-width: 769px) {
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    padding-bottom: 76px !important;
+  }
+  
+  .toast-notice {
+    bottom: 74px !important;
+    right: 12px !important;
+    left: 12px !important;
+    justify-content: center !important;
+    text-align: center;
+  }
+}

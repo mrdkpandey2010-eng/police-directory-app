@@ -1,0 +1,36 @@
+{
+  "name": "उत्तर प्रदेश पुलिस निर्देशिका - UP Police Directory",
+  "short_name": "UP Police",
+  "description": "उत्तर प्रदेश पुलिस अधिकृत विभागीय संपर्क निर्देशिका एवं आपातकालीन समन्वय पोर्टल",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#070e1c",
+  "theme_color": "#070e1c",
+  "lang": "hi",
+  "dir": "ltr",
+  "categories": ["productivity", "utilities", "government"],
+  "icons": [
+    {
+      "src": "/police-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/police-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "निर्देशिका खोजें",
+      "short_name": "खोज",
+      "description": "पुलिस अधिकारी व थाना संपर्क खोजें",
+      "url": "/",
+      "icons": [{ "src": "/police-icon.svg", "sizes": "96x96" }]
+    }
+  ]
+}

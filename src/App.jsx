@@ -18,6 +18,8 @@ import LoginDisclaimerModal from './components/LoginDisclaimerModal';
 import Admin2FAModal from './components/Admin2FAModal';
 import ActiveCallModal from './components/ActiveCallModal';
 import HeaderMenuDrawer from './components/HeaderMenuDrawer';
+import MobileBottomNav from './components/MobileBottomNav';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 import {
   isFirebaseConfigured,
   subscribeToFirestoreChats,
@@ -1607,6 +1609,65 @@ export default function App() {
           createBackupSlot('मैन्युअल बैकअप (Manual Backup)');
           showToast('✅ 6-घंटे का सुरक्षित बैकअप स्लॉट तैयार हो गया!');
         }}
+      />
+
+      {/* PWA 1-Click Install Banner for Mobile Devices */}
+      <PWAInstallPrompt />
+
+      {/* Sleek Mobile Bottom Navigation Bar (Native App Feel) */}
+      <MobileBottomNav
+        currentUser={currentUser}
+        unreadMessagesCount={unreadMessagesCount}
+        notifCount={notifications.length}
+        pendingCount={pendingCount}
+        onOpenChat={() => {
+          setIsNotifsModalOpen(false);
+          setIsAdminModalOpen(false);
+          setIsProfileModalOpen(false);
+          setIsMenuDrawerOpen(false);
+          setIsChatModalOpen(true);
+        }}
+        onOpenNotifications={() => {
+          setIsChatModalOpen(false);
+          setIsAdminModalOpen(false);
+          setIsProfileModalOpen(false);
+          setIsMenuDrawerOpen(false);
+          setIsNotifsModalOpen(true);
+        }}
+        onOpenAdmin={() => {
+          setIsChatModalOpen(false);
+          setIsNotifsModalOpen(false);
+          setIsProfileModalOpen(false);
+          setIsMenuDrawerOpen(false);
+          handleOpenAdminPanel();
+        }}
+        onOpenProfile={() => {
+          setIsChatModalOpen(false);
+          setIsNotifsModalOpen(false);
+          setIsAdminModalOpen(false);
+          setIsMenuDrawerOpen(false);
+          setIsProfileModalOpen(true);
+        }}
+        onOpenMenu={() => {
+          setIsChatModalOpen(false);
+          setIsNotifsModalOpen(false);
+          setIsAdminModalOpen(false);
+          setIsProfileModalOpen(false);
+          setIsMenuDrawerOpen(true);
+        }}
+        onNavigateHome={() => {
+          setIsChatModalOpen(false);
+          setIsNotifsModalOpen(false);
+          setIsAdminModalOpen(false);
+          setIsProfileModalOpen(false);
+          setIsMenuDrawerOpen(false);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        isChatModalOpen={isChatModalOpen}
+        isNotifsModalOpen={isNotifsModalOpen}
+        isAdminModalOpen={isAdminModalOpen}
+        isProfileModalOpen={isProfileModalOpen}
+        isMenuDrawerOpen={isMenuDrawerOpen}
       />
     </div>
   );
