@@ -9,7 +9,8 @@ import {
   downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS,
   getStoredCallLogs, clearCallLogs, getStoredBackups, createBackupSlot,
   restoreBackupSlot, getStored2FAConfig, save2FAConfig,
-  getStoredPhonePermissions, respondPhonePermission
+  getStoredPhonePermissions, respondPhonePermission,
+  getStoredAdminMasterPin, saveAdminMasterPin
 } from '../utils/storage';
 
 export default function AdminPanel({ 
@@ -80,6 +81,12 @@ export default function AdminPanel({
   const [pinChangeInput, setPinChangeInput] = useState('');
   const [twoFaMsg, setTwoFaMsg] = useState('');
 
+  // Super Admin Master Login PIN state
+  const [currentMasterPin, setCurrentMasterPin] = useState('1234');
+  const [newMasterPinInput, setNewMasterPinInput] = useState('');
+  const [confirmMasterPinInput, setConfirmMasterPinInput] = useState('');
+  const [masterPinMsg, setMasterPinMsg] = useState('');
+
   // Phone Permissions state
   const [phonePermissions, setPhonePermissions] = useState([]);
 
@@ -129,6 +136,7 @@ export default function AdminPanel({
       setTwoFactorConfig(cfg);
       setPinChangeInput(cfg.secretPin || '998877');
       setPhonePermissions(getStoredPhonePermissions());
+      setCurrentMasterPin(getStoredAdminMasterPin());
     }
   }, [isOpen]);
 
@@ -477,7 +485,7 @@ export default function AdminPanel({
                 onClick={() => setActiveTab('2fa_settings')}
               >
                 <KeyRound size={16} />
-                2FA सुरक्षा
+                मास्टर सुरक्षा & पिन
               </button>
             )}
           </div>
@@ -2151,9 +2159,102 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* TAB: 2FA SETTINGS (Super Admin Only) */}
+          {/* TAB: 2FA & MASTER SECURITY SETTINGS (Super Admin Only) */}
           {isAdmin && activeTab === '2fa_settings' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '600px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '640px' }}>
+              {/* SECTION 1: SUPER ADMIN MASTER LOGIN PIN CHANGE */}
+              <div style={{
+                background: 'rgba(153, 27, 27, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '10px',
+                padding: '1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.85rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={20} color="#f87171" />
+                  <h4 style={{ margin: 0, color: '#fca5a5', fontSize: '1rem', fontWeight: 700 }}>
+                    Super Admin मास्टर लॉगिन पिन (Master Login PIN) बदलें
+                  </h4>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.78rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+                  यह पिन मुख्यालय पुलिस महानिदेशक (Super Admin) पोर्टल में लॉगिन करने हेतु उपयोग किया जाता है। (डिफ़ॉल्ट पिन: <code>1234</code>)
+                </p>
+
+                {masterPinMsg && (
+                  <div style={{
+                    background: masterPinMsg.startsWith('✅') ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
+                    border: masterPinMsg.startsWith('✅') ? '1px solid #10b981' : '1px solid #ef4444',
+                    color: masterPinMsg.startsWith('✅') ? '#34d399' : '#fca5a5',
+                    padding: '0.6rem 0.85rem',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem'
+                  }}>
+                    {masterPinMsg}
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontSize: '0.76rem' }}>
+                      नया मास्टर लॉगिन पिन:
+                    </label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="नया पिन (कम से कम 4 अंक)"
+                      value={newMasterPinInput}
+                      onChange={(e) => setNewMasterPinInput(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontSize: '0.76rem' }}>
+                      नए पिन की पुष्टि करें:
+                    </label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="पुनः नया पिन दर्ज करें"
+                      value={confirmMasterPinInput}
+                      onChange={(e) => setConfirmMasterPinInput(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
+                  <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                    वर्तमान सक्रिय पिन: <code>{currentMasterPin ? '••••' : '1234'}</code>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newMasterPinInput.trim() || newMasterPinInput.trim().length < 4) {
+                        setMasterPinMsg('⚠️ कृपया कम से कम 4 अक्षरों या अंकों का नया पिन दर्ज करें।');
+                        return;
+                      }
+                      if (newMasterPinInput.trim() !== confirmMasterPinInput.trim()) {
+                        setMasterPinMsg('⚠️ नया पिन और पुष्टि पिन आपस में मेल नहीं खाते हैं।');
+                        return;
+                      }
+                      saveAdminMasterPin(newMasterPinInput.trim());
+                      setCurrentMasterPin(newMasterPinInput.trim());
+                      setNewMasterPinInput('');
+                      setConfirmMasterPinInput('');
+                      setMasterPinMsg('✅ Super Admin का मास्टर लॉगिन पिन सफलतापूर्वक बदल दिया गया है!');
+                      setTimeout(() => setMasterPinMsg(''), 4000);
+                    }}
+                    className="btn btn-danger"
+                    style={{ padding: '0.45rem 1rem', fontSize: '0.78rem' }}
+                  >
+                    <KeyRound size={13} />
+                    <span>मास्टर पिन अपडेट करें</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* SECTION 2: 2FA SETTINGS */}
               <div style={{
                 background: 'rgba(30, 58, 138, 0.25)',
                 border: '1px solid var(--khaki-primary, #c49756)',

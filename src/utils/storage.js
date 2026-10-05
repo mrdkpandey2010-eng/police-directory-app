@@ -1697,3 +1697,21 @@ export const save2FAConfig = (config) => {
     localStorage.setItem(TWO_FACTOR_KEY, JSON.stringify(config));
   } catch (err) {}
 };
+
+// ---------------- SUPER ADMIN MASTER LOGIN PIN ----------------
+const SUPER_ADMIN_PIN_KEY = 'police_directory_super_admin_pin_v1';
+
+export const getStoredAdminMasterPin = () => {
+  try {
+    const saved = localStorage.getItem(SUPER_ADMIN_PIN_KEY);
+    return saved ? saved.trim() : '1234';
+  } catch (err) {
+    return '1234';
+  }
+};
+
+export const saveAdminMasterPin = (newPin) => {
+  try {
+    localStorage.setItem(SUPER_ADMIN_PIN_KEY, String(newPin).trim());
+  } catch (err) {}
+};

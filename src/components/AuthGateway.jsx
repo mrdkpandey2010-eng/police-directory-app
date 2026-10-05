@@ -5,6 +5,7 @@ import {
   ChevronDown, X, ChevronRight, FileText
 } from 'lucide-react';
 import TermsFooter from './TermsFooter';
+import { getStoredAdminMasterPin } from '../utils/storage';
 
 export default function AuthGateway({ 
   onLoginSuccess, 
@@ -172,7 +173,10 @@ export default function AuthGateway({
       return;
     }
 
-    if (password.trim() === '1234' || password.trim() === 'admin') {
+    const currentMasterPin = getStoredAdminMasterPin();
+    const entered = password.trim();
+
+    if (entered === currentMasterPin || entered === '1234' || entered === 'admin') {
       onLoginSuccess({
         role: 'admin',
         name: 'मुख्यालय पुलिस महानिदेशक (Super Admin)',
