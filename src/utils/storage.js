@@ -10,6 +10,22 @@ import {
   DEFAULT_OFFICE_ITEMS,
   DISTRICTS as DEFAULT_DISTRICTS
 } from '../data/mockContacts';
+import { 
+  idbSet, 
+  idbGet, 
+  idbSaveContacts, 
+  idbGetContacts, 
+  idbSaveChats, 
+  idbGetChats, 
+  migrateLocalStorageToIDB, 
+  idbEnqueueSync 
+} from './indexedDB';
+import { 
+  saveFirestoreContact, 
+  syncAllContactsToFirestore, 
+  isFirebaseConfigured, 
+  deleteFirestoreContact 
+} from './firebase';
 import * as XLSX from 'xlsx';
 
 const CONTACTS_KEY = 'police_directory_contacts_v2';
@@ -70,7 +86,10 @@ export const saveTerms = (termsData) => {
       ...termsData,
       lastUpdated: new Date().toISOString().split('T')[0]
     };
-    localStorage.setItem(TERMS_KEY, JSON.stringify(updated));
+    try {
+      localStorage.setItem(TERMS_KEY, JSON.stringify(updated));
+    } catch (e) {}
+    idbSet(TERMS_KEY, updated);
     return updated;
   } catch (err) {
     console.error('Error saving terms', err);
@@ -149,7 +168,10 @@ export const getStoredPolicies = () => {
 
 export const savePolicies = (policiesList) => {
   try {
-    localStorage.setItem(POLICIES_KEY, JSON.stringify(policiesList));
+    try {
+      localStorage.setItem(POLICIES_KEY, JSON.stringify(policiesList));
+    } catch (e) {}
+    idbSet(POLICIES_KEY, policiesList);
   } catch (err) {
     console.error('Error saving policies', err);
   }
@@ -213,7 +235,10 @@ export const getStoredPosts = () => {
 
 export const savePosts = (posts) => {
   try {
-    localStorage.setItem(POSTS_KEY, JSON.stringify(posts));
+    try {
+      localStorage.setItem(POSTS_KEY, JSON.stringify(posts));
+    } catch (e) {}
+    idbSet(POSTS_KEY, posts);
   } catch (err) {}
 };
 
@@ -306,7 +331,10 @@ export const getStoredOffices = () => {
 
 export const saveOffices = (offices) => {
   try {
-    localStorage.setItem(OFFICES_KEY, JSON.stringify(offices));
+    try {
+      localStorage.setItem(OFFICES_KEY, JSON.stringify(offices));
+    } catch (e) {}
+    idbSet(OFFICES_KEY, offices);
   } catch (err) {}
 };
 
@@ -424,7 +452,10 @@ export const getStoredDistricts = () => {
 
 export const saveDistricts = (districts) => {
   try {
-    localStorage.setItem(DISTRICTS_KEY, JSON.stringify(districts));
+    try {
+      localStorage.setItem(DISTRICTS_KEY, JSON.stringify(districts));
+    } catch (e) {}
+    idbSet(DISTRICTS_KEY, districts);
   } catch (err) {}
 };
 
@@ -539,10 +570,45 @@ export const getStoredContacts = () => {
 export const saveContacts = (contacts) => {
   try {
     const validList = Array.isArray(contacts) ? contacts : [];
-    localStorage.setItem(CONTACTS_KEY, JSON.stringify(validList));
+    // 1. Synchronous localStorage cache (with QuotaExceeded fallback protection)
+    try {
+      localStorage.setItem(CONTACTS_KEY, JSON.stringify(validList));
+    } catch (quotaErr) {
+      console.warn('[Storage] LocalStorage quota reached. IndexedDB permanent vault is safely storing all contacts & uniform photos:', quotaErr);
+    }
+    // 2. High-capacity IndexedDB permanent storage vault (500MB+)
+    idbSaveContacts(validList);
+
+    // 3. Automatic Two-Way Cloud Sync (Firebase Firestore)
+    if (isFirebaseConfigured()) {
+      syncAllContactsToFirestore(validList);
+    } else {
+      idbEnqueueSync('sync_contacts', validList);
+    }
   } catch (err) {
-    console.error('Error saving contacts to localStorage:', err);
+    console.error('Error in saveContacts:', err);
   }
+};
+
+/**
+ * Load contacts from high-capacity permanent IndexedDB storage vault
+ */
+export const loadContactsFromPermanentStorage = async () => {
+  try {
+    // 1. First ensure migration of legacy localStorage into IDB
+    await migrateLocalStorageToIDB();
+    // 2. Fetch from IndexedDB
+    const idbContacts = await idbGetContacts();
+    if (Array.isArray(idbContacts) && idbContacts.length > 0) {
+      try {
+        localStorage.setItem(CONTACTS_KEY, JSON.stringify(idbContacts));
+      } catch (e) {}
+      return idbContacts;
+    }
+  } catch (err) {
+    console.warn('[Storage] Error loading from IndexedDB:', err);
+  }
+  return getStoredContacts();
 };
 
 // ---------------- CO-ADMINS ----------------
@@ -562,7 +628,11 @@ export const getStoredCoAdmins = () => {
 
 export const saveCoAdmins = (coadmins) => {
   try {
-    localStorage.setItem(COADMINS_KEY, JSON.stringify(coadmins));
+    const valid = Array.isArray(coadmins) ? coadmins : [];
+    try {
+      localStorage.setItem(COADMINS_KEY, JSON.stringify(valid));
+    } catch (e) {}
+    idbSet(COADMINS_KEY, valid);
   } catch (err) {
     console.error('Error saving coadmins', err);
   }
@@ -795,7 +865,11 @@ export const getStoredNotifications = () => {
 
 export const saveNotifications = (notifs) => {
   try {
-    localStorage.setItem(NOTIFS_KEY, JSON.stringify(notifs));
+    const valid = Array.isArray(notifs) ? notifs : [];
+    try {
+      localStorage.setItem(NOTIFS_KEY, JSON.stringify(valid));
+    } catch (e) {}
+    idbSet(NOTIFS_KEY, valid);
   } catch (err) {
     console.error('Error saving notifications', err);
   }
@@ -846,7 +920,11 @@ export const getStoredFeedbacks = () => {
 
 export const saveFeedbacks = (feedbacks) => {
   try {
-    localStorage.setItem(FEEDBACKS_KEY, JSON.stringify(feedbacks));
+    const valid = Array.isArray(feedbacks) ? feedbacks : [];
+    try {
+      localStorage.setItem(FEEDBACKS_KEY, JSON.stringify(valid));
+    } catch (e) {}
+    idbSet(FEEDBACKS_KEY, valid);
   } catch (err) {
     console.error('Error saving feedbacks', err);
   }
@@ -926,7 +1004,11 @@ export const getStoredChats = () => {
 
 export const saveChats = (chats) => {
   try {
-    localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
+    const valid = Array.isArray(chats) ? chats : [];
+    try {
+      localStorage.setItem(CHATS_KEY, JSON.stringify(valid));
+    } catch (e) {}
+    idbSaveChats(valid);
   } catch (err) {
     console.error('Error saving chats', err);
   }

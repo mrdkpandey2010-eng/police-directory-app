@@ -10,8 +10,14 @@ import {
   updateDoc, 
   deleteDoc,
   arrayUnion, 
-  serverTimestamp 
+  serverTimestamp,
+  writeBatch
 } from 'firebase/firestore';
+import { 
+  idbEnqueueSync, 
+  idbGetSyncQueue, 
+  idbClearSyncQueue 
+} from './indexedDB';
 
 const FIREBASE_CONFIG_KEY = 'police_firebase_config_v1';
 
@@ -380,19 +386,90 @@ export const deleteFirestoreContact = async (contactId) => {
 
 export const syncAllContactsToFirestore = async (contacts) => {
   const db = getFirebaseDB();
-  if (!db || !Array.isArray(contacts)) return false;
+  if (!db || !Array.isArray(contacts) || contacts.length === 0) return false;
 
   try {
-    for (const c of contacts) {
-      if (c && c.id) {
+    const validContacts = contacts.filter(c => c && c.id && !/^pol-1(0[1-9]|1[0-5])$/.test(c.id));
+    const CHUNK_SIZE = 400; // Firestore batch maximum is 500
+    for (let i = 0; i < validContacts.length; i += CHUNK_SIZE) {
+      const chunk = validContacts.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const c of chunk) {
         const docRef = doc(db, 'police_contacts', c.id);
-        await setDoc(docRef, c, { merge: true });
+        batch.set(docRef, { ...c, updatedAt: c.updatedAt || new Date().toISOString() }, { merge: true });
       }
+      await batch.commit();
     }
+    console.log(`[Firebase] Batch synced ${validContacts.length} contacts to cloud successfully`);
     return true;
   } catch (err) {
-    console.error('Failed to sync contacts to Firestore:', err);
+    console.error('Failed to sync contacts to Firestore batch:', err);
     return false;
   }
 };
+
+/**
+ * Process offline mutation queue when connectivity is restored
+ */
+export const processOfflineSyncQueue = async () => {
+  const db = getFirebaseDB();
+  if (!db) return false;
+
+  try {
+    const queue = await idbGetSyncQueue();
+    if (!queue || queue.length === 0) return true;
+
+    console.log(`[Firebase] Processing ${queue.length} offline queued actions...`);
+    for (const item of queue) {
+      try {
+        if (item.type === 'save_contact' && item.payload) {
+          await saveFirestoreContact(item.payload);
+        } else if (item.type === 'delete_contact' && item.payload) {
+          await deleteFirestoreContact(item.payload);
+        } else if (item.type === 'save_chat' && item.payload) {
+          await saveFirestoreChat(item.payload);
+        }
+      } catch (subErr) {
+        console.warn('[Firebase] Single item sync notice:', subErr);
+      }
+    }
+    await idbClearSyncQueue();
+    console.log('[Firebase] Offline queue cleared successfully');
+    return true;
+  } catch (err) {
+    console.warn('[Firebase] Offline queue processing error:', err);
+    return false;
+  }
+};
+
+/**
+ * Sync dynamic master configs (posts, offices, districts, policies) in Firestore
+ */
+export const saveFirestoreMasterConfig = async (config) => {
+  const db = getFirebaseDB();
+  if (!db || !config) return false;
+  try {
+    const docRef = doc(db, 'police_system', 'master_config');
+    await setDoc(docRef, { ...config, updatedAt: new Date().toISOString() }, { merge: true });
+    return true;
+  } catch (err) {
+    return false;
+  }
+};
+
+export const subscribeToFirestoreMasterConfig = (onUpdate) => {
+  const db = getFirebaseDB();
+  if (!db) return () => {};
+  try {
+    const docRef = doc(db, 'police_system', 'master_config');
+    return onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data());
+      }
+    });
+  } catch (err) {
+    return () => {};
+  }
+};
+
 

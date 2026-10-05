@@ -26,10 +26,13 @@ import {
   playNotificationChime,
   subscribeToFirestoreContacts,
   saveFirestoreContact,
-  deleteFirestoreContact
+  deleteFirestoreContact,
+  syncAllContactsToFirestore,
+  processOfflineSyncQueue
 } from './utils/firebase';
 import { 
   getStoredContacts, 
+  loadContactsFromPermanentStorage,
   saveContacts,
   getStoredCoAdmins,
   getStoredNotifications,
@@ -176,6 +179,33 @@ export default function App() {
     setPolicies(getStoredPolicies());
     setPhonePermissions(getStoredPhonePermissions());
     
+    // Load and verify from high-capacity permanent IndexedDB vault (500MB+)
+    loadContactsFromPermanentStorage().then((vaultContacts) => {
+      if (Array.isArray(vaultContacts) && vaultContacts.length > 0) {
+        setContacts((prev) => {
+          if (!prev || vaultContacts.length >= prev.length) {
+            return vaultContacts;
+          }
+          return prev;
+        });
+      }
+    });
+
+    // Auto-process offline queue when network is active
+    if (navigator.onLine && isFirebaseConfigured()) {
+      processOfflineSyncQueue();
+    }
+
+    const handleOnline = () => {
+      console.log('[Network] Internet restored, syncing offline queue...');
+      processOfflineSyncQueue();
+      const current = getStoredContacts();
+      if (current && current.length > 0 && isFirebaseConfigured()) {
+        syncAllContactsToFirestore(current);
+      }
+    };
+    window.addEventListener('online', handleOnline);
+
     // Check and trigger rolling 6-hour automated backup
     checkAndTrigger6HourBackup();
 
@@ -252,6 +282,7 @@ export default function App() {
       clearInterval(backupInterval);
       window.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('online', handleOnline);
     };
   }, []);
 
@@ -308,7 +339,10 @@ export default function App() {
 
       setContacts((prevContacts) => {
         const contactMap = new Map();
-        (prevContacts || []).forEach(c => contactMap.set(c.id, c));
+        const localList = (prevContacts && prevContacts.length > 0) ? prevContacts : getStoredContacts();
+        localList.forEach(c => {
+          if (c && c.id) contactMap.set(c.id, c);
+        });
 
         let hasChange = false;
         cloudContacts.forEach(cloudC => {
@@ -321,13 +355,28 @@ export default function App() {
             contactMap.set(cloudC.id, cloudC);
             hasChange = true;
           } else {
+            // Non-destructive preservation: keep local uniform photo & password if cloud lacks them
+            const merged = {
+              ...local,
+              ...cloudC,
+              uniformPhoto: cloudC.uniformPhoto || local.uniformPhoto,
+              password: local.password || cloudC.password
+            };
             const isCloudNewer = cloudC.updatedAt && (!local.updatedAt || cloudC.updatedAt > local.updatedAt);
-            if (isCloudNewer || cloudC.status !== local.status) {
-              contactMap.set(cloudC.id, { ...local, ...cloudC });
+            if (isCloudNewer || cloudC.status !== local.status || (!local.uniformPhoto && cloudC.uniformPhoto)) {
+              contactMap.set(cloudC.id, merged);
               hasChange = true;
             }
           }
         });
+
+        // Two-Way Sync: If there are local officers not yet uploaded to Firestore, push them up
+        const cloudIds = new Set(cloudContacts.map(c => c.id));
+        const localOnlyList = localList.filter(c => c && c.id && !cloudIds.has(c.id) && !/^pol-1(0[1-9]|1[0-5])$/.test(c.id));
+        if (localOnlyList.length > 0) {
+          console.log(`[Two-Way Sync] Detected ${localOnlyList.length} local-only officers; syncing to Firestore...`);
+          syncAllContactsToFirestore(Array.from(contactMap.values()));
+        }
 
         if (hasChange) {
           const merged = Array.from(contactMap.values());
