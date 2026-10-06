@@ -1179,6 +1179,151 @@ export const sendGroupMessage = (chats, groupId, sender, text, file = null) => {
   return appendMessageToChat(chats, groupId, sender, text, file);
 };
 
+// Add new participants to an existing group chat
+export const addGroupParticipants = (chats, groupId, newParticipantIds, addedBy, contacts = []) => {
+  if (!Array.isArray(chats) || !groupId || !Array.isArray(newParticipantIds) || newParticipantIds.length === 0) {
+    return { updatedChats: chats, targetChat: null };
+  }
+
+  const targetChat = chats.find(c => c.id === groupId);
+  if (!targetChat) return { updatedChats: chats, targetChat: null };
+
+  const currentParticipants = targetChat.participants || [];
+  const trulyNewIds = newParticipantIds.filter(id => !currentParticipants.includes(id));
+
+  if (trulyNewIds.length === 0) {
+    return { updatedChats: chats, targetChat };
+  }
+
+  // Determine names for system announcement
+  const addedNames = trulyNewIds.map(id => {
+    const c = contacts.find(contact => contact.id === id);
+    return c ? (c.post ? `${c.name} (${c.post})` : c.name) : 'अधिकारी';
+  }).join(', ');
+
+  const systemText = addedBy && addedBy.name 
+    ? `${addedBy.name} ने ${addedNames} को ग्रुप में जोड़ा।`
+    : `${addedNames} को ग्रुप में जोड़ा गया।`;
+
+  const systemMessage = {
+    id: `grp-sys-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    senderId: 'system',
+    senderName: 'सिस्टम',
+    isSystem: true,
+    text: systemText,
+    file: null,
+    timestamp: new Date().toISOString(),
+    readBy: [addedBy?.id || 'system']
+  };
+
+  const updatedParticipants = [...currentParticipants, ...trulyNewIds];
+
+  const updatedChat = {
+    ...targetChat,
+    participants: updatedParticipants,
+    messages: [...(targetChat.messages || []), systemMessage],
+    lastMessage: systemText,
+    lastUpdated: new Date().toISOString()
+  };
+
+  const updatedChats = chats.map(c => c.id === groupId ? updatedChat : c);
+  saveChats(updatedChats);
+
+  return { updatedChats, updatedChat };
+};
+
+// Remove a participant from an existing group chat
+export const removeGroupParticipant = (chats, groupId, participantIdToRemove, removedBy, contacts = []) => {
+  if (!Array.isArray(chats) || !groupId || !participantIdToRemove) {
+    return { updatedChats: chats, targetChat: null };
+  }
+
+  const targetChat = chats.find(c => c.id === groupId);
+  if (!targetChat) return { updatedChats: chats, targetChat: null };
+
+  const targetContact = contacts.find(c => c.id === participantIdToRemove);
+  const removedName = targetContact 
+    ? (targetContact.post ? `${targetContact.name} (${targetContact.post})` : targetContact.name)
+    : 'सदस्य';
+
+  const systemText = removedBy && removedBy.name
+    ? `${removedBy.name} ने ${removedName} को ग्रुप से हटाया।`
+    : `${removedName} को ग्रुप से हटाया गया।`;
+
+  const systemMessage = {
+    id: `grp-sys-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    senderId: 'system',
+    senderName: 'सिस्टम',
+    isSystem: true,
+    text: systemText,
+    file: null,
+    timestamp: new Date().toISOString(),
+    readBy: [removedBy?.id || 'system']
+  };
+
+  const updatedParticipants = (targetChat.participants || []).filter(id => id !== participantIdToRemove);
+
+  const updatedChat = {
+    ...targetChat,
+    participants: updatedParticipants,
+    messages: [...(targetChat.messages || []), systemMessage],
+    lastMessage: systemText,
+    lastUpdated: new Date().toISOString()
+  };
+
+  const updatedChats = chats.map(c => c.id === groupId ? updatedChat : c);
+  saveChats(updatedChats);
+
+  return { updatedChats, updatedChat };
+};
+
+// Leave a group chat
+export const leaveGroupChat = (chats, groupId, leavingUser) => {
+  if (!Array.isArray(chats) || !groupId || !leavingUser) {
+    return { updatedChats: chats, targetChat: null };
+  }
+
+  const targetChat = chats.find(c => c.id === groupId);
+  if (!targetChat) return { updatedChats: chats, targetChat: null };
+
+  const systemText = `${leavingUser.name || 'सदस्य'} ग्रुप से बाहर हो गए।`;
+
+  const systemMessage = {
+    id: `grp-sys-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    senderId: 'system',
+    senderName: 'सिस्टम',
+    isSystem: true,
+    text: systemText,
+    file: null,
+    timestamp: new Date().toISOString(),
+    readBy: [leavingUser.id]
+  };
+
+  const updatedParticipants = (targetChat.participants || []).filter(id => id !== leavingUser.id);
+
+  const updatedChat = {
+    ...targetChat,
+    participants: updatedParticipants,
+    messages: [...(targetChat.messages || []), systemMessage],
+    lastMessage: systemText,
+    lastUpdated: new Date().toISOString()
+  };
+
+  const updatedChats = chats.map(c => c.id === groupId ? updatedChat : c);
+  saveChats(updatedChats);
+
+  return { updatedChats, updatedChat };
+};
+
+// Delete a group chat completely
+export const deleteGroupChat = (chats, groupId) => {
+  if (!Array.isArray(chats) || !groupId) return chats;
+  const updatedChats = chats.filter(c => c.id !== groupId);
+  saveChats(updatedChats);
+  return updatedChats;
+};
+
+
 // Mark all messages in a chat as read by a user
 export const markChatAsRead = (chats, chatId, userId) => {
   if (!chats || !chatId || !userId) return chats;

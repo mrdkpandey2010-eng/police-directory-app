@@ -31,6 +31,7 @@ import {
   subscribeToFirestoreContacts,
   saveFirestoreContact,
   deleteFirestoreContact,
+  deleteFirestoreChat,
   syncAllContactsToFirestore,
   processOfflineSyncQueue
 } from './utils/firebase';
@@ -82,6 +83,10 @@ import {
   sendDirectMessage,
   createGroupChat,
   sendGroupMessage,
+  addGroupParticipants,
+  removeGroupParticipant,
+  leaveGroupChat,
+  deleteGroupChat,
   appendMessageToChat,
   markChatAsRead,
   getUnreadMessagesCountForUser,
@@ -1009,6 +1014,54 @@ export default function App() {
     }
   };
 
+  const handleAddGroupParticipants = async (groupId, newParticipantIds) => {
+    if (!groupId || !newParticipantIds?.length) return;
+    const { updatedChats, updatedChat } = addGroupParticipants(chats, groupId, newParticipantIds, currentUser, contacts);
+    setChats(updatedChats);
+    showToast('समूह में नए सदस्य सफलतापूर्वक जोड़े गए!');
+
+    if (isFirebaseConfigured() && updatedChat) {
+      saveFirestoreChat(updatedChat);
+    }
+  };
+
+  const handleRemoveGroupParticipant = async (groupId, participantIdToRemove) => {
+    if (!groupId || !participantIdToRemove) return;
+    const { updatedChats, updatedChat } = removeGroupParticipant(chats, groupId, participantIdToRemove, currentUser, contacts);
+    setChats(updatedChats);
+    showToast('सदस्य को समूह से हटा दिया गया।');
+
+    if (isFirebaseConfigured() && updatedChat) {
+      saveFirestoreChat(updatedChat);
+    }
+  };
+
+  const handleLeaveGroupChat = async (groupId) => {
+    if (!groupId || !currentUser) return;
+    const { updatedChats, updatedChat } = leaveGroupChat(chats, groupId, currentUser);
+    setChats(updatedChats);
+    setActiveChatId(null);
+    showToast('आप समूह से बाहर हो गए हैं।');
+
+    if (isFirebaseConfigured() && updatedChat) {
+      saveFirestoreChat(updatedChat);
+    }
+  };
+
+  const handleDeleteGroupChat = async (groupId) => {
+    if (!groupId) return;
+    const updatedChats = deleteGroupChat(chats, groupId);
+    setChats(updatedChats);
+    if (activeChatId === groupId) {
+      setActiveChatId(null);
+    }
+    showToast('समूह सफलतापूर्वक समाप्त (Delete) कर दिया गया।');
+
+    if (isFirebaseConfigured()) {
+      deleteFirestoreChat(groupId);
+    }
+  };
+
   const handleMarkChatAsRead = async (chatId) => {
     if (!currentUser || !chatId) return;
     const updated = markChatAsRead(chats, chatId, currentUser.id);
@@ -1470,6 +1523,10 @@ export default function App() {
         onSendDirectMessage={handleSendDirectMessage}
         onSendGroupMessage={handleSendGroupMessage}
         onCreateGroupChat={handleCreateGroupChat}
+        onAddGroupParticipants={handleAddGroupParticipants}
+        onRemoveGroupParticipant={handleRemoveGroupParticipant}
+        onLeaveGroupChat={handleLeaveGroupChat}
+        onDeleteGroupChat={handleDeleteGroupChat}
         onAppendMessage={handleAppendMessage}
         onMarkChatAsRead={handleMarkChatAsRead}
       />

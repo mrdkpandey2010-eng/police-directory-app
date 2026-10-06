@@ -246,6 +246,22 @@ export const createFirestoreGroupChat = async (groupData) => {
   }
 };
 
+// Delete a chat from Firestore
+export const deleteFirestoreChat = async (chatId) => {
+  const db = getFirebaseDB();
+  if (!db || !chatId) return false;
+
+  try {
+    const chatDocRef = doc(db, 'police_chats', chatId);
+    await deleteDoc(chatDocRef);
+    return true;
+  } catch (err) {
+    console.error('Error deleting chat from Firestore:', err);
+    return false;
+  }
+};
+
+
 // Mark a chat as read in Firestore
 export const markFirestoreChatAsRead = async (chatId, userId) => {
   const db = getFirebaseDB();

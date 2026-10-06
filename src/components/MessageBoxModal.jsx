@@ -3,7 +3,8 @@ import {
   ArrowLeft, Send, Paperclip, Users, User, Phone, 
   PhoneCall, Search, Plus, X, Download, FileText, 
   FileSpreadsheet, Image as ImageIcon, MapPin, 
-  Share2, Check, CheckCheck, Compass, Info, ShieldCheck
+  Share2, Check, CheckCheck, Compass, Info, ShieldCheck,
+  UserPlus, UserMinus, LogOut, Trash2, Crown, Shield
 } from 'lucide-react';
 import { getChatsForUser, getUnreadCountForChat } from '../utils/storage';
 import { callManager } from '../utils/webrtc';
@@ -20,6 +21,10 @@ export default function MessageBoxModal({
   onSendDirectMessage,
   onSendGroupMessage,
   onCreateGroupChat,
+  onAddGroupParticipants,
+  onRemoveGroupParticipant,
+  onLeaveGroupChat,
+  onDeleteGroupChat,
   onAppendMessage,
   onMarkChatAsRead
 }) {
@@ -53,6 +58,13 @@ export default function MessageBoxModal({
 
   const [showShareContactModal, setShowShareContactModal] = useState(false);
   const [shareContactSearch, setShareContactSearch] = useState('');
+
+  // Group Info & Member Management states
+  const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
+  const [groupMemberSearchFilter, setGroupMemberSearchFilter] = useState('');
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [addMemberSearchFilter, setAddMemberSearchFilter] = useState('');
+  const [selectedNewMemberIds, setSelectedNewMemberIds] = useState([]);
 
   // Filter chats visible to current user
   const userVisibleChats = (isOpen && currentUser) ? getChatsForUser(chats, contacts, currentUser) : [];
@@ -117,6 +129,71 @@ export default function MessageBoxModal({
   const otherContact = otherParticipantId 
     ? contacts.find(c => c.id === otherParticipantId) 
     : null;
+
+  // Resolve participant helper for groups
+  const resolveParticipant = (participantId) => {
+    if (participantId === 'super-admin') {
+      return {
+        id: 'super-admin',
+        name: 'मुख्यालय पुलिस महानिदेशक',
+        post: 'डीजीपी उत्तर प्रदेश',
+        district: 'मुख्यालय लखनऊ',
+        pno: 'DGP001'
+      };
+    }
+    const found = contacts.find(c => c.id === participantId);
+    if (found) return found;
+    return {
+      id: participantId,
+      name: 'पुलिस अधिकारी',
+      post: 'अधिकारी',
+      district: currentChat?.district || 'उत्तर प्रदेश',
+      pno: ''
+    };
+  };
+
+  const isCurrentChatGroup = currentChat?.type === 'group';
+  const isCurrentUserGroupCreator = isCurrentChatGroup && currentChat?.createdBy === currentUser?.id;
+  const isCurrentUserGroupAdmin = isCurrentChatGroup && (isCurrentUserGroupCreator || currentUser?.role === 'admin');
+
+  // Handle Remove Member from Group
+  const handleRemoveMember = (member) => {
+    if (!currentChat || !onRemoveGroupParticipant) return;
+    const confirmRemove = window.confirm(`क्या आप अधिकारी "${member.name} (${member.post || ''})" को समूह से हटाना चाहते हैं?`);
+    if (confirmRemove) {
+      onRemoveGroupParticipant(currentChat.id, member.id);
+    }
+  };
+
+  // Handle Leave Group
+  const handleLeaveCurrentGroup = () => {
+    if (!currentChat || !onLeaveGroupChat) return;
+    const confirmLeave = window.confirm(`क्या आप वाकई समूह "${currentChat.title}" से बाहर निकलना चाहते हैं?`);
+    if (confirmLeave) {
+      onLeaveGroupChat(currentChat.id);
+      setShowGroupInfoModal(false);
+      setMobileView('list');
+    }
+  };
+
+  // Handle Delete Group
+  const handleDeleteCurrentGroup = () => {
+    if (!currentChat || !onDeleteGroupChat) return;
+    const confirmDelete = window.confirm(`⚠️ चेतावनी: क्या आप वाकई समूह "${currentChat.title}" को हमेशा के लिए समाप्त (Delete) करना चाहते हैं?`);
+    if (confirmDelete) {
+      onDeleteGroupChat(currentChat.id);
+      setShowGroupInfoModal(false);
+      setMobileView('list');
+    }
+  };
+
+  // Handle Confirm Add Members to Group
+  const handleConfirmAddMembers = () => {
+    if (!currentChat || !onAddGroupParticipants || selectedNewMemberIds.length === 0) return;
+    onAddGroupParticipants(currentChat.id, selectedNewMemberIds);
+    setSelectedNewMemberIds([]);
+    setShowAddMemberModal(false);
+  };
 
   // Handle Photo File selection
   const handlePhotoSelect = (e) => {
@@ -812,78 +889,139 @@ export default function MessageBoxModal({
                     <ArrowLeft size={20} />
                   </button>
 
-                  {/* Avatar */}
-                  <div style={{
-                    width: '38px',
-                    height: '38px',
-                    borderRadius: '50%',
-                    overflow: 'hidden',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    border: '1.5px solid var(--khaki-primary, #c49756)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
-                  }}>
-                    {otherContact?.uniformPhoto ? (
-                      <img src={otherContact.uniformPhoto} alt={otherContact.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : currentChat.type === 'group' ? (
-                      <Users size={19} color="var(--khaki-light)" />
-                    ) : (
-                      <span style={{ fontWeight: 800, color: 'var(--khaki-light)' }}>
-                        {((otherContact?.name || currentChat.title || 'P').charAt(0)).toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Title & Status */}
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <h3 style={{
-                        margin: 0,
-                        fontSize: '0.92rem',
-                        fontWeight: 700,
-                        color: '#f8fafc',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
-                      }}>
-                        {currentChat.type === 'direct' 
-                          ? (otherContact?.name || (otherParticipantId === 'super-admin' ? 'मुख्यालय पुलिस महानिदेशक' : 'पुलिस अधिकारी')) 
-                          : (currentChat.title || 'समूह चैट')}
-                      </h3>
-                      {currentChat.type === 'direct' && otherContact?.uniformPhoto && (
-                        <span style={{
-                          background: 'rgba(16, 185, 129, 0.18)',
-                          color: '#34d399',
-                          fontSize: '0.62rem',
-                          border: '1px solid rgba(16, 185, 129, 0.4)',
-                          padding: '1px 5px',
-                          borderRadius: '4px',
-                          fontWeight: 700,
-                          flexShrink: 0
-                        }}>
-                          ✓ वर्दी
+                  {/* Avatar & Title Clickable for Group Info */}
+                  <div 
+                    onClick={() => {
+                      if (currentChat.type === 'group') {
+                        setGroupMemberSearchFilter('');
+                        setShowGroupInfoModal(true);
+                      }
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: currentChat.type === 'group' ? 'pointer' : 'default',
+                      flex: 1,
+                      minWidth: 0,
+                      userSelect: 'none'
+                    }}
+                    title={currentChat.type === 'group' ? 'ग्रुप विवरण और सदस्य देखें' : undefined}
+                  >
+                    {/* Avatar */}
+                    <div style={{
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '50%',
+                      overflow: 'hidden',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1.5px solid var(--khaki-primary, #c49756)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      {otherContact?.uniformPhoto ? (
+                        <img src={otherContact.uniformPhoto} alt={otherContact.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : currentChat.type === 'group' ? (
+                        <Users size={19} color="var(--khaki-light)" />
+                      ) : (
+                        <span style={{ fontWeight: 800, color: 'var(--khaki-light)' }}>
+                          {((otherContact?.name || currentChat.title || 'P').charAt(0)).toUpperCase()}
                         </span>
                       )}
                     </div>
 
-                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {currentChat.type === 'direct' ? (
-                        otherContact ? (
-                          `${otherContact.post || ''} • ${otherContact.district || ''}`
+                    {/* Title & Status */}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <h3 style={{
+                          margin: 0,
+                          fontSize: '0.92rem',
+                          fontWeight: 700,
+                          color: '#f8fafc',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}>
+                          {currentChat.type === 'direct' 
+                            ? (otherContact?.name || (otherParticipantId === 'super-admin' ? 'मुख्यालय पुलिस महानिदेशक' : 'पुलिस अधिकारी')) 
+                            : (currentChat.title || 'समूह चैट')}
+                        </h3>
+                        {currentChat.type === 'direct' && otherContact?.uniformPhoto && (
+                          <span style={{
+                            background: 'rgba(16, 185, 129, 0.18)',
+                            color: '#34d399',
+                            fontSize: '0.62rem',
+                            border: '1px solid rgba(16, 185, 129, 0.4)',
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            fontWeight: 700,
+                            flexShrink: 0
+                          }}>
+                            ✓ वर्दी
+                          </span>
+                        )}
+                        {currentChat.type === 'group' && (
+                          <span style={{
+                            background: 'rgba(196, 151, 86, 0.15)',
+                            color: 'var(--khaki-light)',
+                            fontSize: '0.62rem',
+                            border: '1px solid rgba(196, 151, 86, 0.3)',
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            fontWeight: 700,
+                            flexShrink: 0
+                          }}>
+                            विवरण देखें ℹ️
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {currentChat.type === 'direct' ? (
+                          otherContact ? (
+                            `${otherContact.post || ''} • ${otherContact.district || ''}`
+                          ) : (
+                            'उत्तर प्रदेश पुलिस'
+                          )
                         ) : (
-                          'उत्तर प्रदेश पुलिस'
-                        )
-                      ) : (
-                        `${currentChat.participants?.length || 0} सदस्य`
-                      )}
+                          `${currentChat.participants?.length || 0} सदस्य • टैप करके विवरण देखें`
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 {/* Right Call & Actions in Header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {currentChat.type === 'group' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGroupMemberSearchFilter('');
+                        setShowGroupInfoModal(true);
+                      }}
+                      style={{
+                        background: 'rgba(196, 151, 86, 0.18)',
+                        border: '1px solid rgba(196, 151, 86, 0.4)',
+                        color: '#fef08a',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="ग्रुप विवरण व सदस्य प्रबंधन"
+                    >
+                      <Info size={14} />
+                      <span className="hide-on-mobile">ग्रुप विवरण</span>
+                    </button>
+                  )}
+
                   {currentChat.type === 'direct' && otherContact && (
                     <>
                       <button 
@@ -964,6 +1102,32 @@ export default function MessageBoxModal({
               >
                 {currentChat.messages && currentChat.messages.length > 0 ? (
                   currentChat.messages.map((msg, idx) => {
+                    // System notice message (WhatsApp pill style)
+                    if (msg.isSystem || msg.senderId === 'system') {
+                      return (
+                        <div key={msg.id || idx} style={{
+                          display: 'flex',
+                          justifyContent: 'center',
+                          margin: '5px 0',
+                          width: '100%'
+                        }}>
+                          <div style={{
+                            background: 'rgba(30, 41, 59, 0.88)',
+                            border: '1px solid rgba(196, 151, 86, 0.3)',
+                            color: '#e2e8f0',
+                            fontSize: '0.72rem',
+                            padding: '3px 12px',
+                            borderRadius: '12px',
+                            textAlign: 'center',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                            maxWidth: '85%',
+                            lineHeight: 1.35
+                          }}>
+                            {msg.text}
+                          </div>
+                        </div>
+                      );
+                    }
                     const isMe = msg.senderId === currentUser.id;
                     const hasRead = msg.readBy && msg.readBy.length > 1;
 
@@ -1905,6 +2069,576 @@ export default function MessageBoxModal({
                     </div>
                   </div>
                 ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: GROUP INFO & MEMBER MANAGEMENT (ग्रुप विवरण व सदस्य प्रबंधन)     */}
+      {/* ========================================================================= */}
+      {showGroupInfoModal && currentChat && isCurrentChatGroup && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '12px',
+            zIndex: 100000
+          }}
+          onClick={() => setShowGroupInfoModal(false)}
+        >
+          <div
+            style={{
+              background: '#0a1628',
+              border: '1.5px solid var(--khaki-primary, #c49756)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '480px',
+              maxHeight: '88vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxShadow: '0 12px 35px rgba(0, 0, 0, 0.7)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{
+              padding: '0.8rem 1rem',
+              background: '#0f1f3d',
+              borderBottom: '1px solid rgba(196, 151, 86, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Users size={18} color="var(--khaki-light)" />
+                <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 800, color: '#f8fafc' }}>
+                  समूह विवरण (Group Info)
+                </h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowGroupInfoModal(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+                title="बंद करें"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {/* Group Banner Card */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(196, 151, 86, 0.25)',
+                borderRadius: '10px',
+                padding: '0.85rem',
+                textAlign: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  background: 'rgba(196, 151, 86, 0.15)',
+                  border: '2px solid var(--khaki-primary, #c49756)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Users size={28} color="var(--khaki-light)" />
+                </div>
+                <h2 style={{ margin: 0, fontSize: '1.08rem', fontWeight: 800, color: '#f8fafc' }}>
+                  {currentChat.title}
+                </h2>
+                <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                  जनपद / इकाई: <strong style={{ color: '#cbd5e1' }}>{currentChat.district || 'सभी जनपद'}</strong>
+                </div>
+                {currentChat.description && (
+                  <div style={{
+                    fontSize: '0.75rem',
+                    color: '#cbd5e1',
+                    background: 'rgba(0,0,0,0.25)',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    marginTop: '2px',
+                    maxWidth: '100%',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {currentChat.description}
+                  </div>
+                )}
+                <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>
+                  समूह निर्माण: {resolveParticipant(currentChat.createdBy).name} द्वारा
+                </div>
+              </div>
+
+              {/* Members Section Header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0 2px'
+              }}>
+                <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--khaki-light)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>सदस्य सूची ({currentChat.participants?.length || 0})</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedNewMemberIds([]);
+                    setAddMemberSearchFilter('');
+                    setShowAddMemberModal(true);
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #15803d, #166534)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '4px 9px',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <UserPlus size={13} />
+                  <span>सदस्य जोड़ें</span>
+                </button>
+              </div>
+
+              {/* Search Inside Group Members */}
+              <div>
+                <input
+                  type="text"
+                  placeholder="ग्रुप के सदस्य खोजें..."
+                  value={groupMemberSearchFilter}
+                  onChange={e => setGroupMemberSearchFilter(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px 10px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(196, 151, 86, 0.25)',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '0.78rem'
+                  }}
+                />
+              </div>
+
+              {/* Group Members List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                {(currentChat.participants || [])
+                  .map(pId => resolveParticipant(pId))
+                  .filter(member => {
+                    if (!groupMemberSearchFilter.trim()) return true;
+                    const q = groupMemberSearchFilter.toLowerCase();
+                    return (member.name || '').toLowerCase().includes(q) ||
+                           (member.post || '').toLowerCase().includes(q) ||
+                           (member.district || '').toLowerCase().includes(q) ||
+                           (member.pno || '').toLowerCase().includes(q);
+                  })
+                  .map(member => {
+                    const isCreator = member.id === currentChat.createdBy;
+                    const isMe = member.id === currentUser.id;
+
+                    return (
+                      <div
+                        key={member.id}
+                        style={{
+                          padding: '0.55rem 0.75rem',
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid rgba(255, 255, 255, 0.06)',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.65rem'
+                        }}
+                      >
+                        {/* Member Avatar */}
+                        <div style={{
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '50%',
+                          overflow: 'hidden',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: isCreator ? '1.5px solid #fef08a' : '1px solid rgba(196, 151, 86, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}>
+                          {member.uniformPhoto ? (
+                            <img src={member.uniformPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: isCreator ? '#fef08a' : 'var(--khaki-light)' }}>
+                              {(member.name || 'P').charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Member Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>
+                              {member.name}
+                            </span>
+                            {isCreator && (
+                              <span style={{
+                                background: 'rgba(234, 179, 8, 0.2)',
+                                color: '#fef08a',
+                                border: '1px solid rgba(234, 179, 8, 0.4)',
+                                borderRadius: '4px',
+                                padding: '1px 5px',
+                                fontSize: '0.62rem',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px'
+                              }}>
+                                <Crown size={10} /> ग्रुप एडमिन
+                              </span>
+                            )}
+                            {isMe && (
+                              <span style={{
+                                background: 'rgba(59, 130, 246, 0.2)',
+                                color: '#93c5fd',
+                                borderRadius: '4px',
+                                padding: '1px 5px',
+                                fontSize: '0.62rem',
+                                fontWeight: 700
+                              }}>
+                                आप
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {member.post || 'अधिकारी'} • {member.district || ''} {member.pno ? `(PNO: ${member.pno})` : ''}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                          {member.phone && (
+                            <a
+                              href={`tel:${member.phone}`}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                color: '#e2e8f0',
+                                padding: '4px 6px',
+                                borderRadius: '5px',
+                                textDecoration: 'none',
+                                display: 'flex',
+                                alignItems: 'center'
+                              }}
+                              title="कॉल करें"
+                            >
+                              <Phone size={12} />
+                            </a>
+                          )}
+
+                          {/* Remove Member Button (Visible to Creator / Admin for other members) */}
+                          {isCurrentUserGroupAdmin && !isCreator && !isMe && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(member)}
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                color: '#fca5a5',
+                                borderRadius: '5px',
+                                padding: '4px 7px',
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '3px'
+                              }}
+                              title="ग्रुप से हटाएं"
+                            >
+                              <UserMinus size={11} />
+                              <span>हटाएं</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Danger Actions Area */}
+              <div style={{
+                marginTop: '0.5rem',
+                paddingTop: '0.75rem',
+                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                {!isCurrentUserGroupCreator && (
+                  <button
+                    type="button"
+                    onClick={handleLeaveCurrentGroup}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(239, 68, 68, 0.12)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      color: '#fca5a5',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <LogOut size={15} />
+                    <span>समूह छोड़ें (Exit Group)</span>
+                  </button>
+                )}
+
+                {isCurrentUserGroupAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteCurrentGroup}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(239, 68, 68, 0.22)',
+                      border: '1px solid rgba(239, 68, 68, 0.5)',
+                      color: '#ef4444',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Trash2 size={15} />
+                    <span>समूह समाप्त (Delete) करें</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: ADD MEMBERS TO GROUP (समूह में नए सदस्य जोड़ें)                  */}
+      {/* ========================================================================= */}
+      {showAddMemberModal && currentChat && isCurrentChatGroup && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '12px',
+            zIndex: 100001
+          }}
+          onClick={() => setShowAddMemberModal(false)}
+        >
+          <div
+            style={{
+              background: '#0a1628',
+              border: '1.5px solid var(--khaki-primary, #c49756)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '460px',
+              maxHeight: '82vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxShadow: '0 12px 35px rgba(0, 0, 0, 0.7)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{
+              padding: '0.75rem 1rem',
+              background: '#0f1f3d',
+              borderBottom: '1px solid rgba(196, 151, 86, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '0.94rem', fontWeight: 800, color: 'var(--khaki-light)' }}>
+                ➕ समूह में सदस्य जोड़ें
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddMemberModal(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <input
+                type="text"
+                placeholder="अधिकारी का नाम, पद, PNO या जनपद खोजें..."
+                value={addMemberSearchFilter}
+                onChange={e => setAddMemberSearchFilter(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '7px 12px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(196, 151, 86, 0.25)',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  fontSize: '0.82rem'
+                }}
+              />
+            </div>
+
+            {/* Available Non-Member Contacts */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
+              {contacts
+                .filter(c => (c.status === 'approved' || c.status === 'active') && !currentChat.participants?.includes(c.id))
+                .filter(c => {
+                  if (!addMemberSearchFilter.trim()) return true;
+                  const q = addMemberSearchFilter.toLowerCase();
+                  return (c.name || '').toLowerCase().includes(q) ||
+                         (c.post || '').toLowerCase().includes(q) ||
+                         (c.district || '').toLowerCase().includes(q) ||
+                         (c.pno || '').toLowerCase().includes(q);
+                })
+                .map(contact => {
+                  const isChecked = selectedNewMemberIds.includes(contact.id);
+                  return (
+                    <div
+                      key={contact.id}
+                      onClick={() => {
+                        setSelectedNewMemberIds(prev => 
+                          prev.includes(contact.id) 
+                            ? prev.filter(id => id !== contact.id) 
+                            : [...prev, contact.id]
+                        );
+                      }}
+                      style={{
+                        padding: '0.55rem 0.75rem',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.65rem',
+                        background: isChecked ? 'rgba(196, 151, 86, 0.12)' : 'transparent'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {}}
+                        style={{ accentColor: 'var(--khaki-primary, #c49756)', cursor: 'pointer' }}
+                      />
+                      <div style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        background: 'rgba(255,255,255,0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}>
+                        {contact.uniformPhoto ? (
+                          <img src={contact.uniformPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <User size={15} color="var(--khaki-light)" />
+                        )}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>
+                          {contact.name}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                          {contact.post} • {contact.district} (PNO: {contact.pno || 'N/A'})
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Bottom Confirmation Bar */}
+            <div style={{
+              padding: '0.75rem 1rem',
+              background: '#0f1f3d',
+              borderTop: '1px solid rgba(196, 151, 86, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ fontSize: '0.78rem', color: '#cbd5e1' }}>
+                चयनित: <strong style={{ color: 'var(--khaki-light)' }}>{selectedNewMemberIds.length}</strong>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddMemberModal(false)}
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    border: 'none',
+                    color: '#cbd5e1',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmAddMembers}
+                  disabled={selectedNewMemberIds.length === 0}
+                  style={{
+                    background: selectedNewMemberIds.length > 0
+                      ? 'linear-gradient(135deg, #15803d, #166534)'
+                      : 'rgba(255,255,255,0.1)',
+                    border: 'none',
+                    color: selectedNewMemberIds.length > 0 ? '#fff' : '#64748b',
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: selectedNewMemberIds.length > 0 ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <UserPlus size={14} />
+                  <span>ग्रुप में जोड़ें ({selectedNewMemberIds.length})</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
