@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   Shield, UserPlus, Lock, RefreshCw, Bell, MessageSquare, 
-  User, LogOut, CheckCircle, Clock, KeyRound, Mail, Cloud, Menu
+  User, LogOut, CheckCircle, Clock, KeyRound, Cloud, Menu
 } from 'lucide-react';
 
 export default function Header({ 
@@ -73,41 +73,6 @@ export default function Header({
         {/* Header Right Action Area */}
         <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
           
-          {/* Quick Message Box Shortcut (When logged in) */}
-          {isLoggedIn && (
-            <button 
-              className="btn btn-primary"
-              onClick={onOpenChat}
-              title="पीयर-टू-पीयर मैसेज बॉक्स (Direct Messages & Calls)"
-              style={{ 
-                position: 'relative', 
-                background: 'linear-gradient(135deg, #162c5b, #1e40af)', 
-                color: '#fff', 
-                border: '1px solid rgba(196,151,86,0.4)',
-                padding: '0.45rem 0.75rem',
-                fontSize: '0.8rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              <Mail size={15} />
-              <span className="hide-on-mobile">मैसेज बॉक्स</span>
-              {chatsCount > 0 && (
-                <span style={{
-                  background: '#ef4444',
-                  color: '#fff',
-                  borderRadius: '10px',
-                  padding: '1px 6px',
-                  fontSize: '0.7rem',
-                  fontWeight: 800
-                }}>
-                  {chatsCount}
-                </span>
-              )}
-            </button>
-          )}
-
           {/* User Status / Role Pill */}
           {isLoggedIn ? (
             <div 
