@@ -43,7 +43,7 @@ export default function UserProfileModal({
 
   // Transfer Request Form State
   const [transferTargetDistrict, setTransferTargetDistrict] = useState(
-    districts.find(d => d !== 'सभी ज़िले' && d !== user?.district) || 'वाराणसी'
+    districts.find(d => d !== 'सभी ज़िले' && d !== 'सभी ज़िले (All Districts)' && d !== user?.district) || ''
   );
   const [transferReason, setTransferReason] = useState('');
 

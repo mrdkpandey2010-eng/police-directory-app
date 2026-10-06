@@ -8,7 +8,9 @@ import {
   POSTS as DEFAULT_POSTS,
   OFFICES as DEFAULT_OFFICES,
   DEFAULT_OFFICE_ITEMS,
-  DISTRICTS as DEFAULT_DISTRICTS
+  DISTRICTS as DEFAULT_DISTRICTS,
+  ALL_UP_DISTRICTS,
+  STANDARD_POLICE_POSTS
 } from '../data/mockContacts';
 import { 
   idbSet, 
@@ -33,20 +35,47 @@ const NOTIFS_KEY = 'police_directory_notifs_v2';
 const FEEDBACKS_KEY = 'police_directory_feedbacks_v2';
 const SESSION_KEY = 'police_directory_session_v2';
 const CHATS_KEY = 'police_directory_chats_v2';
-const CLEAN_DB_FLAG = 'police_directory_clean_fresh_v3';
+const FINAL_PROD_CLEAN_FLAG = 'police_directory_prod_zero_clean_v7';
 
-// One-time fresh database purge of legacy mock data
+// Complete & absolute purge of all mock/demo records for final production release
 try {
-  if (!localStorage.getItem(CLEAN_DB_FLAG)) {
+  if (!localStorage.getItem(FINAL_PROD_CLEAN_FLAG)) {
+    // 1. Wipe legacy mock localStorage keys
     localStorage.removeItem('police_directory_contacts_v1');
+    localStorage.removeItem('police_directory_contacts_v2');
+    localStorage.removeItem('police_directory_coadmins_v1');
+    localStorage.removeItem('police_directory_coadmins_v2');
     localStorage.removeItem('police_directory_chats_v1');
+    localStorage.removeItem('police_directory_chats_v2');
     localStorage.removeItem('police_directory_notifs_v1');
+    localStorage.removeItem('police_directory_notifs_v2');
     localStorage.removeItem('police_directory_feedbacks_v1');
+    localStorage.removeItem('police_directory_feedbacks_v2');
+    localStorage.removeItem('police_directory_master_offices_v1');
+    localStorage.removeItem('police_directory_master_posts_v1');
+    localStorage.removeItem('police_directory_master_districts_v1');
+
+    // 2. Set 100% clean zero defaults
     localStorage.setItem(CONTACTS_KEY, JSON.stringify([]));
+    localStorage.setItem(COADMINS_KEY, JSON.stringify([]));
     localStorage.setItem(NOTIFS_KEY, JSON.stringify([]));
     localStorage.setItem(CHATS_KEY, JSON.stringify([]));
     localStorage.setItem(FEEDBACKS_KEY, JSON.stringify([]));
-    localStorage.setItem(CLEAN_DB_FLAG, 'true');
+    localStorage.setItem('police_directory_master_offices_v1', JSON.stringify([]));
+    localStorage.setItem('police_directory_master_posts_v1', JSON.stringify(DEFAULT_POSTS));
+    localStorage.setItem('police_directory_master_districts_v1', JSON.stringify(DEFAULT_DISTRICTS));
+
+    // 3. Sync to IndexedDB permanent vault
+    idbSet(CONTACTS_KEY, []);
+    idbSet(COADMINS_KEY, []);
+    idbSet(NOTIFS_KEY, []);
+    idbSet(CHATS_KEY, []);
+    idbSet(FEEDBACKS_KEY, []);
+    idbSet('police_directory_master_offices_v1', []);
+    idbSet('police_directory_master_posts_v1', DEFAULT_POSTS);
+    idbSet('police_directory_master_districts_v1', DEFAULT_DISTRICTS);
+
+    localStorage.setItem(FINAL_PROD_CLEAN_FLAG, 'true');
   }
 } catch (e) {}
 
@@ -226,7 +255,31 @@ export const deleteCustomPolicyItem = (policyId) => {
 export const getStoredPosts = () => {
   try {
     const saved = localStorage.getItem(POSTS_KEY);
-    return saved ? JSON.parse(saved) : DEFAULT_POSTS;
+    if (!saved) {
+      localStorage.setItem(POSTS_KEY, JSON.stringify(DEFAULT_POSTS));
+      return DEFAULT_POSTS;
+    }
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_POSTS;
+    
+    // Purge old 8-item demo posts list if lingering
+    const oldDemo = [
+      "सभी पद (All Posts)",
+      "पुलिस वरिष्ठ अधीक्षक (SSP)",
+      "पुलिस अधीक्षक (SP)",
+      "अपर पुलिस अधीक्षक (ASP)",
+      "क्षेत्राधिकारी (DSP)",
+      "प्रभारी निरीक्षक (Inspector)",
+      "उप-निरीक्षक (Sub-Inspector)",
+      "मुख्य आरक्षी (Head Constable)",
+      "आरक्षी (Constable)"
+    ];
+    if (parsed.length === oldDemo.length && oldDemo.every((p, i) => p === parsed[i])) {
+      localStorage.setItem(POSTS_KEY, JSON.stringify(DEFAULT_POSTS));
+      idbSet(POSTS_KEY, DEFAULT_POSTS);
+      return DEFAULT_POSTS;
+    }
+    return parsed;
   } catch (err) {
     return DEFAULT_POSTS;
   }
@@ -292,39 +345,28 @@ export const getStoredOffices = () => {
   try {
     const saved = localStorage.getItem(OFFICES_KEY);
     if (!saved) {
-      localStorage.setItem(OFFICES_KEY, JSON.stringify(DEFAULT_OFFICE_ITEMS));
-      return DEFAULT_OFFICE_ITEMS;
+      localStorage.setItem(OFFICES_KEY, JSON.stringify([]));
+      return [];
     }
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem(OFFICES_KEY, JSON.stringify(DEFAULT_OFFICE_ITEMS));
-      return DEFAULT_OFFICE_ITEMS;
+      return [];
     }
 
-    // Auto-migration: if localStorage has strings instead of objects { id, name, district }
-    let hasString = false;
-    const migrated = parsed.map((item, idx) => {
-      if (typeof item === 'string') {
-        hasString = true;
-        const found = DEFAULT_OFFICE_ITEMS.find(d => d.name === item);
-        return {
-          id: found ? found.id : `off-migrated-${idx}`,
-          name: item,
-          district: found ? found.district : 'लखनऊ'
-        };
-      }
-      return item;
-    }).filter(item => item && item.name && item.name !== "सभी कार्यालय/थाने (All Offices)");
+    // Filter out any lingering mock offices (off-1 to off-50, or off-migrated)
+    const clean = parsed.filter(o => {
+      const id = typeof o === 'object' ? (o.id || '') : '';
+      return !/^off-(50|[1-4]?[0-9])$/.test(id) && !/^off-migrated/.test(id);
+    });
 
-    if (hasString || migrated.length === 0) {
-      const finalItems = migrated.length > 0 ? migrated : DEFAULT_OFFICE_ITEMS;
-      localStorage.setItem(OFFICES_KEY, JSON.stringify(finalItems));
-      return finalItems;
+    if (clean.length !== parsed.length) {
+      localStorage.setItem(OFFICES_KEY, JSON.stringify(clean));
+      idbSet(OFFICES_KEY, clean);
     }
 
-    return migrated;
+    return clean;
   } catch (err) {
-    return DEFAULT_OFFICE_ITEMS;
+    return [];
   }
 };
 
@@ -337,10 +379,10 @@ export const saveOffices = (offices) => {
   } catch (err) {}
 };
 
-export const addOffice = (officeName, districtName = 'लखनऊ') => {
+export const addOffice = (officeName, districtName = '') => {
   const current = getStoredOffices();
   const trimmedName = (officeName || '').trim();
-  const trimmedDist = (districtName || 'लखनऊ').trim();
+  const trimmedDist = (districtName || '').trim();
   if (!trimmedName) return current;
 
   // Check duplicate within the same district
@@ -386,7 +428,7 @@ export const editOffice = (officeIdOrName, newOfficeName, newDistrict = null) =>
         return {
           id: `off-${Date.now()}`,
           name: trimmedName,
-          district: newDistrict ? newDistrict.trim() : 'लखनऊ'
+          district: newDistrict ? newDistrict.trim() : (o.district || '')
         };
       }
       return o;
@@ -443,10 +485,41 @@ export const getOfficesForDistrict = (officesList, districtName) => {
 export const getStoredDistricts = () => {
   try {
     const saved = localStorage.getItem(DISTRICTS_KEY);
-    return saved ? JSON.parse(saved) : DEFAULT_DISTRICTS;
+    if (!saved) {
+      localStorage.setItem(DISTRICTS_KEY, JSON.stringify(DEFAULT_DISTRICTS));
+      return DEFAULT_DISTRICTS;
+    }
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_DISTRICTS;
+
+    // Purge old 8-item demo districts list if lingering
+    const oldDemo = ["सभी ज़िले (All Districts)", "लखनऊ", "कानपुर नगर", "वाराणसी", "आगरा", "प्रयागराज", "गोरखपुर", "मेरठ", "बरेली"];
+    if (parsed.length === oldDemo.length && oldDemo.every((d, i) => d === parsed[i])) {
+      localStorage.setItem(DISTRICTS_KEY, JSON.stringify(DEFAULT_DISTRICTS));
+      idbSet(DISTRICTS_KEY, DEFAULT_DISTRICTS);
+      return DEFAULT_DISTRICTS;
+    }
+    return parsed;
   } catch (err) {
     return DEFAULT_DISTRICTS;
   }
+};
+
+export const loadAll75Districts = () => {
+  saveDistricts(ALL_UP_DISTRICTS);
+  return ALL_UP_DISTRICTS;
+};
+
+export const loadStandardPolicePosts = () => {
+  savePosts(STANDARD_POLICE_POSTS);
+  return STANDARD_POLICE_POSTS;
+};
+
+export const resetMasterDataToClean = () => {
+  saveDistricts(DEFAULT_DISTRICTS);
+  savePosts(DEFAULT_POSTS);
+  saveOffices([]);
+  return { districts: DEFAULT_DISTRICTS, posts: DEFAULT_POSTS, offices: [] };
 };
 
 export const saveDistricts = (districts) => {
@@ -599,10 +672,14 @@ export const loadContactsFromPermanentStorage = async () => {
     // 2. Fetch from IndexedDB
     const idbContacts = await idbGetContacts();
     if (Array.isArray(idbContacts) && idbContacts.length > 0) {
+      const cleanContacts = idbContacts.filter(c => !/^pol-1(0[1-9]|1[0-5])$/.test(c.id));
+      if (cleanContacts.length !== idbContacts.length) {
+        idbSaveContacts(cleanContacts);
+      }
       try {
-        localStorage.setItem(CONTACTS_KEY, JSON.stringify(idbContacts));
+        localStorage.setItem(CONTACTS_KEY, JSON.stringify(cleanContacts));
       } catch (e) {}
-      return idbContacts;
+      return cleanContacts;
     }
   } catch (err) {
     console.warn('[Storage] Error loading from IndexedDB:', err);
@@ -615,13 +692,22 @@ export const getStoredCoAdmins = () => {
   try {
     const saved = localStorage.getItem(COADMINS_KEY);
     if (!saved) {
-      localStorage.setItem(COADMINS_KEY, JSON.stringify(initialCoAdmins));
-      return initialCoAdmins;
+      localStorage.setItem(COADMINS_KEY, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed) || parsed.length === 0) return [];
+
+    // Purge lingering demo coadmins (coadmin-lk, kn, vn, ag)
+    const clean = parsed.filter(c => !/^coadmin-(lk|kn|vn|ag)/.test(c.id));
+    if (clean.length !== parsed.length) {
+      localStorage.setItem(COADMINS_KEY, JSON.stringify(clean));
+      idbSet(COADMINS_KEY, clean);
+    }
+    return clean;
   } catch (err) {
     console.error('Error reading coadmins', err);
-    return initialCoAdmins;
+    return [];
   }
 };
 
@@ -935,7 +1021,7 @@ export const addFeedback = (feedbackData) => {
     id: `feed-${Date.now()}`,
     userId: feedbackData.userId || '',
     userName: feedbackData.userName || 'अज्ञात कर्मचारी',
-    district: feedbackData.district || 'लखनऊ',
+    district: feedbackData.district || '',
     phone: feedbackData.phone || '',
     subject: feedbackData.subject.trim(),
     message: feedbackData.message.trim(),
@@ -1653,13 +1739,14 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
             };
             updatedCount++;
           } else {
+            const finalDist = district || (districtFilter || '');
             const newCard = {
               id: `pol-excel-${Date.now()}-${idx}`,
               pno: pno || `PNO-${Math.floor(100000000 + Math.random() * 900000000)}`,
               name,
               post: post || 'कर्मचारी (Staff)',
-              district: district || (districtFilter || 'लखनऊ'),
-              office: office || 'कार्यालय',
+              district: finalDist || '',
+              office: office || '',
               phone,
               whatsapp: whatsapp || phone,
               email: email || '',
@@ -1670,6 +1757,17 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
             };
             updatedContacts.unshift(newCard);
             addedCount++;
+
+            // Auto-register distinct district, post, office into master configuration
+            if (finalDist && finalDist.trim() && finalDist.trim() !== 'सभी ज़िले (All Districts)') {
+              addDistrict(finalDist.trim());
+            }
+            if (post && post.trim() && post.trim() !== 'सभी पद (All Posts)') {
+              addPost(post.trim());
+            }
+            if (office && office.trim() && office.trim() !== 'सभी कार्यालय/थाने (All Offices)') {
+              addOffice(office.trim(), finalDist ? finalDist.trim() : '');
+            }
           }
         });
 

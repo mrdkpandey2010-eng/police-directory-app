@@ -13,7 +13,7 @@ export default function FeedbackModal({
   const [activeTab, setActiveTab] = useState(currentUser?.role === 'user' ? 'submit' : 'list');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
-  const [selectedDistrict, setSelectedDistrict] = useState(currentUser?.district || 'लखनऊ');
+  const [selectedDistrict, setSelectedDistrict] = useState(currentUser?.district || '');
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
   if (!isOpen) return null;

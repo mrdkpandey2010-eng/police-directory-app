@@ -34,8 +34,8 @@ export default function AuthGateway({
   const [regForm, setRegForm] = useState({
     name: '',
     pno: '',
-    post: posts[1] || 'उप-निरीक्षक (Sub-Inspector)',
-    district: districts[1] || 'लखनऊ',
+    post: (posts && posts[1]) || '',
+    district: (districts && districts[1]) || '',
     office: '',
     phone: '',
     whatsapp: '',
@@ -561,7 +561,9 @@ export default function AuthGateway({
                           className="form-select"
                           value={regForm.post}
                           onChange={e => setRegForm({ ...regForm, post: e.target.value })}
+                          required
                         >
+                          <option value="">-- पद चुनें --</option>
                           {posts.filter((_, idx) => idx > 0).map((p, idx) => (
                             <option key={idx} value={p}>{p}</option>
                           ))}
@@ -574,7 +576,9 @@ export default function AuthGateway({
                           className="form-select"
                           value={regForm.district}
                           onChange={e => setRegForm({ ...regForm, district: e.target.value })}
+                          required
                         >
+                          <option value="">-- जनपद चुनें --</option>
                           {districts.filter((_, idx) => idx > 0).map((d, idx) => (
                             <option key={idx} value={d}>{d}</option>
                           ))}
@@ -799,11 +803,15 @@ export default function AuthGateway({
                     required
                   >
                     <option value="">-- ज़िला नोडल अधिकारी चुनें --</option>
-                    {coAdmins.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.district} जनपद - {c.name} {c.status === 'inactive' ? '(निष्क्रिय)' : ''}
-                      </option>
-                    ))}
+                    {coAdmins.length === 0 ? (
+                      <option value="" disabled>-- कोई ज़िला Co-Admin नियुक्त नहीं है --</option>
+                    ) : (
+                      coAdmins.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.district} जनपद - {c.name} {c.status === 'inactive' ? '(निष्क्रिय)' : ''}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 

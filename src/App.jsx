@@ -58,6 +58,9 @@ import {
   addDistrict,
   editDistrict,
   deleteDistrict,
+  loadAll75Districts,
+  loadStandardPolicePosts,
+  resetMasterDataToClean,
   registerNewOfficer, 
   approveOfficer, 
   rejectOfficer, 
@@ -880,7 +883,7 @@ export default function App() {
     showToast(`पद "${postName}" हटा दिया गया।`);
   };
 
-  const handleAddOffice = (officeName, districtName = 'लखनऊ') => {
+  const handleAddOffice = (officeName, districtName = '') => {
     const updated = addOffice(officeName, districtName);
     setOffices(updated);
     showToast(`नया कार्यालय/थाना "${officeName}" (${districtName}) जोड़ा गया!`);
@@ -918,6 +921,26 @@ export default function App() {
     const updated = deleteDistrict(distName);
     setDistricts(updated);
     showToast(`ज़िला "${distName}" हटा दिया गया।`);
+  };
+
+  const handleLoadAllDistricts = () => {
+    const list = loadAll75Districts();
+    setDistricts(list);
+    showToast('✅ उ.प्र. के सभी 75 जनपद सफलतापूर्वक लोड हो गए।');
+  };
+
+  const handleLoadStandardPosts = () => {
+    const list = loadStandardPolicePosts();
+    setPosts(list);
+    showToast('✅ पुलिस विभाग के सभी मानक पद सफलतापूर्वक लोड हो गए।');
+  };
+
+  const handleResetMasterData = () => {
+    const res = resetMasterDataToClean();
+    setDistricts(res.districts);
+    setPosts(res.posts);
+    setOffices(res.offices);
+    showToast('🗑️ मास्टर डेटाबेस खाली (Zero) कर दिया गया।');
   };
 
   // ---------------- PEER-TO-PEER MESSAGE BOX & GROUP CHAT HANDLERS ----------------
@@ -1603,6 +1626,9 @@ export default function App() {
         onAddDistrict={handleAddDistrict}
         onEditDistrict={handleEditDistrict}
         onDeleteDistrict={handleDeleteDistrict}
+        onLoadAllDistricts={handleLoadAllDistricts}
+        onLoadStandardPosts={handleLoadStandardPosts}
+        onResetMasterData={handleResetMasterData}
         isFirebaseConnected={isFirebaseConnected}
         onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
       />

@@ -55,6 +55,9 @@ export default function AdminPanel({
   onAddDistrict,
   onEditDistrict,
   onDeleteDistrict,
+  onLoadAllDistricts,
+  onLoadStandardPosts,
+  onResetMasterData,
   onForwardDistrictTransfer,
   onApproveDistrictTransfer,
   onRejectDistrictTransfer,
@@ -76,7 +79,7 @@ export default function AdminPanel({
 
   // Office management inputs
   const [officeFilterDistrict, setOfficeFilterDistrict] = useState('सभी ज़िले');
-  const [newOfficeDistrict, setNewOfficeDistrict] = useState(districts[1] || 'लखनऊ');
+  const [newOfficeDistrict, setNewOfficeDistrict] = useState((districts && districts[1]) || '');
   const [coAdminNewOfficeName, setCoAdminNewOfficeName] = useState('');
 
   // Call Logs state
@@ -119,7 +122,7 @@ export default function AdminPanel({
   const [newCoAdminForm, setNewCoAdminForm] = useState({
     name: '',
     username: '',
-    district: districts[1] || 'लखनऊ',
+    district: (districts && districts[1]) || '',
     phone: '',
     password: '1234'
   });
@@ -127,7 +130,7 @@ export default function AdminPanel({
 
   // Promote existing user to Co-Admin modal state
   const [selectedUserIdToPromote, setSelectedUserIdToPromote] = useState('');
-  const [promoteDistrict, setPromoteDistrict] = useState(districts[1] || 'लखनऊ');
+  const [promoteDistrict, setPromoteDistrict] = useState((districts && districts[1]) || '');
 
   // Master Data Inputs
   const [newPostInput, setNewPostInput] = useState('');
@@ -332,7 +335,7 @@ export default function AdminPanel({
     setNewCoAdminForm({
       name: '',
       username: '',
-      district: districts[1] || 'लखनऊ',
+      district: (districts && districts[1]) || '',
       phone: '',
       password: '1234'
     });
@@ -1100,9 +1103,13 @@ export default function AdminPanel({
                     value={promoteDistrict}
                     onChange={e => setPromoteDistrict(e.target.value)}
                   >
-                    {districts.filter((_, i) => i > 0).map((d, i) => (
-                      <option key={i} value={d}>{d} ज़िला</option>
-                    ))}
+                    {districts.filter((_, i) => i > 0).length === 0 ? (
+                      <option value="">-- कोई ज़िला नहीं --</option>
+                    ) : (
+                      districts.filter((_, i) => i > 0).map((d, i) => (
+                        <option key={i} value={d}>{d} ज़िला</option>
+                      ))
+                    )}
                   </select>
 
                   <button type="submit" className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>
@@ -1137,7 +1144,14 @@ export default function AdminPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    {coAdmins.map(ca => {
+                    {coAdmins.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" style={{ textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8', background: 'rgba(0,0,0,0.1)' }}>
+                          🛡️ कोई ज़िला Co-Admin नियुक्त नहीं है। ऊपर दिए गए '+ नया Co-Admin क्रेडेंशियल जोड़ें' बटन से नया Co-Admin नियुक्त करें।
+                        </td>
+                      </tr>
+                    ) : (
+                      coAdmins.map(ca => {
                       const isCoActive = ca.status !== 'inactive';
                       return (
                         <tr key={ca.id}>
@@ -1182,7 +1196,7 @@ export default function AdminPanel({
                           </td>
                         </tr>
                       );
-                    })}
+                    }))}
                   </tbody>
                 </table>
               </div>
@@ -1209,7 +1223,7 @@ export default function AdminPanel({
                   onClick={() => setMasterSubTab('posts')}
                 >
                   <Award size={15} />
-                  पद / पदनाम प्रबंधन ({posts.length - 1})
+                  पद / पदनाम प्रबंधन ({Math.max(0, posts.length - 1)})
                 </button>
 
                 <button
@@ -1217,7 +1231,7 @@ export default function AdminPanel({
                   onClick={() => setMasterSubTab('offices')}
                 >
                   <Building2 size={15} />
-                  कार्यालय / थाना प्रबंधन ({offices.length - 1})
+                  कार्यालय / थाना प्रबंधन ({offices.length})
                 </button>
 
                 <button
@@ -1225,7 +1239,7 @@ export default function AdminPanel({
                   onClick={() => setMasterSubTab('districts')}
                 >
                   <MapPin size={15} />
-                  ज़िला प्रबंधन ({districts.length - 1})
+                  ज़िला प्रबंधन ({Math.max(0, districts.length - 1)})
                 </button>
               </div>
 
@@ -1246,10 +1260,25 @@ export default function AdminPanel({
                       <Plus size={16} />
                       नया पद जोड़ें
                     </button>
+                    {onLoadStandardPosts && (
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary" 
+                        onClick={onLoadStandardPosts}
+                        title="उ.प्र. पुलिस के सभी मानक पदनाम (DGP से आरक्षी तक) लोड करें"
+                      >
+                        👮 मानक पद लोड करें
+                      </button>
+                    )}
                   </form>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.65rem' }}>
-                    {posts.filter((_, idx) => idx > 0).map((post, idx) => {
+                    {posts.filter((_, idx) => idx > 0).length === 0 ? (
+                      <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                        कोई पद उपलब्ध नहीं है। ऊपर दिए गए फ़ॉर्म से नया पद जोड़ें या 'मानक पद लोड करें' बटन दबाएं।
+                      </div>
+                    ) : (
+                      posts.filter((_, idx) => idx > 0).map((post, idx) => {
                       const isEditing = editingPost?.oldName === post;
                       return (
                         <div 
@@ -1314,7 +1343,7 @@ export default function AdminPanel({
                           )}
                         </div>
                       );
-                    })}
+                    }))}
                   </div>
                 </div>
               )}
@@ -1375,12 +1404,17 @@ export default function AdminPanel({
 
                   {/* Offices Grid */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.65rem' }}>
-                    {offices
-                      .filter(o => {
-                        if (officeFilterDistrict === 'सभी ज़िले') return true;
-                        return typeof o === 'object' && o.district === officeFilterDistrict;
-                      })
-                      .map((officeItem, idx) => {
+                    {offices.length === 0 ? (
+                      <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                        कोई कार्यालय/थाना दर्ज नहीं है। ऊपर दिए गए फ़ॉर्म से नया कार्यालय जोड़ें या एक्सेल फ़ाइल से कार्मिक सूची अपलोड करें।
+                      </div>
+                    ) : (
+                      offices
+                        .filter(o => {
+                          if (officeFilterDistrict === 'सभी ज़िले') return true;
+                          return typeof o === 'object' && o.district === officeFilterDistrict;
+                        })
+                        .map((officeItem, idx) => {
                         const oName = typeof officeItem === 'string' ? officeItem : officeItem.name;
                         const oDist = typeof officeItem === 'object' ? officeItem.district : 'लखनऊ';
                         const oId = typeof officeItem === 'object' ? officeItem.id : oName;
@@ -1464,7 +1498,7 @@ export default function AdminPanel({
                             )}
                           </div>
                         );
-                      })}
+                      }))}
                   </div>
                 </div>
               )}
@@ -1486,10 +1520,25 @@ export default function AdminPanel({
                       <Plus size={16} />
                       नया ज़िला जोड़ें
                     </button>
+                    {onLoadAllDistricts && (
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary" 
+                        onClick={onLoadAllDistricts}
+                        title="उत्तर प्रदेश के सभी 75 जनपद स्वतः लोड करें"
+                      >
+                        🏛️ सभी 75 जनपद लोड करें
+                      </button>
+                    )}
                   </form>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.65rem' }}>
-                    {districts.filter((_, idx) => idx > 0).map((dist, idx) => {
+                    {districts.filter((_, idx) => idx > 0).length === 0 ? (
+                      <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                        कोई ज़िला दर्ज नहीं है। ऊपर दिए गए फ़ॉर्म से नया ज़िला जोड़ें या 'सभी 75 जनपद लोड करें' बटन दबाएं।
+                      </div>
+                    ) : (
+                      districts.filter((_, idx) => idx > 0).map((dist, idx) => {
                       const isEditing = editingDistrict?.oldName === dist;
                       return (
                         <div 
@@ -1554,7 +1603,7 @@ export default function AdminPanel({
                           )}
                         </div>
                       );
-                    })}
+                    }))}
                   </div>
                 </div>
               )}

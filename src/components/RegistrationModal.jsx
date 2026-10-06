@@ -14,8 +14,8 @@ export default function RegistrationModal({
   const [formData, setFormData] = useState({
     pno: '',
     name: '',
-    post: posts[1] || 'उप-निरीक्षक (Sub-Inspector)',
-    district: districts[1] || 'लखनऊ',
+    post: (posts && posts[1]) || '',
+    district: (districts && districts[1]) || '',
     office: '',
     phone: '',
     whatsapp: '',
@@ -192,6 +192,7 @@ export default function RegistrationModal({
                   value={formData.post}
                   onChange={handleChange}
                 >
+                  <option value="">-- पद चुनें --</option>
                   {posts.filter((_, idx) => idx > 0).map((p, idx) => (
                     <option key={idx} value={p}>{p}</option>
                   ))}
@@ -207,7 +208,9 @@ export default function RegistrationModal({
                   className="form-select"
                   value={formData.district}
                   onChange={handleChange}
+                  required
                 >
+                  <option value="">-- जनपद चुनें --</option>
                   {districts.filter((_, idx) => idx > 0).map((d, idx) => (
                     <option key={idx} value={d}>{d}</option>
                   ))}
