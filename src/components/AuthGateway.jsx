@@ -429,84 +429,6 @@ export default function AuthGateway({
         ) : (
           /* ----------------- REGULAR PUBLIC LOGIN / REGISTRATION MODES ----------------- */
           <>
-            {/* CLEAN 3-TAB SELECTOR (REPLACES BULKY BRANDING & SELECTORS) */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '0.45rem',
-              marginBottom: '0.35rem'
-            }}>
-              <button
-                type="button"
-                onClick={() => { setActiveTab('user_login'); setErrorMsg(''); setRegSuccess(false); }}
-                style={{
-                  padding: '8px 4px',
-                  fontSize: '0.78rem',
-                  fontWeight: activeTab === 'user_login' ? 700 : 500,
-                  borderRadius: '8px',
-                  border: activeTab === 'user_login' ? '1.5px solid var(--khaki-primary, #c49756)' : '1px solid rgba(255,255,255,0.1)',
-                  background: activeTab === 'user_login' ? 'linear-gradient(135deg, rgba(196,151,86,0.3), rgba(196,151,86,0.1))' : 'rgba(255,255,255,0.03)',
-                  color: activeTab === 'user_login' ? '#fef08a' : '#94a3b8',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '5px',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <User size={14} />
-                <span>कर्मचारी</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setActiveTab('register'); setErrorMsg(''); setRegSuccess(false); }}
-                style={{
-                  padding: '8px 4px',
-                  fontSize: '0.78rem',
-                  fontWeight: activeTab === 'register' ? 700 : 500,
-                  borderRadius: '8px',
-                  border: activeTab === 'register' ? '1.5px solid var(--khaki-primary, #c49756)' : '1px solid rgba(255,255,255,0.1)',
-                  background: activeTab === 'register' ? 'linear-gradient(135deg, rgba(196,151,86,0.3), rgba(196,151,86,0.1))' : 'rgba(255,255,255,0.03)',
-                  color: activeTab === 'register' ? '#fef08a' : '#94a3b8',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '5px',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <UserPlus size={14} />
-                <span>पंजीकरण</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setActiveTab('co_admin'); setErrorMsg(''); setRegSuccess(false); }}
-                style={{
-                  padding: '8px 4px',
-                  fontSize: '0.78rem',
-                  fontWeight: activeTab === 'co_admin' ? 700 : 500,
-                  borderRadius: '8px',
-                  border: activeTab === 'co_admin' ? '1.5px solid var(--khaki-primary, #c49756)' : '1px solid rgba(255,255,255,0.1)',
-                  background: activeTab === 'co_admin' ? 'linear-gradient(135deg, rgba(196,151,86,0.3), rgba(196,151,86,0.1))' : 'rgba(255,255,255,0.03)',
-                  color: activeTab === 'co_admin' ? '#fef08a' : '#94a3b8',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '5px',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Building size={14} />
-                <span>Co-Admin</span>
-              </button>
-            </div>
-
-
             {errorMsg && (
               <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red, #ef4444)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
                 {errorMsg}
@@ -584,6 +506,27 @@ export default function AuthGateway({
                   </div>
                 ) : (
                   <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--khaki-light)' }}>
+                        📝 नवीन पुलिस कर्मचारी स्व-पंजीकरण
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { setActiveTab('user_login'); setErrorMsg(''); }}
+                        style={{
+                          background: 'rgba(255,255,255,0.06)',
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          color: '#e2e8f0',
+                          padding: '3px 9px',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ← वापस लॉगिन
+                      </button>
+                    </div>
+
                     <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--khaki-light)' }}>
                       📝 पुलिस कर्मचारी अपना आधिकारिक विवरण भरें। सत्यापन के उपरांत आपको अपने जनपद की निर्देशिका का एक्सेस मिलेगा।
                     </div>
@@ -822,6 +765,27 @@ export default function AuthGateway({
             {/* TAB 3: CO-ADMIN LOGIN */}
             {activeTab === 'co_admin' && (
               <form onSubmit={handleCoAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--khaki-light)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Building size={14} color="var(--khaki-primary)" /> ज़िला Co-Admin पोर्टल
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('user_login'); setErrorMsg(''); }}
+                    style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      color: '#e2e8f0',
+                      padding: '3px 9px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ← वापस लॉगिन
+                  </button>
+                </div>
+
                 <div style={{ background: 'rgba(30,58,138,0.25)', border: '1px solid rgba(196,151,86,0.25)', padding: '0.55rem 0.75rem', borderRadius: '6px', fontSize: '0.76rem', color: 'var(--khaki-light)' }}>
                   🛡️ <strong>ज़िला Co-Admin पोर्टल:</strong> अपने संबंधित जनपद के कार्मिकों, पेंडिंग अप्रूवल एवं एक्सेल का अधिकृत प्रबंधन।
                 </div>
@@ -865,31 +829,76 @@ export default function AuthGateway({
               </form>
             )}
 
-            {/* Discrete Super Admin Entrance for DGP HQ (Hidden from normal public options) */}
+            {/* Footer with Co-Admin Login & Super Admin Master PIN side-by-side in the same line */}
             <div style={{
-              textAlign: 'center',
-              marginTop: '0.65rem',
-              paddingTop: '0.65rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexWrap: 'wrap',
+              gap: '12px',
+              marginTop: '0.75rem',
+              paddingTop: '0.75rem',
               borderTop: '1px dashed rgba(255,255,255,0.08)'
             }}>
+              {activeTab === 'co_admin' ? (
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('user_login'); setErrorMsg(''); }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--khaki-primary, #c49756)',
+                    fontSize: '0.72rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  <User size={12} />
+                  <span>सामान्य कर्मचारी लॉगिन</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('co_admin'); setErrorMsg(''); setRegSuccess(false); }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(148, 163, 184, 0.75)',
+                    fontSize: '0.72rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="ज़िला Co-Admin पोर्टल"
+                >
+                  <Building size={12} color="var(--khaki-primary, #c49756)" />
+                  <span>ज़िला Co-Admin लॉगिन</span>
+                </button>
+              )}
+
+              <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.75rem' }}>|</span>
+
               <button
                 type="button"
                 onClick={() => { setIsSuperAdminMode(true); setErrorMsg(''); }}
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: 'rgba(148, 163, 184, 0.45)',
-                  fontSize: '0.68rem',
+                  color: 'rgba(148, 163, 184, 0.75)',
+                  fontSize: '0.72rem',
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '4px',
-                  transition: 'opacity 0.2s ease'
+                  gap: '4px'
                 }}
                 title="मुख्यालय प्रशासनिक नियंत्रण कक्ष"
               >
-                <Lock size={10} />
-                <span>मुख्यालय Master PIN पोर्टल</span>
+                <Lock size={11} color="#ef4444" />
+                <span>मुख्यालय Master PIN</span>
               </button>
             </div>
           </>
