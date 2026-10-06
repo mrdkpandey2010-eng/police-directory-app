@@ -17,11 +17,16 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
+    <!-- जीपीएस लोकेशन (आपातकालीन व चैट लोकेशन साझाकरण) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <!-- हार्डवेयर अनुकूलता (टैबलेट्स एवं अन्य डिवाइसों पर भी इंस्टॉल हो सके) -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <!-- पैकेज विजिबिलिटी (कॉल, व्हाट्सएप, एसएमएस एवं सुरक्षित ब्राउज़र लिंक्स) -->
     <queries>

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  X, MessageSquare, Send, Paperclip, Users, User, Phone, 
-  Shield, Plus, Search, Check, Download, 
-  Mail, FileText, Cloud, FileSpreadsheet, PhoneCall, AlertTriangle
+  ArrowLeft, Send, Paperclip, Users, User, Phone, 
+  PhoneCall, Search, Plus, X, Download, FileText, 
+  FileSpreadsheet, Image as ImageIcon, MapPin, 
+  Share2, Check, CheckCheck, Compass, Info, ShieldCheck
 } from 'lucide-react';
 import { getChatsForUser, getUnreadCountForChat } from '../utils/storage';
 import { callManager } from '../utils/webrtc';
@@ -16,8 +17,6 @@ export default function MessageBoxModal({
   currentUser,
   activeChatId,
   setActiveChatId,
-  isFirebaseConnected = false,
-  onOpenFirebaseSetup,
   onSendDirectMessage,
   onSendGroupMessage,
   onCreateGroupChat,
@@ -27,27 +26,35 @@ export default function MessageBoxModal({
   const [activeTab, setActiveTab] = useState('direct'); // 'direct' | 'group'
   const [chatSearch, setChatSearch] = useState('');
   
-  // Mobile responsive view toggle: 'list' | 'chat'
-  const [_mobileView, setMobileView] = useState('list');
+  // WhatsApp Mobile Screen Navigation: 'list' (चैट सूची) | 'chat' (एक्टिव चैट रूम)
+  const [mobileView, setMobileView] = useState('list');
 
   // Message input state
   const [inputText, setInputText] = useState('');
   const [attachedFile, setAttachedFile] = useState(null);
-  const fileInputRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
 
-  // New Direct Chat Modal
+  // File input refs
+  const imageInputRef = useRef(null);
+  const docInputRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const chatInputRef = useRef(null);
+
+  // Modals inside messaging
   const [showNewDirectModal, setShowNewDirectModal] = useState(false);
   const [contactSearchQuery, setContactSearchQuery] = useState('');
 
-  // New Group Chat Modal
   const [showNewGroupModal, setShowNewGroupModal] = useState(false);
   const [newGroupTitle, setNewGroupTitle] = useState('');
   const [newGroupDesc, setNewGroupDesc] = useState('');
   const [selectedGroupParticipants, setSelectedGroupParticipants] = useState([]);
   const [groupMemberSearch, setGroupMemberSearch] = useState('');
 
-  // Filter chats visible to current user (safely computed for hook dependencies)
+  const [showShareContactModal, setShowShareContactModal] = useState(false);
+  const [shareContactSearch, setShareContactSearch] = useState('');
+
+  // Filter chats visible to current user
   const userVisibleChats = (isOpen && currentUser) ? getChatsForUser(chats, contacts, currentUser) : [];
 
   // Direct chats vs Group chats
@@ -69,15 +76,19 @@ export default function MessageBoxModal({
   // Current active chat object
   const currentChat = userVisibleChats.find(c => c.id === activeChatId) || filteredChatList[0];
 
-  // Auto-select chat when activeChatId is not set or belongs to other tab
+  // Auto-select chat when activeChatId is set from outside (e.g. notifications or contact card click)
   useEffect(() => {
     if (!isOpen) return;
-    if (filteredChatList.length > 0 && (!activeChatId || !filteredChatList.some(c => c.id === activeChatId))) {
-      setActiveChatId(filteredChatList[0].id);
+    if (activeChatId) {
+      const target = userVisibleChats.find(c => c.id === activeChatId);
+      if (target) {
+        setActiveTab(target.type === 'group' ? 'group' : 'direct');
+        setMobileView('chat');
+      }
     }
-  }, [isOpen, activeTab, activeChatId, filteredChatList.length, setActiveChatId]);
+  }, [isOpen, activeChatId]);
 
-  // Mark active chat as read ONLY IF there are unread messages for currentUser
+  // Mark active chat as read
   useEffect(() => {
     if (!isOpen || !currentChat || !currentUser || !onMarkChatAsRead) return;
 
@@ -93,9 +104,9 @@ export default function MessageBoxModal({
 
   // Auto-scroll to bottom of messages
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || mobileView !== 'chat') return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [isOpen, currentChat?.messages?.length, activeChatId]);
+  }, [isOpen, mobileView, currentChat?.messages?.length, activeChatId]);
 
   if (!isOpen || !currentUser) return null;
 
@@ -107,13 +118,49 @@ export default function MessageBoxModal({
     ? contacts.find(c => c.id === otherParticipantId) 
     : null;
 
-  // Strictly enforce whitelist: MS Word, Excel, PDF, Images only. Block any executables or scripts.
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
+  // Handle Photo File selection
+  const handlePhotoSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const sizeCheck = validateFileSize(file, 'photo');
+    if (sizeCheck && !sizeCheck.valid) {
+      alert(sizeCheck.error);
+      if (e.target) e.target.value = '';
+      return;
+    }
+
+    compressImage(file, 800, 800, 0.85).then(compressedUrl => {
+      setAttachedFile({
+        name: file.name,
+        type: 'image',
+        size: `${Math.round(file.size / 1024)} KB`,
+        url: compressedUrl
+      });
+      setShowAttachMenu(false);
+      chatInputRef.current?.focus();
+    }).catch(() => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setAttachedFile({
+          name: file.name,
+          type: 'image',
+          size: `${Math.round(file.size / 1024)} KB`,
+          url: event.target.result
+        });
+        setShowAttachMenu(false);
+        chatInputRef.current?.focus();
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Handle Document selection (PDF, Word, Excel)
+  const handleDocSelect = (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
     const fileName = (file.name || '').toLowerCase();
-    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif)$/i.test(fileName);
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(fileName);
     const isWord = /\.docx?$/i.test(fileName) || 
       file.type === 'application/msword' || 
@@ -122,25 +169,16 @@ export default function MessageBoxModal({
       file.type === 'application/vnd.ms-excel' || 
       file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-    // Strict rejection of any non-whitelisted files, executables, scripts, or archives
-    if (!isImage && !isPdf && !isWord && !isExcel) {
-      alert('⚠️ सुरक्षा प्रतिबंध: चैट में केवल Microsoft Word (.doc, .docx), Excel (.xls, .xlsx), PDF (.pdf) एवं तस्वीरें (JPG/PNG) ही मान्य हैं। कोई अन्य फ़ाइल या प्रोग्राम (.exe/.bat/.zip/इत्यादि) पूर्णतः प्रतिबंधित है।');
+    if (!isPdf && !isWord && !isExcel) {
+      alert('⚠️ केवल PDF (.pdf), Microsoft Word (.doc, .docx) एवं Excel (.xls, .xlsx) दस्तावेज़ ही मान्य हैं।');
       if (e.target) e.target.value = '';
       return;
     }
 
-    // Category-specific strict file size checks
-    // Photo max 1 MB, PDF max 30 MB, Word or Excel max 3 MB
     let sizeCheck;
-    if (isImage) {
-      sizeCheck = validateFileSize(file, 'photo');
-    } else if (isPdf) {
-      sizeCheck = validateFileSize(file, 'pdf');
-    } else if (isWord) {
-      sizeCheck = validateFileSize(file, 'word');
-    } else if (isExcel) {
-      sizeCheck = validateFileSize(file, 'excel');
-    }
+    if (isPdf) sizeCheck = validateFileSize(file, 'pdf');
+    else if (isWord) sizeCheck = validateFileSize(file, 'word');
+    else if (isExcel) sizeCheck = validateFileSize(file, 'excel');
 
     if (sizeCheck && !sizeCheck.valid) {
       alert(sizeCheck.error);
@@ -148,45 +186,80 @@ export default function MessageBoxModal({
       return;
     }
 
-    const detectedType = isImage ? 'image' : isPdf ? 'pdf' : isWord ? 'word' : 'excel';
-
-    if (isImage) {
-      compressImage(file, 600, 600, 0.8).then(compressedUrl => {
-        setAttachedFile({
-          name: file.name,
-          type: 'image',
-          size: `${Math.round(file.size / 1024)} KB`,
-          url: compressedUrl
-        });
-      }).catch(() => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          setAttachedFile({
-            name: file.name,
-            type: detectedType,
-            size: `${Math.round(file.size / 1024)} KB`,
-            url: event.target.result
-          });
-        };
-        reader.readAsDataURL(file);
+    const detectedType = isPdf ? 'pdf' : isWord ? 'word' : 'excel';
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setAttachedFile({
+        name: file.name,
+        type: detectedType,
+        size: file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+        url: event.target.result
       });
-    } else {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setAttachedFile({
-          name: file.name,
-          type: detectedType,
-          size: file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
-          url: event.target.result
-        });
-      };
-      reader.readAsDataURL(file);
+      setShowAttachMenu(false);
+      chatInputRef.current?.focus();
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handle GPS Location Sharing
+  const handleShareCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('आपके डिवाइस में GPS लोकेशन समर्थित नहीं है।');
+      return;
     }
+
+    setIsGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+        const accuracy = Math.round(position.coords.accuracy || 0);
+        const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+
+        setAttachedFile({
+          name: `📍 वर्तमान पुलिस लोकेशन (${lat}, ${lng})`,
+          type: 'location',
+          size: `परिशुद्धता ~${accuracy}m`,
+          locationData: { lat, lng, mapUrl, accuracy, timestamp: Date.now() }
+        });
+
+        setIsGettingLocation(false);
+        setShowAttachMenu(false);
+        chatInputRef.current?.focus();
+      },
+      (error) => {
+        setIsGettingLocation(false);
+        alert('⚠️ लोकेशन अनुमति अस्वीकृत या GPS सिग्नल उपलब्ध नहीं है। कृपया डिवाइस सेटिंग से लोकेशन सक्षम करें।');
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  };
+
+  // Handle Share Contact attachment
+  const handleSelectContactToShare = (contact) => {
+    setAttachedFile({
+      name: `👤 संपर्क कार्ड: ${contact.name}`,
+      type: 'contact',
+      size: `${contact.post || 'अधिकारी'} • ${contact.district || ''}`,
+      contactData: {
+        id: contact.id,
+        name: contact.name,
+        post: contact.post,
+        office: contact.office,
+        district: contact.district,
+        phone: contact.phone,
+        pno: contact.pno,
+        uniformPhoto: contact.uniformPhoto
+      }
+    });
+    setShowShareContactModal(false);
+    setShowAttachMenu(false);
+    chatInputRef.current?.focus();
   };
 
   // Send message
   const handleSendMessage = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!inputText.trim() && !attachedFile) return;
     if (!currentChat) return;
 
@@ -200,6 +273,7 @@ export default function MessageBoxModal({
 
     setInputText('');
     setAttachedFile(null);
+    setShowAttachMenu(false);
   };
 
   // Start new direct chat with selected officer
@@ -207,7 +281,6 @@ export default function MessageBoxModal({
     setShowNewDirectModal(false);
     setActiveTab('direct');
     
-    // Check if chat already exists
     const existing = chats.find(c => 
       c.type === 'direct' && 
       c.participants?.includes(currentUser.id) && 
@@ -237,7 +310,7 @@ export default function MessageBoxModal({
     setMobileView('chat');
   };
 
-  // Helper: toggle participant selection for group creation
+  // Toggle group participant selection
   const toggleGroupParticipant = (contactId) => {
     setSelectedGroupParticipants(prev => 
       prev.includes(contactId) 
@@ -246,7 +319,7 @@ export default function MessageBoxModal({
     );
   };
 
-  // Filter contacts for "New Direct Message" modal
+  // Filter direct contacts for "New Chat" modal
   const eligibleDirectContacts = contacts.filter(c => {
     if (c.id === currentUser.id) return false;
     const isApproved = c.status === 'approved' || c.status === 'active';
@@ -265,79 +338,177 @@ export default function MessageBoxModal({
   });
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div 
-        className="modal-content" 
-        onClick={e => e.stopPropagation()} 
-        style={{ 
-          maxWidth: '1050px', 
-          width: '95vw', 
-          height: '86vh', 
-          display: 'flex', 
-          flexDirection: 'column', 
-          padding: 0, 
-          overflow: 'hidden',
-          borderRadius: '16px'
-        }}
-      >
-        {/* Modal Top Bar */}
-        <div style={{ 
-          padding: '0.85rem 1.25rem', 
-          background: 'linear-gradient(135deg, #0f172a, #1e3a8a)', 
-          borderBottom: '1px solid rgba(229,184,66,0.3)',
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          color: '#fff'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <div style={{
-              background: 'rgba(229,184,66,0.2)',
-              border: '1px solid rgba(229,184,66,0.5)',
-              padding: '7px',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <Mail size={20} color="var(--gold-primary, #e5b842)" />
-            </div>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--gold-light, #fbbf24)' }}>
-                विभागीय मैसेज बॉक्स (Police Message Box)
+    <div 
+      className="whatsapp-full-screen-container"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100vw',
+        height: '100vh',
+        zIndex: 9999,
+        background: '#070e1c',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        color: '#f8fafc',
+        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        paddingLeft: 'env(safe-area-inset-left, 0px)',
+        paddingRight: 'env(safe-area-inset-right, 0px)'
+      }}
+    >
+      {/* Hidden file inputs for attachments */}
+      <input 
+        ref={imageInputRef} 
+        type="file" 
+        accept="image/*" 
+        onChange={handlePhotoSelect} 
+        style={{ display: 'none' }} 
+      />
+      <input 
+        ref={docInputRef} 
+        type="file" 
+        accept=".pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        onChange={handleDocSelect} 
+        style={{ display: 'none' }} 
+      />
+
+      {/* Main Responsive Body: WhatsApp Two-Screen or Desktop Split */}
+      <div style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden' }}>
+        
+        {/* ========================================================================= */}
+        {/* VIEW 1: CONVERSATIONS LIST (CHATS TAB)                                    */}
+        {/* ========================================================================= */}
+        <div 
+          className="whatsapp-list-panel"
+          style={{
+            width: '100%',
+            maxWidth: '380px',
+            borderRight: '1px solid rgba(196, 151, 86, 0.25)',
+            display: (mobileView === 'list' || window.innerWidth >= 768) ? 'flex' : 'none',
+            flexDirection: 'column',
+            background: 'linear-gradient(180deg, #0b1528 0%, #070e1c 100%)',
+            height: '100%',
+            flexShrink: 0
+          }}
+        >
+          {/* Header 1: WhatsApp Top Bar with Back Arrow, Title & Quick Actions */}
+          <div style={{
+            padding: '0.65rem 0.85rem',
+            background: '#0c1830',
+            borderBottom: '1px solid rgba(196, 151, 86, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--khaki-light, #dfb97e)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+                title="निर्देशिका पर वापस जाएं"
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc' }}>
+                संदेश (Police Chats)
               </h2>
-              <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.7)' }}>
-                पीयर-टू-पीयर सीधा संवाद (Direct P2P) • समूह चैट (Group Channels)
-              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setShowNewGroupModal(true)}
+                style={{
+                  background: 'rgba(196, 151, 86, 0.15)',
+                  border: '1px solid rgba(196, 151, 86, 0.4)',
+                  color: '#fef08a',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                title="नया पुलिस समूह बनाएं"
+              >
+                <Users size={13} />
+                <span>+ ग्रुप</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowNewDirectModal(true)}
+                style={{
+                  background: 'linear-gradient(135deg, #c49756, #9a6d32)',
+                  border: 'none',
+                  color: '#070e1c',
+                  borderRadius: '6px',
+                  padding: '4px 9px',
+                  fontSize: '0.74rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                title="अधिकारी को नया संदेश भेजें"
+              >
+                <Plus size={13} />
+                <span>+ चैट</span>
+              </button>
             </div>
           </div>
 
-          {/* Tab Selector: Direct vs Group */}
-          <div style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.4)', padding: '3px', borderRadius: '10px' }}>
+          {/* Header 2: Radio Toggle Bar [◉ व्यक्तिगत (P2P)] vs [○ समूह (Groups)] */}
+          <div style={{
+            display: 'flex',
+            padding: '6px 10px',
+            background: 'rgba(7, 14, 28, 0.95)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            gap: '8px'
+          }}>
             <button
-              onClick={() => { setActiveTab('direct'); setMobileView('list'); }}
+              type="button"
+              onClick={() => setActiveTab('direct')}
               style={{
-                background: activeTab === 'direct' ? 'linear-gradient(135deg, #1e3a8a, #2563eb)' : 'transparent',
-                color: activeTab === 'direct' ? '#fff' : 'rgba(255,255,255,0.7)',
-                border: 'none',
-                padding: '6px 14px',
+                flex: 1,
+                padding: '7px 6px',
                 borderRadius: '8px',
-                fontSize: '0.82rem',
-                fontWeight: 700,
+                border: activeTab === 'direct' ? '1px solid var(--khaki-primary, #c49756)' : '1px solid transparent',
+                background: activeTab === 'direct' ? 'rgba(196, 151, 86, 0.16)' : 'transparent',
+                color: activeTab === 'direct' ? '#fef08a' : '#94a3b8',
+                fontWeight: activeTab === 'direct' ? 700 : 500,
+                fontSize: '0.8rem',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px'
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease'
               }}
             >
-              <User size={14} />
-              <span>व्यक्तिगत मैसेज (P2P)</span>
+              <span style={{ fontSize: '0.88rem' }}>{activeTab === 'direct' ? '◉' : '○'}</span>
+              <span>व्यक्तिगत (P2P)</span>
               {directChats.length > 0 && (
                 <span style={{
-                  background: 'rgba(229,184,66,0.3)',
-                  color: 'var(--gold-light, #fbbf24)',
-                  fontSize: '0.7rem',
-                  padding: '1px 6px',
+                  background: 'rgba(196, 151, 86, 0.3)',
+                  color: 'var(--khaki-light)',
+                  fontSize: '0.66rem',
+                  fontWeight: 800,
+                  padding: '1px 5px',
                   borderRadius: '10px'
                 }}>
                   {directChats.length}
@@ -346,29 +517,34 @@ export default function MessageBoxModal({
             </button>
 
             <button
-              onClick={() => { setActiveTab('group'); setMobileView('list'); }}
+              type="button"
+              onClick={() => setActiveTab('group')}
               style={{
-                background: activeTab === 'group' ? 'linear-gradient(135deg, #1e3a8a, #2563eb)' : 'transparent',
-                color: activeTab === 'group' ? '#fff' : 'rgba(255,255,255,0.7)',
-                border: 'none',
-                padding: '6px 14px',
+                flex: 1,
+                padding: '7px 6px',
                 borderRadius: '8px',
-                fontSize: '0.82rem',
-                fontWeight: 700,
+                border: activeTab === 'group' ? '1px solid var(--khaki-primary, #c49756)' : '1px solid transparent',
+                background: activeTab === 'group' ? 'rgba(196, 151, 86, 0.16)' : 'transparent',
+                color: activeTab === 'group' ? '#fef08a' : '#94a3b8',
+                fontWeight: activeTab === 'group' ? 700 : 500,
+                fontSize: '0.8rem',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px'
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease'
               }}
             >
-              <Users size={14} />
-              <span>समूह चैट (Groups)</span>
+              <span style={{ fontSize: '0.88rem' }}>{activeTab === 'group' ? '◉' : '○'}</span>
+              <span>समूह (Groups)</span>
               {groupChats.length > 0 && (
                 <span style={{
-                  background: 'rgba(229,184,66,0.3)',
-                  color: 'var(--gold-light, #fbbf24)',
-                  fontSize: '0.7rem',
-                  padding: '1px 6px',
+                  background: 'rgba(196, 151, 86, 0.3)',
+                  color: 'var(--khaki-light)',
+                  fontSize: '0.66rem',
+                  fontWeight: 800,
+                  padding: '1px 5px',
                   borderRadius: '10px'
                 }}>
                   {groupChats.length}
@@ -377,1048 +553,1362 @@ export default function MessageBoxModal({
             </button>
           </div>
 
-          {/* Firebase Live Cloud Status Pill / Setup Button */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {isFirebaseConnected ? (
-              <div 
+          {/* Search Box */}
+          <div style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: '10px', top: '9px', color: '#64748b' }} />
+              <input
+                type="text"
+                placeholder={activeTab === 'direct' ? 'अधिकारी या पद नाम खोजें...' : 'समूह नाम खोजें...'}
+                value={chatSearch}
+                onChange={e => setChatSearch(e.target.value)}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: 'rgba(16,185,129,0.18)',
-                  border: '1px solid rgba(16,185,129,0.5)',
-                  padding: '5px 10px',
+                  width: '100%',
+                  padding: '6px 10px 6px 30px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(196, 151, 86, 0.2)',
                   borderRadius: '20px',
-                  fontSize: '0.75rem',
-                  color: '#34d399',
-                  fontWeight: 700
+                  color: '#fff',
+                  fontSize: '0.8rem',
+                  outline: 'none'
                 }}
-                title="Google Firebase रीयल-टाइम क्लाउड लाइव सक्रिय है"
-              >
-                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981' }}></span>
-                <span>🟢 लाइव चैट (Live)</span>
-              </div>
-            ) : onOpenFirebaseSetup ? (
-              <button
-                type="button"
-                onClick={onOpenFirebaseSetup}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  background: 'rgba(234,179,8,0.2)',
-                  border: '1px solid #eab308',
-                  padding: '5px 10px',
-                  borderRadius: '20px',
-                  fontSize: '0.75rem',
-                  color: '#fde047',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-                title="सभी डिवाइस पर रीयल-टाइम लाइव मैसेजिंग हेतु Firebase जोड़ें"
-              >
-                <Cloud size={13} />
-                <span>⚡ Firebase जोड़ें</span>
-              </button>
-            ) : null}
-
-            <button 
-              className="close-btn" 
-              onClick={onClose}
-              style={{ color: 'rgba(255,255,255,0.8)' }}
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Live Cloud Status Banner */}
-        {isFirebaseConnected ? (
-          <div style={{
-            background: 'rgba(16, 185, 129, 0.1)',
-            borderBottom: '1px solid rgba(16, 185, 129, 0.25)',
-            padding: '5px 14px',
-            fontSize: '0.73rem',
-            color: '#6ee7b7',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
-            <span>🟢 <strong>Google Firebase लाइव कनेक्टेड:</strong> सभी पुलिस अधिकारियों के संदेश तुरंत रियल-टाइम में लाइव अपडेट हो रहे हैं।</span>
-          </div>
-        ) : onOpenFirebaseSetup ? (
-          <div style={{
-            background: 'rgba(234, 179, 8, 0.1)',
-            borderBottom: '1px solid rgba(234, 179, 8, 0.22)',
-            padding: '5px 14px',
-            fontSize: '0.74rem',
-            color: '#fef08a',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Cloud size={14} color="#eab308" />
-              <span>
-                <strong>लोकल मोड सक्रिय:</strong> संदेश इसी ब्राउज़र में सुरक्षित हैं। अन्य डिवाइसों पर रीयल-टाइम लाइव संदेश पहुँचाने के लिए <strong>Firebase</strong> जोड़ें।
-              </span>
+              />
             </div>
-            <button
-              type="button"
-              onClick={onOpenFirebaseSetup}
-              style={{
-                background: 'rgba(234, 179, 8, 0.25)',
-                border: '1px solid #eab308',
-                color: '#fef08a',
-                padding: '2px 8px',
-                borderRadius: '5px',
-                fontSize: '0.72rem',
-                cursor: 'pointer',
-                fontWeight: 600,
-                whiteSpace: 'nowrap'
-              }}
-            >
-              Firebase जोड़ें &gt;
-            </button>
           </div>
-        ) : null}
 
-        {/* Main Content Layout (Sidebar + Chat Area) */}
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          
-          {/* LEFT SIDEBAR: Conversations List */}
-          <div style={{
-            width: '320px',
-            minWidth: '280px',
-            borderRight: '1px solid rgba(255,255,255,0.1)',
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'rgba(10, 16, 30, 0.95)'
-          }}>
-            {/* Action Bar (Search + New Action) */}
-            <div style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem' }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <Search size={14} style={{ position: 'absolute', left: '9px', top: '9px', color: 'rgba(255,255,255,0.4)' }} />
-                  <input
-                    type="text"
-                    placeholder="चैट खोजें..."
-                    value={chatSearch}
-                    onChange={e => setChatSearch(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '6px 8px 6px 28px',
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      fontSize: '0.8rem'
-                    }}
-                  />
-                </div>
-
+          {/* Conversations Scroll List */}
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {filteredChatList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem 1.5rem', color: '#64748b', fontSize: '0.84rem' }}>
                 {activeTab === 'direct' ? (
-                  <button
-                    onClick={() => setShowNewDirectModal(true)}
-                    className="btn btn-primary"
-                    style={{ padding: '6px 10px', fontSize: '0.76rem', whiteSpace: 'nowrap' }}
-                    title="किसी भी अधिकारी को नया मैसेज भेजें"
-                  >
-                    <Plus size={14} />
-                    <span>नया</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowNewGroupModal(true)}
-                    className="btn btn-primary"
-                    style={{ padding: '6px 10px', fontSize: '0.76rem', whiteSpace: 'nowrap' }}
-                    title="नया पुलिस समूह बनाएं"
-                  >
-                    <Plus size={14} />
-                    <span>समूह</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Conversation List Items */}
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {filteredChatList.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'rgba(255,255,255,0.4)', fontSize: '0.82rem' }}>
-                  {activeTab === 'direct' ? (
-                    <div>
-                      <User size={32} style={{ margin: '0 auto 0.5rem', opacity: 0.3 }} />
-                      <p>कोई सीधा मैसेज नहीं मिला।</p>
-                      <button 
-                        onClick={() => setShowNewDirectModal(true)}
-                        className="btn btn-secondary"
-                        style={{ fontSize: '0.75rem', marginTop: '0.5rem' }}
-                      >
-                        ➕ नया मैसेज भेजें
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <Users size={32} style={{ margin: '0 auto 0.5rem', opacity: 0.3 }} />
-                      <p>कोई समूह चैट उपलब्ध नहीं है।</p>
-                      <button 
-                        onClick={() => setShowNewGroupModal(true)}
-                        className="btn btn-secondary"
-                        style={{ fontSize: '0.75rem', marginTop: '0.5rem' }}
-                      >
-                        ➕ नया समूह बनाएं
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                filteredChatList.map(chat => {
-                  const isSelected = currentChat?.id === chat.id;
-                  const unreadCount = getUnreadCountForChat(chat, currentUser.id);
-
-                  // Other contact in direct chat
-                  let displayPhoto = null;
-                  let displayName = chat.title || 'विभागीय चैट';
-                  let displaySub = chat.district || 'उत्तर प्रदेश पुलिस';
-
-                  if (chat.type === 'direct') {
-                    const peerId = chat.participants?.find(p => p !== currentUser.id);
-                    const peerObj = contacts.find(c => c.id === peerId);
-                    if (peerObj) {
-                      displayPhoto = peerObj.uniformPhoto;
-                      displayName = peerObj.name || 'पुलिस अधिकारी';
-                      displaySub = `${peerObj.post || 'अधिकारी'} • ${peerObj.office || peerObj.district || ''}`;
-                    } else if (peerId === 'super-admin') {
-                      displayName = 'मुख्यालय पुलिस महानिदेशक (Super Admin)';
-                      displaySub = 'समस्त जनपद (All Districts)';
-                    } else if (peerId) {
-                      displayName = `अधिकारी (${peerId})`;
-                      displaySub = 'उत्तर प्रदेश पुलिस';
-                    }
-                  }
-
-                  return (
-                    <div
-                      key={chat.id}
-                      onClick={() => {
-                        setActiveChatId(chat.id);
-                        setMobileView('chat');
-                      }}
+                  <div>
+                    <User size={36} style={{ margin: '0 auto 0.6rem', opacity: 0.35, color: 'var(--khaki-primary)' }} />
+                    <p style={{ color: '#94a3b8' }}>कोई व्यक्तिगत चैट उपलब्ध नहीं है।</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowNewDirectModal(true)}
                       style={{
-                        padding: '0.75rem 0.9rem',
-                        borderBottom: '1px solid rgba(255,255,255,0.05)',
-                        cursor: 'pointer',
-                        background: isSelected 
-                          ? 'rgba(30, 58, 138, 0.4)' 
-                          : unreadCount > 0 
-                            ? 'rgba(229, 184, 66, 0.08)' 
-                            : 'transparent',
-                        borderLeft: isSelected 
-                          ? '4px solid var(--gold-primary, #e5b842)' 
-                          : unreadCount > 0
-                            ? '4px solid #3b82f6'
-                            : '4px solid transparent',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.65rem',
-                        transition: 'background 0.15s ease'
+                        marginTop: '0.75rem',
+                        background: 'linear-gradient(135deg, #c49756, #9a6d32)',
+                        border: 'none',
+                        color: '#070e1c',
+                        padding: '6px 14px',
+                        borderRadius: '20px',
+                        fontWeight: 700,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer'
                       }}
                     >
-                      {/* Avatar */}
-                      <div style={{ position: 'relative' }}>
-                        <div style={{
-                          width: '42px',
-                          height: '42px',
-                          borderRadius: '50%',
-                          overflow: 'hidden',
-                          background: 'rgba(255,255,255,0.08)',
-                          border: unreadCount > 0 ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.15)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0
-                        }}>
-                          {displayPhoto ? (
-                            <img src={displayPhoto} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : chat.type === 'group' ? (
-                            <Users size={18} color="var(--gold-primary, #e5b842)" />
-                          ) : (
-                            <span style={{ fontWeight: 700, color: 'var(--gold-primary)', fontSize: '0.9rem' }}>
-                              {((displayName || 'P').charAt(0)).toUpperCase()}
-                            </span>
-                          )}
-                        </div>
-
-                        {unreadCount > 0 && (
-                          <span style={{
-                            position: 'absolute',
-                            top: -2,
-                            right: -2,
-                            width: '10px',
-                            height: '10px',
-                            borderRadius: '50%',
-                            background: '#ef4444',
-                            border: '2px solid #000'
-                          }} />
-                        )}
-                      </div>
-
-                      {/* Content Info */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <h4 style={{
-                            margin: 0,
-                            fontSize: '0.85rem',
-                            fontWeight: unreadCount > 0 ? 800 : 600,
-                            color: unreadCount > 0 ? '#fff' : 'rgba(255,255,255,0.9)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          }}>
-                            {displayName}
-                          </h4>
-
-                          {unreadCount > 0 && (
-                            <span style={{
-                              background: '#3b82f6',
-                              color: '#fff',
-                              fontSize: '0.68rem',
-                              fontWeight: 700,
-                              padding: '1px 6px',
-                              borderRadius: '10px'
-                            }}>
-                              {unreadCount}
-                            </span>
-                          )}
-                        </div>
-
-                        <div style={{ fontSize: '0.72rem', color: 'var(--gold-primary, #e5b842)', opacity: 0.9, marginTop: '1px' }}>
-                          {displaySub}
-                        </div>
-
-                        <div style={{
-                          fontSize: '0.72rem',
-                          color: unreadCount > 0 ? '#fde047' : 'rgba(255,255,255,0.5)',
-                          fontWeight: unreadCount > 0 ? 600 : 400,
-                          marginTop: '2px',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis'
-                        }}>
-                          {chat.lastMessage || 'कोई संदेश नहीं'}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* RIGHT MAIN AREA: Active Conversation */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'rgba(7, 12, 23, 0.98)' }}>
-            {currentChat ? (
-              <>
-                {/* Chat Top Banner */}
-                <div style={{
-                  padding: '0.75rem 1.25rem',
-                  borderBottom: '1px solid rgba(255,255,255,0.08)',
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{
-                      width: '44px',
-                      height: '44px',
-                      borderRadius: '50%',
-                      overflow: 'hidden',
-                      background: 'rgba(255,255,255,0.1)',
-                      border: '2px solid var(--gold-primary, #e5b842)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      {otherContact?.uniformPhoto ? (
-                        <img src={otherContact.uniformPhoto} alt={otherContact.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : currentChat.type === 'group' ? (
-                        <Users size={22} color="var(--gold-primary)" />
-                      ) : (
-                        <span style={{ fontWeight: 700, color: 'var(--gold-primary)' }}>
-                          {((otherContact?.name || currentChat.title || 'P').charAt(0)).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
-                          {currentChat.type === 'direct' ? (otherContact?.name || (otherParticipantId === 'super-admin' ? 'मुख्यालय पुलिस महानिदेशक' : 'पुलिस अधिकारी')) : (currentChat.title || 'समूह चैट')}
-                        </h3>
-                        {currentChat.type === 'direct' && otherContact?.uniformPhoto && (
-                          <span style={{
-                            background: 'rgba(16, 185, 129, 0.15)',
-                            color: '#34d399',
-                            fontSize: '0.68rem',
-                            border: '1px solid rgba(16, 185, 129, 0.4)',
-                            padding: '1px 5px',
-                            borderRadius: '4px',
-                            fontWeight: 600
-                          }}>
-                            🛡️ वर्दी सत्यापित
-                          </span>
-                        )}
-                      </div>
-
-                      <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.6)', marginTop: '2px' }}>
-                        {currentChat.type === 'direct' ? (
-                          otherContact ? (
-                            `${otherContact.post || ''} • ${otherContact.office || ''} (${otherContact.district || ''}) • PNO: ${otherContact.pno || 'N/A'}`
-                          ) : (
-                            'विभागीय सीधा संवाद'
-                          )
-                        ) : (
-                          `${currentChat.participants?.length || 0} सदस्य • ${currentChat.description || 'विभागीय समूह'}`
-                        )}
-                      </div>
-                    </div>
+                      ➕ नया संदेश शुरू करें
+                    </button>
                   </div>
-
-                  {/* Quick Action Buttons for Direct Chat (In-App Call / Direct SIM Call - WhatsApp Removed) */}
-                  {currentChat.type === 'direct' && otherContact && (
-                    <div style={{ display: 'flex', gap: '0.4rem' }}>
-                      <button 
-                        type="button"
-                        onClick={() => callManager.startCall(currentUser, otherContact)}
-                        className="btn btn-call"
-                        style={{
-                          padding: '5px 10px',
-                          fontSize: '0.78rem',
-                          background: 'linear-gradient(135deg, #15803d, #166534)',
-                          color: '#fff',
-                          border: '1px solid rgba(34,197,94,0.4)',
-                          borderRadius: '6px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          cursor: 'pointer',
-                          fontWeight: 700
-                        }}
-                        title="सुरक्षित इन-ऐप वॉइस कॉल (अधिकतम 05 मिनट)"
-                      >
-                        <PhoneCall size={13} />
-                        <span>इन-ऐप कॉल</span>
-                      </button>
-
-                      {otherContact.phone && (
-                        <a 
-                          href={`tel:${otherContact.phone}`}
-                          className="btn btn-secondary"
-                          style={{ padding: '5px 9px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                          title="डायरेक्ट फोन कॉल करें"
-                        >
-                          <Phone size={13} />
-                          <span>फोन</span>
-                        </a>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Messages Scroll Area */}
-                <div style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  padding: '1rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.75rem'
-                }}>
-                  {currentChat.messages && currentChat.messages.length > 0 ? (
-                    currentChat.messages.map((msg, idx) => {
-                      const isMe = msg.senderId === currentUser.id;
-                      const hasRead = msg.readBy && msg.readBy.length > 1;
-
-                      return (
-                        <div
-                          key={msg.id || idx}
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: isMe ? 'flex-end' : 'flex-start',
-                            maxWidth: '75%',
-                            alignSelf: isMe ? 'flex-end' : 'flex-start'
-                          }}
-                        >
-                          {/* Sender title if group or peer */}
-                          {!isMe && (
-                            <div style={{ fontSize: '0.7rem', color: 'var(--gold-primary)', marginBottom: '2px', marginLeft: '6px', fontWeight: 600 }}>
-                              {msg.senderName} {msg.senderPost ? `(${msg.senderPost})` : ''}
-                            </div>
-                          )}
-
-                          {/* Bubble Container */}
-                          <div style={{
-                            background: isMe 
-                              ? 'linear-gradient(135deg, #1e3a8a, #2563eb)' 
-                              : 'rgba(30, 41, 59, 0.9)',
-                            border: isMe 
-                              ? '1px solid rgba(59, 130, 246, 0.5)' 
-                              : '1px solid rgba(255, 255, 255, 0.1)',
-                            borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                            padding: '0.65rem 0.85rem',
-                            color: '#fff',
-                            fontSize: '0.85rem',
-                            lineHeight: 1.45,
-                            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-                            wordBreak: 'break-word'
-                          }}>
-                            {/* Message Text */}
-                            {msg.text && (
-                              <div style={{ whiteSpace: 'pre-wrap' }}>
-                                {msg.text}
-                              </div>
-                            )}
-
-                            {/* Attached File Preview if any */}
-                            {msg.file && (
-                              <div style={{
-                                marginTop: '0.5rem',
-                                padding: '0.5rem',
-                                background: 'rgba(0,0,0,0.3)',
-                                borderRadius: '8px',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem'
-                              }}>
-                                {msg.file.type === 'image' ? (
-                                  <div>
-                                    <img 
-                                      src={msg.file.url} 
-                                      alt="Attachment" 
-                                      style={{ maxWidth: '200px', maxHeight: '140px', borderRadius: '6px', objectFit: 'cover' }} 
-                                    />
-                                    <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
-                                      {msg.file.name} ({msg.file.size})
-                                    </div>
-                                  </div>
-                                ) : msg.file.type === 'word' ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <FileText size={22} color="#60a5fa" />
-                                    <div>
-                                      <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>{msg.file.name}</div>
-                                      <div style={{ fontSize: '0.7rem', color: '#93c5fd' }}>MS Word दस्तावेज़ ({msg.file.size})</div>
-                                      {msg.file.url && (
-                                        <a href={msg.file.url} download={msg.file.name} style={{ fontSize: '0.68rem', color: 'var(--khaki-light)', textDecoration: 'underline' }}>
-                                          डाउनलोड करें
-                                        </a>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : msg.file.type === 'excel' ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <FileSpreadsheet size={22} color="#34d399" />
-                                    <div>
-                                      <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>{msg.file.name}</div>
-                                      <div style={{ fontSize: '0.7rem', color: '#6ee7b7' }}>MS Excel स्प्रेडशीट ({msg.file.size})</div>
-                                      {msg.file.url && (
-                                        <a href={msg.file.url} download={msg.file.name} style={{ fontSize: '0.68rem', color: 'var(--khaki-light)', textDecoration: 'underline' }}>
-                                          डाउनलोड करें
-                                        </a>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <FileText size={20} color="var(--gold-primary)" />
-                                    <div>
-                                      <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>{msg.file.name}</div>
-                                      <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>PDF दस्तावेज़ ({msg.file.size})</div>
-                                      {msg.file.url && (
-                                        <a href={msg.file.url} download={msg.file.name} style={{ fontSize: '0.68rem', color: 'var(--khaki-light)', textDecoration: 'underline' }}>
-                                          डाउनलोड करें
-                                        </a>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Timestamp & Read Tick */}
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'flex-end',
-                              gap: '4px',
-                              marginTop: '4px',
-                              fontSize: '0.66rem',
-                              color: 'rgba(255,255,255,0.6)'
-                            }}>
-                              <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                              {isMe && (
-                                <span style={{ color: hasRead ? '#60a5fa' : 'rgba(255,255,255,0.5)' }} title={hasRead ? 'पढ़ा गया (Read)' : 'प्रेषित (Delivered)'}>
-                                  ✓✓
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div style={{ textAlign: 'center', margin: 'auto', color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>
-                      <p>अभी तक कोई संदेश प्रेषित नहीं किया गया है।</p>
-                      <p style={{ fontSize: '0.78rem', color: 'var(--gold-primary)' }}>नीचे इनपुट बॉक्स में संदेश लिखकर संवाद शुरू करें।</p>
-                    </div>
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {/* Attachment Badge Preview above Input */}
-                {attachedFile && (
-                  <div style={{
-                    padding: '0.4rem 1rem',
-                    background: 'rgba(30, 58, 138, 0.4)',
-                    borderTop: '1px solid rgba(255,255,255,0.1)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    fontSize: '0.78rem',
-                    color: '#93c5fd'
-                  }}>
-                    <span>📎 संलग्न फ़ाइल: <strong>{attachedFile.name}</strong> ({attachedFile.size})</span>
-                    <button 
-                      onClick={() => setAttachedFile(null)} 
-                      style={{ background: 'transparent', border: 'none', color: '#fca5a5', cursor: 'pointer' }}
+                ) : (
+                  <div>
+                    <Users size={36} style={{ margin: '0 auto 0.6rem', opacity: 0.35, color: 'var(--khaki-primary)' }} />
+                    <p style={{ color: '#94a3b8' }}>कोई समूह चैट उपलब्ध नहीं है।</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowNewGroupModal(true)}
+                      style={{
+                        marginTop: '0.75rem',
+                        background: 'linear-gradient(135deg, #c49756, #9a6d32)',
+                        border: 'none',
+                        color: '#070e1c',
+                        padding: '6px 14px',
+                        borderRadius: '20px',
+                        fontWeight: 700,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer'
+                      }}
                     >
-                      <X size={14} />
+                      ➕ नया ग्रुप बनाएं
                     </button>
                   </div>
                 )}
+              </div>
+            ) : (
+              filteredChatList.map(chat => {
+                const isSelected = currentChat?.id === chat.id;
+                const unreadCount = getUnreadCountForChat(chat, currentUser.id);
 
-                {/* Message Input Form */}
-                <form 
-                  onSubmit={handleSendMessage}
-                  style={{
-                    padding: '0.75rem 1rem',
-                    borderTop: '1px solid rgba(255,255,255,0.08)',
-                    background: 'rgba(15, 23, 42, 0.9)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem'
-                  }}
-                >
-                  {/* File attach button */}
-                  <label style={{
-                    background: 'rgba(255,255,255,0.08)',
-                    color: 'var(--khaki-primary, #c49756)',
-                    padding: '8px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '1px solid rgba(255,255,255,0.15)'
-                  }} title="दस्तावेज़ संलग्न करें (MS Word, Excel, PDF, फ़ोटो - अधिकतम 10 MB)">
-                    <Paperclip size={18} />
-                    <input 
-                      ref={fileInputRef}
-                      type="file" 
-                      accept="image/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                      onChange={handleFileChange}
-                      style={{ display: 'none' }} 
-                    />
-                  </label>
+                let displayPhoto = null;
+                let displayName = chat.title || 'विभागीय चैट';
+                let displaySub = chat.district || 'उत्तर प्रदेश पुलिस';
 
-                  {/* Text Input */}
-                  <input
-                    type="text"
-                    placeholder="संदेश लिखें (जय हिंद, अग्रिम सूचना, आदि)..."
-                    value={inputText}
-                    onChange={e => setInputText(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '9px 12px',
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      fontSize: '0.88rem'
+                if (chat.type === 'direct') {
+                  const peerId = chat.participants?.find(p => p !== currentUser.id);
+                  const peerObj = contacts.find(c => c.id === peerId);
+                  if (peerObj) {
+                    displayPhoto = peerObj.uniformPhoto;
+                    displayName = peerObj.name || 'पुलिस अधिकारी';
+                    displaySub = `${peerObj.post || 'अधिकारी'} • ${peerObj.office || peerObj.district || ''}`;
+                  } else if (peerId === 'super-admin') {
+                    displayName = 'मुख्यालय पुलिस महानिदेशक (Super Admin)';
+                    displaySub = 'समस्त जनपद (Headquarters)';
+                  }
+                }
+
+                return (
+                  <div
+                    key={chat.id}
+                    onClick={() => {
+                      setActiveChatId(chat.id);
+                      setMobileView('chat');
                     }}
-                  />
-
-                  {/* Send Button */}
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={!inputText.trim() && !attachedFile}
                     style={{
-                      padding: '8px 16px',
-                      opacity: (!inputText.trim() && !attachedFile) ? 0.5 : 1,
-                      cursor: (!inputText.trim() && !attachedFile) ? 'not-allowed' : 'pointer'
+                      padding: '0.7rem 0.85rem',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                      cursor: 'pointer',
+                      background: isSelected 
+                        ? 'rgba(196, 151, 86, 0.14)' 
+                        : unreadCount > 0 
+                          ? 'rgba(37, 99, 235, 0.12)' 
+                          : 'transparent',
+                      borderLeft: isSelected 
+                        ? '3.5px solid var(--khaki-primary, #c49756)' 
+                        : unreadCount > 0
+                          ? '3.5px solid #3b82f6'
+                          : '3.5px solid transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.65rem',
+                      transition: 'background 0.15s ease'
                     }}
                   >
-                    <Send size={16} />
-                    <span>भेजें</span>
-                  </button>
-                </form>
-              </>
-            ) : (
-              <div style={{ textAlign: 'center', margin: 'auto', color: 'rgba(255,255,255,0.4)', padding: '2rem' }}>
-                <Mail size={48} style={{ margin: '0 auto 1rem', opacity: 0.2 }} />
-                <h3 style={{ color: '#fff', fontSize: '1.1rem' }}>मैसेज बॉक्स में आपका स्वागत है</h3>
-                <p style={{ fontSize: '0.82rem', maxWidth: '380px', margin: '0.5rem auto 1rem' }}>
-                  बाएँ मेनू से किसी वार्तालाप का चयन करें या ऊपर <strong>"नया"</strong> बटन दबाकर किसी भी अधिकारी को सीधा संदेश भेजें।
-                </p>
-                <button 
-                  onClick={() => setShowNewDirectModal(true)}
-                  className="btn btn-primary"
-                  style={{ fontSize: '0.82rem' }}
-                >
-                  <Plus size={14} />
-                  <span>नया पीयर-टू-पीयर संदेश शुरू करें</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* SUB-MODAL 1: "नया डायरेक्ट मैसेज भेजें" (Choose Officer) */}
-        {showNewDirectModal && (
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0,0,0,0.85)',
-            backdropFilter: 'blur(8px)',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '1rem'
-          }}>
-            <div style={{
-              width: '100%',
-              maxWidth: '520px',
-              background: '#0f1d38',
-              border: '2px solid var(--gold-primary)',
-              borderRadius: '14px',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              maxHeight: '80vh'
-            }}>
-              <div style={{
-                padding: '0.85rem 1.25rem',
-                background: 'linear-gradient(135deg, #1e3a8a, #0f172a)',
-                borderBottom: '1px solid rgba(255,255,255,0.1)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                color: '#fff'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <User size={18} color="var(--gold-primary)" />
-                  <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--gold-light)' }}>
-                    नया मैसेज: अधिकारी चुनें (Select Officer)
-                  </h3>
-                </div>
-                <button 
-                  onClick={() => setShowNewDirectModal(false)}
-                  style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Search Bar */}
-              <div style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                <input
-                  type="text"
-                  placeholder="अधिकारी का नाम, PNO, थाना या ज़िला खोजें..."
-                  value={contactSearchQuery}
-                  onChange={e => setContactSearchQuery(e.target.value)}
-                  autoFocus
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    background: 'rgba(255,255,255,0.08)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    fontSize: '0.85rem'
-                  }}
-                />
-              </div>
-
-              {/* Officers List */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
-                {eligibleDirectContacts.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>
-                    कोई अधिकारी नहीं मिला।
-                  </div>
-                ) : (
-                  eligibleDirectContacts.map(contact => (
-                    <div
-                      key={contact.id}
-                      onClick={() => handleStartDirectChat(contact)}
-                      style={{
-                        padding: '0.65rem 0.85rem',
-                        borderRadius: '8px',
-                        background: 'rgba(255,255,255,0.04)',
-                        marginBottom: '0.4rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.65rem',
-                        transition: 'background 0.15s ease'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(30,58,138,0.3)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                    >
+                    {/* Avatar */}
+                    <div style={{ position: 'relative' }}>
                       <div style={{
-                        width: '38px',
-                        height: '38px',
+                        width: '42px',
+                        height: '42px',
                         borderRadius: '50%',
                         overflow: 'hidden',
-                        background: 'rgba(255,255,255,0.1)',
-                        border: '1px solid var(--gold-primary)',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: unreadCount > 0 ? '2px solid #3b82f6' : '1.5px solid rgba(196, 151, 86, 0.4)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         flexShrink: 0
                       }}>
-                        {contact.uniformPhoto ? (
-                          <img src={contact.uniformPhoto} alt={contact.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        {displayPhoto ? (
+                          <img src={displayPhoto} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : chat.type === 'group' ? (
+                          <Users size={19} color="var(--khaki-light, #dfb97e)" />
                         ) : (
-                          <span style={{ fontWeight: 700, color: 'var(--gold-primary)' }}>
-                            {((contact?.name || 'P').charAt(0)).toUpperCase()}
+                          <span style={{ fontWeight: 800, color: 'var(--khaki-light)', fontSize: '0.9rem' }}>
+                            {((displayName || 'P').charAt(0)).toUpperCase()}
                           </span>
                         )}
                       </div>
 
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fff' }}>
-                          {contact.name}
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--gold-primary)' }}>
-                          {contact.post} • {contact.office} ({contact.district})
-                        </div>
-                        <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>
-                          PNO: {contact.pno} • फोन: {contact.phone}
-                        </div>
+                      {unreadCount > 0 && (
+                        <span style={{
+                          position: 'absolute',
+                          top: -1,
+                          right: -1,
+                          width: '10px',
+                          height: '10px',
+                          borderRadius: '50%',
+                          background: '#ef4444',
+                          border: '2px solid #070e1c'
+                        }} />
+                      )}
+                    </div>
+
+                    {/* Chat Item Details */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h4 style={{
+                          margin: 0,
+                          fontSize: '0.86rem',
+                          fontWeight: unreadCount > 0 ? 800 : 600,
+                          color: unreadCount > 0 ? '#f8fafc' : '#e2e8f0',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}>
+                          {displayName}
+                        </h4>
+
+                        {unreadCount > 0 && (
+                          <span style={{
+                            background: '#3b82f6',
+                            color: '#fff',
+                            fontSize: '0.64rem',
+                            fontWeight: 800,
+                            padding: '1px 6px',
+                            borderRadius: '10px'
+                          }}>
+                            {unreadCount}
+                          </span>
+                        )}
                       </div>
 
-                      <button
-                        className="btn btn-primary"
-                        style={{ padding: '4px 10px', fontSize: '0.74rem' }}
-                      >
-                        संदेश भेजें
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+                      <div style={{ fontSize: '0.71rem', color: 'var(--khaki-light)', opacity: 0.85, marginTop: '1px' }}>
+                        {displaySub}
+                      </div>
 
-        {/* SUB-MODAL 2: "नया पुलिस समूह बनाएं" (Create Group) */}
-        {showNewGroupModal && (
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0,0,0,0.85)',
-            backdropFilter: 'blur(8px)',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '1rem'
-          }}>
-            <form 
-              onSubmit={handleCreateGroupSubmit}
-              style={{
-                width: '100%',
-                maxWidth: '540px',
-                background: '#0f1d38',
-                border: '2px solid var(--gold-primary)',
-                borderRadius: '14px',
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-                maxHeight: '85vh'
-              }}
-            >
+                      <div style={{
+                        fontSize: '0.73rem',
+                        color: unreadCount > 0 ? '#fde047' : '#94a3b8',
+                        fontWeight: unreadCount > 0 ? 600 : 400,
+                        marginTop: '2px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        {chat.lastMessage || 'कोई संदेश नहीं'}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* VIEW 2: ACTIVE CONVERSATION SCREEN (WHATSAPP CHAT FEED)                   */}
+        {/* ========================================================================= */}
+        <div 
+          className="whatsapp-chat-panel"
+          style={{
+            flex: 1,
+            display: (mobileView === 'chat' || window.innerWidth >= 768) ? 'flex' : 'none',
+            flexDirection: 'column',
+            background: '#070e1c',
+            height: '100%',
+            overflow: 'hidden',
+            position: 'relative'
+          }}
+        >
+          {currentChat ? (
+            <>
+              {/* WhatsApp Chat Top Header Bar */}
               <div style={{
-                padding: '0.85rem 1.25rem',
-                background: 'linear-gradient(135deg, #1e3a8a, #0f172a)',
-                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                padding: '0.55rem 0.85rem',
+                background: '#0c1830',
+                borderBottom: '1px solid rgba(196, 151, 86, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                color: '#fff'
+                flexShrink: 0
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Users size={18} color="var(--gold-primary)" />
-                  <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--gold-light)' }}>
-                    नया समूह चैट बनाएं (Create Police Group)
-                  </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  {/* Back arrow on mobile to return to list */}
+                  <button
+                    type="button"
+                    onClick={() => setMobileView('list')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--khaki-light, #dfb97e)',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                    title="चैट सूची पर वापस जाएं"
+                  >
+                    <ArrowLeft size={20} />
+                  </button>
+
+                  {/* Avatar */}
+                  <div style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '50%',
+                    overflow: 'hidden',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1.5px solid var(--khaki-primary, #c49756)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    {otherContact?.uniformPhoto ? (
+                      <img src={otherContact.uniformPhoto} alt={otherContact.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : currentChat.type === 'group' ? (
+                      <Users size={19} color="var(--khaki-light)" />
+                    ) : (
+                      <span style={{ fontWeight: 800, color: 'var(--khaki-light)' }}>
+                        {((otherContact?.name || currentChat.title || 'P').charAt(0)).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Title & Status */}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <h3 style={{
+                        margin: 0,
+                        fontSize: '0.92rem',
+                        fontWeight: 700,
+                        color: '#f8fafc',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        {currentChat.type === 'direct' 
+                          ? (otherContact?.name || (otherParticipantId === 'super-admin' ? 'मुख्यालय पुलिस महानिदेशक' : 'पुलिस अधिकारी')) 
+                          : (currentChat.title || 'समूह चैट')}
+                      </h3>
+                      {currentChat.type === 'direct' && otherContact?.uniformPhoto && (
+                        <span style={{
+                          background: 'rgba(16, 185, 129, 0.18)',
+                          color: '#34d399',
+                          fontSize: '0.62rem',
+                          border: '1px solid rgba(16, 185, 129, 0.4)',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          flexShrink: 0
+                        }}>
+                          ✓ वर्दी
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {currentChat.type === 'direct' ? (
+                        otherContact ? (
+                          `${otherContact.post || ''} • ${otherContact.district || ''}`
+                        ) : (
+                          'उत्तर प्रदेश पुलिस'
+                        )
+                      ) : (
+                        `${currentChat.participants?.length || 0} सदस्य`
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <button 
-                  type="button"
-                  onClick={() => setShowNewGroupModal(false)}
-                  style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
-                >
-                  <X size={18} />
-                </button>
+
+                {/* Right Call & Actions in Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {currentChat.type === 'direct' && otherContact && (
+                    <>
+                      <button 
+                        type="button"
+                        onClick={() => callManager.startCall(currentUser, otherContact)}
+                        style={{
+                          background: 'linear-gradient(135deg, #15803d, #166534)',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '5px 9px',
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                        title="सुरक्षित इन-ऐप वॉइस कॉल"
+                      >
+                        <PhoneCall size={13} />
+                        <span className="hide-on-mobile">कॉल</span>
+                      </button>
+
+                      {otherContact.phone && (
+                        <a 
+                          href={`tel:${otherContact.phone}`}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            color: '#e2e8f0',
+                            borderRadius: '6px',
+                            padding: '5px 8px',
+                            fontSize: '0.74rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            textDecoration: 'none'
+                          }}
+                          title="फ़ोन डायलर से कॉल करें"
+                        >
+                          <Phone size={13} />
+                        </a>
+                      )}
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                    title="बंद करें"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
-              <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem', flex: 1, overflowY: 'auto' }}>
+              {/* Messages Scroll Area */}
+              <div 
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem',
+                  backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(196, 151, 86, 0.03) 0%, transparent 60%)'
+                }}
+              >
+                {currentChat.messages && currentChat.messages.length > 0 ? (
+                  currentChat.messages.map((msg, idx) => {
+                    const isMe = msg.senderId === currentUser.id;
+                    const hasRead = msg.readBy && msg.readBy.length > 1;
+
+                    return (
+                      <div
+                        key={msg.id || idx}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: isMe ? 'flex-end' : 'flex-start',
+                          maxWidth: '82%',
+                          alignSelf: isMe ? 'flex-end' : 'flex-start'
+                        }}
+                      >
+                        {/* Group Sender info */}
+                        {!isMe && currentChat.type === 'group' && (
+                          <div style={{ fontSize: '0.68rem', color: 'var(--khaki-light)', marginBottom: '2px', marginLeft: '6px', fontWeight: 700 }}>
+                            {msg.senderName} {msg.senderPost ? `(${msg.senderPost})` : ''}
+                          </div>
+                        )}
+
+                        {/* WhatsApp Message Bubble */}
+                        <div style={{
+                          background: isMe 
+                            ? 'linear-gradient(135deg, #162c5b, #1e40af)' 
+                            : 'rgba(24, 34, 53, 0.95)',
+                          border: isMe 
+                            ? '1px solid rgba(196, 151, 86, 0.35)' 
+                            : '1px solid rgba(255, 255, 255, 0.1)',
+                          borderRadius: isMe ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
+                          padding: '0.55rem 0.8rem',
+                          color: '#fff',
+                          fontSize: '0.84rem',
+                          lineHeight: 1.4,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+                          wordBreak: 'break-word',
+                          position: 'relative'
+                        }}>
+                          {/* Text Message */}
+                          {msg.text && (
+                            <div style={{ whiteSpace: 'pre-wrap' }}>
+                              {msg.text}
+                            </div>
+                          )}
+
+                          {/* ========================================================= */}
+                          {/* ATTACHMENT CARD TYPES                                     */}
+                          {/* ========================================================= */}
+                          {msg.file && (
+                            <div style={{ marginTop: msg.text ? '0.45rem' : '0' }}>
+                              
+                              {/* 1. PHOTO ATTACHMENT */}
+                              {msg.file.type === 'image' && (
+                                <div>
+                                  <img 
+                                    src={msg.file.url} 
+                                    alt="Attachment" 
+                                    style={{ 
+                                      maxWidth: '220px', 
+                                      maxHeight: '160px', 
+                                      borderRadius: '8px', 
+                                      objectFit: 'cover',
+                                      display: 'block'
+                                    }} 
+                                  />
+                                  <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.7)', marginTop: '3px' }}>
+                                    {msg.file.name} ({msg.file.size})
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* 2. DOCUMENTS (WORD, EXCEL, PDF) */}
+                              {(msg.file.type === 'word' || msg.file.type === 'excel' || msg.file.type === 'pdf') && (
+                                <div style={{
+                                  background: 'rgba(0,0,0,0.3)',
+                                  borderRadius: '8px',
+                                  padding: '7px 10px',
+                                  border: '1px solid rgba(255,255,255,0.12)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px'
+                                }}>
+                                  {msg.file.type === 'word' && <FileText size={22} color="#60a5fa" />}
+                                  {msg.file.type === 'excel' && <FileSpreadsheet size={22} color="#34d399" />}
+                                  {msg.file.type === 'pdf' && <FileText size={22} color="#f87171" />}
+                                  
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {msg.file.name}
+                                    </div>
+                                    <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                                      {msg.file.type.toUpperCase()} • {msg.file.size}
+                                    </div>
+                                  </div>
+
+                                  {msg.file.url && (
+                                    <a 
+                                      href={msg.file.url} 
+                                      download={msg.file.name} 
+                                      style={{
+                                        background: 'rgba(196, 151, 86, 0.2)',
+                                        border: '1px solid var(--khaki-primary)',
+                                        color: 'var(--khaki-light)',
+                                        padding: '4px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.68rem',
+                                        textDecoration: 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '3px'
+                                      }}
+                                    >
+                                      <Download size={12} />
+                                      <span>डाउनलोड</span>
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* 3. CONTACT CARD ATTACHMENT */}
+                              {msg.file.type === 'contact' && msg.file.contactData && (
+                                <div style={{
+                                  background: 'rgba(12, 22, 41, 0.95)',
+                                  borderRadius: '8px',
+                                  padding: '8px 10px',
+                                  border: '1px solid rgba(196, 151, 86, 0.4)',
+                                  width: '210px'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                    <div style={{
+                                      width: '32px',
+                                      height: '32px',
+                                      borderRadius: '50%',
+                                      overflow: 'hidden',
+                                      background: 'rgba(255,255,255,0.1)',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center'
+                                    }}>
+                                      {msg.file.contactData.uniformPhoto ? (
+                                        <img src={msg.file.contactData.uniformPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                      ) : (
+                                        <User size={16} color="var(--khaki-light)" />
+                                      )}
+                                    </div>
+                                    <div style={{ minWidth: 0, flex: 1 }}>
+                                      <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fef08a' }}>
+                                        {msg.file.contactData.name}
+                                      </div>
+                                      <div style={{ fontSize: '0.66rem', color: '#94a3b8' }}>
+                                        {msg.file.contactData.post} • {msg.file.contactData.district}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {msg.file.contactData.phone && (
+                                    <a
+                                      href={`tel:${msg.file.contactData.phone}`}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '5px',
+                                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                                        color: '#fff',
+                                        borderRadius: '5px',
+                                        padding: '4px',
+                                        fontSize: '0.72rem',
+                                        textDecoration: 'none',
+                                        fontWeight: 700
+                                      }}
+                                    >
+                                      <Phone size={12} />
+                                      <span>{msg.file.contactData.phone} पर कॉल करें</span>
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* 4. GPS LOCATION ATTACHMENT */}
+                              {msg.file.type === 'location' && msg.file.locationData && (
+                                <div style={{
+                                  background: 'rgba(15, 23, 42, 0.95)',
+                                  borderRadius: '8px',
+                                  padding: '8px 10px',
+                                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                                  width: '210px'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fca5a5', fontWeight: 700, fontSize: '0.78rem', marginBottom: '4px' }}>
+                                    <MapPin size={16} color="#ef4444" />
+                                    <span>लाइव पुलिस लोकेशन</span>
+                                  </div>
+                                  <div style={{ fontSize: '0.68rem', color: '#cbd5e1', marginBottom: '6px' }}>
+                                    अक्षांश: {msg.file.locationData.lat}, देशांतर: {msg.file.locationData.lng}
+                                  </div>
+                                  <a
+                                    href={msg.file.locationData.mapUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '4px',
+                                      background: 'linear-gradient(135deg, #ef4444, #b91c1c)',
+                                      color: '#fff',
+                                      borderRadius: '5px',
+                                      padding: '5px',
+                                      fontSize: '0.72rem',
+                                      textDecoration: 'none',
+                                      fontWeight: 700
+                                    }}
+                                  >
+                                    <Compass size={13} />
+                                    <span>Google Maps में खोलें</span>
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Timestamp & Double Checkmarks */}
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'flex-end',
+                            gap: '4px',
+                            marginTop: '3px',
+                            fontSize: '0.64rem',
+                            color: 'rgba(255, 255, 255, 0.6)'
+                          }}>
+                            <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            {isMe && (
+                              <span style={{ color: hasRead ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)' }}>
+                                {hasRead ? '✓✓' : '✓'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div style={{ textAlign: 'center', margin: 'auto', color: '#64748b', fontSize: '0.84rem' }}>
+                    <p style={{ color: '#94a3b8' }}>अभी तक कोई संवाद नहीं हुआ है।</p>
+                    <p style={{ fontSize: '0.76rem', color: 'var(--khaki-light)' }}>नीचे संदेश लिखकर सुरक्षित विभागीय वार्तालाप शुरू करें।</p>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Attachment Preview Chip (Above Input Bar) */}
+              {attachedFile && (
+                <div style={{
+                  padding: '6px 12px',
+                  background: 'rgba(196, 151, 86, 0.15)',
+                  borderTop: '1px solid rgba(196, 151, 86, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: '0.76rem',
+                  color: '#fef08a'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                    <Paperclip size={14} />
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      संलग्न: <strong>{attachedFile.name}</strong> ({attachedFile.size})
+                    </span>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => setAttachedFile(null)} 
+                    style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '2px' }}
+                    title="हटाएं"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+
+              {/* WhatsApp Attachment Tray Popup */}
+              {showAttachMenu && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '64px',
+                  left: '12px',
+                  background: '#0d1933',
+                  border: '1px solid rgba(196, 151, 86, 0.4)',
+                  borderRadius: '12px',
+                  padding: '10px',
+                  boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  gap: '10px',
+                  zIndex: 100,
+                  width: 'calc(100% - 24px)',
+                  maxWidth: '380px'
+                }}>
+                  {/* Option 1: Photo */}
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '10px',
+                      padding: '10px 4px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '4px',
+                      color: '#f8fafc',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ background: '#2563eb', padding: '8px', borderRadius: '50%', display: 'flex' }}>
+                      <ImageIcon size={18} color="#fff" />
+                    </div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 600 }}>फोटो</span>
+                  </button>
+
+                  {/* Option 2: Documents */}
+                  <button
+                    type="button"
+                    onClick={() => docInputRef.current?.click()}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '10px',
+                      padding: '10px 4px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '4px',
+                      color: '#f8fafc',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ background: '#7c3aed', padding: '8px', borderRadius: '50%', display: 'flex' }}>
+                      <FileText size={18} color="#fff" />
+                    </div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 600 }}>दस्तावेज़</span>
+                  </button>
+
+                  {/* Option 3: Contact */}
+                  <button
+                    type="button"
+                    onClick={() => { setShowAttachMenu(false); setShowShareContactModal(true); }}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '10px',
+                      padding: '10px 4px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '4px',
+                      color: '#f8fafc',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ background: '#059669', padding: '8px', borderRadius: '50%', display: 'flex' }}>
+                      <Share2 size={18} color="#fff" />
+                    </div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 600 }}>संपर्क</span>
+                  </button>
+
+                  {/* Option 4: GPS Location */}
+                  <button
+                    type="button"
+                    onClick={handleShareCurrentLocation}
+                    disabled={isGettingLocation}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '10px',
+                      padding: '10px 4px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '4px',
+                      color: '#f8fafc',
+                      cursor: isGettingLocation ? 'wait' : 'pointer'
+                    }}
+                  >
+                    <div style={{ background: '#dc2626', padding: '8px', borderRadius: '50%', display: 'flex' }}>
+                      <MapPin size={18} color="#fff" />
+                    </div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 600 }}>
+                      {isGettingLocation ? 'खोज...' : 'लोकेशन'}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {/* WhatsApp Bottom Input Bar */}
+              <form 
+                onSubmit={handleSendMessage}
+                style={{
+                  padding: '0.55rem 0.75rem',
+                  background: '#0c1830',
+                  borderTop: '1px solid rgba(196, 151, 86, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  flexShrink: 0
+                }}
+              >
+                {/* Paperclip Attachment Trigger */}
+                <button
+                  type="button"
+                  onClick={() => setShowAttachMenu(prev => !prev)}
+                  style={{
+                    background: showAttachMenu ? 'rgba(196, 151, 86, 0.3)' : 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(196, 151, 86, 0.3)',
+                    color: 'var(--khaki-primary, #c49756)',
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    flexShrink: 0
+                  }}
+                  title="अटैच करें (फोटो, दस्तावेज, संपर्क, लोकेशन)"
+                >
+                  <Paperclip size={18} />
+                </button>
+
+                {/* Text Input */}
+                <input
+                  ref={chatInputRef}
+                  type="text"
+                  placeholder="संदेश लिखें (जय हिंद, ड्यूटी रिपोर्ट, आदि)..."
+                  value={inputText}
+                  onChange={e => setInputText(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: '9px 14px',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '24px',
+                    color: '#fff',
+                    fontSize: '0.86rem',
+                    outline: 'none'
+                  }}
+                />
+
+                {/* Circular Send Button */}
+                <button
+                  type="submit"
+                  disabled={!inputText.trim() && !attachedFile}
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '50%',
+                    background: (!inputText.trim() && !attachedFile) 
+                      ? 'rgba(255, 255, 255, 0.1)' 
+                      : 'linear-gradient(135deg, #c49756, #9a6d32)',
+                    border: 'none',
+                    color: (!inputText.trim() && !attachedFile) ? '#64748b' : '#070e1c',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: (!inputText.trim() && !attachedFile) ? 'not-allowed' : 'pointer',
+                    flexShrink: 0,
+                    boxShadow: (!inputText.trim() && !attachedFile) ? 'none' : '0 2px 8px rgba(196, 151, 86, 0.4)'
+                  }}
+                  title="भेजें"
+                >
+                  <Send size={16} />
+                </button>
+              </form>
+            </>
+          ) : (
+            <div style={{ textAlign: 'center', margin: 'auto', color: '#64748b', padding: '2rem' }}>
+              <Users size={48} style={{ margin: '0 auto 1rem', opacity: 0.25, color: 'var(--khaki-primary)' }} />
+              <h3 style={{ color: '#fff', fontSize: '1.05rem', margin: 0 }}>कोई चैट चयनित नहीं है</h3>
+              <p style={{ fontSize: '0.8rem', maxWidth: '340px', margin: '0.5rem auto 1rem', color: '#94a3b8' }}>
+                बाईं ओर की सूची से किसी वार्तालाप का चयन करें अथवा नया संदेश भेजें।
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowNewDirectModal(true)}
+                style={{
+                  background: 'linear-gradient(135deg, #c49756, #9a6d32)',
+                  border: 'none',
+                  color: '#070e1c',
+                  padding: '7px 16px',
+                  borderRadius: '20px',
+                  fontWeight: 800,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer'
+                }}
+              >
+                ➕ नया संदेश शुरू करें
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: NEW DIRECT MESSAGE (START CONVERSATION)                          */}
+      {/* ========================================================================= */}
+      {showNewDirectModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10005,
+            padding: '1rem'
+          }}
+          onClick={() => setShowNewDirectModal(false)}
+        >
+          <div 
+            style={{
+              background: '#0c1629',
+              border: '1px solid var(--khaki-primary)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '460px',
+              maxHeight: '80vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{
+              padding: '0.75rem 1rem',
+              background: '#0f1f3d',
+              borderBottom: '1px solid rgba(196, 151, 86, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--khaki-light)' }}>
+                नया संदेश भेजें (Select Officer)
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setShowNewDirectModal(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <input
+                type="text"
+                placeholder="अधिकारी का नाम, पद, PNO या जनपद खोजें..."
+                value={contactSearchQuery}
+                onChange={e => setContactSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '7px 12px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(196, 151, 86, 0.25)',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  fontSize: '0.82rem'
+                }}
+              />
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
+              {eligibleDirectContacts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8', fontSize: '0.8rem' }}>
+                  कोई अधिकारी नहीं मिला।
+                </div>
+              ) : (
+                eligibleDirectContacts.map(contact => (
+                  <div
+                    key={contact.id}
+                    onClick={() => handleStartDirectChat(contact)}
+                    style={{
+                      padding: '0.55rem 0.75rem',
+                      borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.65rem'
+                    }}
+                  >
+                    <div style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '50%',
+                      overflow: 'hidden',
+                      background: 'rgba(255,255,255,0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      {contact.uniformPhoto ? (
+                        <img src={contact.uniformPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <User size={16} color="var(--khaki-light)" />
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#f8fafc' }}>
+                        {contact.name}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--khaki-light)' }}>
+                        {contact.post} • {contact.district} (PNO: {contact.pno || 'N/A'})
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: DEDICATED NEW GROUP CHAT CREATION                                */}
+      {/* ========================================================================= */}
+      {showNewGroupModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10005,
+            padding: '1rem'
+          }}
+          onClick={() => setShowNewGroupModal(false)}
+        >
+          <div 
+            style={{
+              background: '#0c1629',
+              border: '1px solid var(--khaki-primary)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '480px',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{
+              padding: '0.75rem 1rem',
+              background: '#0f1f3d',
+              borderBottom: '1px solid rgba(196, 151, 86, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--khaki-light)' }}>
+                👥 नया पुलिस समूह बनाएं (New Group)
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setShowNewGroupModal(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateGroupSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              <div style={{ padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--gold-light)', marginBottom: '4px', fontWeight: 600 }}>
+                  <label style={{ fontSize: '0.74rem', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>
                     समूह का नाम (Group Title) *
                   </label>
                   <input
                     type="text"
-                    placeholder="उदा. थाना हजरतगंज टीम, आगामी मेला ड्यूटी दल..."
+                    required
+                    placeholder="उदा. गश्त दल, थाना समन्वय, वीआईपी सुरक्षा"
                     value={newGroupTitle}
                     onChange={e => setNewGroupTitle(e.target.value)}
-                    required
                     style={{
                       width: '100%',
-                      padding: '8px 12px',
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      borderRadius: '8px',
+                      padding: '7px 10px',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(196, 151, 86, 0.3)',
+                      borderRadius: '6px',
                       color: '#fff',
-                      fontSize: '0.85rem'
+                      fontSize: '0.82rem'
                     }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--gold-light)', marginBottom: '4px', fontWeight: 600 }}>
-                    विवरण / उद्देश्य (Description)
+                  <label style={{ fontSize: '0.74rem', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>
+                    संक्षिप्त विवरण / उद्देश्य
                   </label>
                   <input
                     type="text"
-                    placeholder="विभागीय समन्वय व आदेश प्रसारित करने हेतु"
+                    placeholder="उदा. दैनिक वायरलेस एवं फील्ड ड्यूटी समन्वय"
                     value={newGroupDesc}
                     onChange={e => setNewGroupDesc(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '8px 12px',
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      borderRadius: '8px',
+                      padding: '7px 10px',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(196, 151, 86, 0.3)',
+                      borderRadius: '6px',
                       color: '#fff',
-                      fontSize: '0.85rem'
+                      fontSize: '0.82rem'
                     }}
                   />
                 </div>
 
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--gold-light)', fontWeight: 600 }}>
-                      सदस्य जोड़ें ({selectedGroupParticipants.length} चयनित)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="अधिकारी खोजें..."
-                      value={groupMemberSearch}
-                      onChange={e => setGroupMemberSearch(e.target.value)}
-                      style={{
-                        padding: '3px 8px',
-                        background: 'rgba(255,255,255,0.06)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        borderRadius: '6px',
-                        color: '#fff',
-                        fontSize: '0.74rem'
-                      }}
-                    />
-                  </div>
-
-                  <div style={{
-                    maxHeight: '180px',
-                    overflowY: 'auto',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                    borderRadius: '8px',
-                    background: 'rgba(0,0,0,0.2)',
-                    padding: '4px'
-                  }}>
-                    {eligibleDirectContacts
-                      .filter(c => !groupMemberSearch.trim() || c.name.toLowerCase().includes(groupMemberSearch.toLowerCase()))
-                      .map(contact => {
-                        const isSelected = selectedGroupParticipants.includes(contact.id);
-                        return (
-                          <div
-                            key={contact.id}
-                            onClick={() => toggleGroupParticipant(contact.id)}
-                            style={{
-                              padding: '5px 8px',
-                              borderRadius: '6px',
-                              background: isSelected ? 'rgba(30,58,138,0.4)' : 'transparent',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              cursor: 'pointer',
-                              marginBottom: '2px'
-                            }}
-                          >
-                            <span style={{ fontSize: '0.8rem', color: isSelected ? '#fff' : 'rgba(255,255,255,0.8)' }}>
-                              {contact.name} ({contact.post}, {contact.district})
-                            </span>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => {}}
-                              style={{ accentColor: 'var(--gold-primary)' }}
-                            />
-                          </div>
-                        );
-                      })}
-                  </div>
+                <div style={{ fontSize: '0.74rem', color: 'var(--khaki-light)', fontWeight: 700 }}>
+                  सदस्य चुनें ({selectedGroupParticipants.length} चयनित):
                 </div>
+
+                <input
+                  type="text"
+                  placeholder="अधिकारी का नाम या जनपद खोजें..."
+                  value={groupMemberSearch}
+                  onChange={e => setGroupMemberSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px 10px',
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '0.78rem'
+                  }}
+                />
               </div>
 
-              <div style={{
-                padding: '0.75rem 1rem',
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '0.5rem'
-              }}>
+              {/* Members Selection List */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '0 0.85rem', maxHeight: '200px' }}>
+                {contacts
+                  .filter(c => c.id !== currentUser.id && (c.status === 'approved' || c.status === 'active'))
+                  .filter(c => {
+                    if (!groupMemberSearch.trim()) return true;
+                    const q = groupMemberSearch.toLowerCase();
+                    return (c.name || '').toLowerCase().includes(q) || (c.district || '').toLowerCase().includes(q);
+                  })
+                  .map(c => {
+                    const isSelected = selectedGroupParticipants.includes(c.id);
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => toggleGroupParticipant(c.id)}
+                        style={{
+                          padding: '6px 8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          borderBottom: '1px solid rgba(255,255,255,0.05)',
+                          cursor: 'pointer',
+                          background: isSelected ? 'rgba(196, 151, 86, 0.12)' : 'transparent',
+                          borderRadius: '4px'
+                        }}
+                      >
+                        <div style={{ fontSize: '0.8rem', color: isSelected ? '#fef08a' : '#e2e8f0' }}>
+                          <strong>{c.name}</strong> <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>({c.post} • {c.district})</span>
+                        </div>
+                        <input 
+                          type="checkbox" 
+                          checked={isSelected} 
+                          onChange={() => {}} 
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <div style={{ padding: '0.85rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button
                   type="button"
-                  className="btn btn-secondary"
                   onClick={() => setShowNewGroupModal(false)}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    color: '#94a3b8',
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer'
+                  }}
                 >
                   रद्द करें
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-primary"
                   disabled={!newGroupTitle.trim()}
+                  style={{
+                    background: 'linear-gradient(135deg, #c49756, #9a6d32)',
+                    border: 'none',
+                    color: '#070e1c',
+                    padding: '6px 16px',
+                    borderRadius: '6px',
+                    fontWeight: 800,
+                    fontSize: '0.8rem',
+                    cursor: newGroupTitle.trim() ? 'pointer' : 'not-allowed'
+                  }}
                 >
                   समूह बनाएं
                 </button>
               </div>
             </form>
           </div>
-        )}
+        </div>
+      )}
 
-      </div>
+      {/* ========================================================================= */}
+      {/* MODAL 3: SHARE CONTACT CARD SELECTOR                                      */}
+      {/* ========================================================================= */}
+      {showShareContactModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10005,
+            padding: '1rem'
+          }}
+          onClick={() => setShowShareContactModal(false)}
+        >
+          <div 
+            style={{
+              background: '#0c1629',
+              border: '1px solid var(--khaki-primary)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '460px',
+              maxHeight: '80vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{
+              padding: '0.75rem 1rem',
+              background: '#0f1f3d',
+              borderBottom: '1px solid rgba(196, 151, 86, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--khaki-light)' }}>
+                👤 संपर्क कार्ड साझा करें (Share Officer)
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setShowShareContactModal(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <input
+                type="text"
+                placeholder="अधिकारी खोजें..."
+                value={shareContactSearch}
+                onChange={e => setShareContactSearch(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '7px 12px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(196, 151, 86, 0.25)',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  fontSize: '0.82rem'
+                }}
+              />
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
+              {contacts
+                .filter(c => c.status === 'approved' || c.status === 'active')
+                .filter(c => {
+                  if (!shareContactSearch.trim()) return true;
+                  const q = shareContactSearch.toLowerCase();
+                  return (c.name || '').toLowerCase().includes(q) || (c.post || '').toLowerCase().includes(q) || (c.district || '').toLowerCase().includes(q);
+                })
+                .map(c => (
+                  <div
+                    key={c.id}
+                    onClick={() => handleSelectContactToShare(c)}
+                    style={{
+                      padding: '0.55rem 0.75rem',
+                      borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.65rem'
+                    }}
+                  >
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      overflow: 'hidden',
+                      background: 'rgba(255,255,255,0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      {c.uniformPhoto ? (
+                        <img src={c.uniformPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <User size={15} color="var(--khaki-light)" />
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>
+                        {c.name}
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                        {c.post} • {c.district}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
