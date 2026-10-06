@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
-import Header from './components/Header';
 import SearchFilters from './components/SearchFilters';
 import ContactList from './components/ContactList';
 import UniformPhotoGate from './components/UniformPhotoGate';
@@ -1248,26 +1247,6 @@ export default function App() {
         ))}
       </div>
 
-      {/* Header with Active User Profile, Menu Drawer Trigger, & Logout */}
-      <Header
-        currentUser={currentUser}
-        totalApprovedCount={approvedCount}
-        pendingCount={pendingCount}
-        notifCount={notifications.length}
-        chatsCount={unreadMessagesCount}
-        isFirebaseConnected={isFirebaseConnected}
-        onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
-        onOpenLogin={() => setIsLoginModalOpen(true)}
-        onOpenRegister={() => setIsRegisterModalOpen(true)}
-        onOpenAdmin={handleOpenAdminPanel}
-        onOpenProfile={() => setIsProfileModalOpen(true)}
-        onOpenNotifications={() => setIsNotifsModalOpen(true)}
-        onOpenFeedback={() => setIsFeedbackModalOpen(true)}
-        onOpenChat={() => setIsChatModalOpen(true)}
-        onOpenMenu={() => setIsMenuDrawerOpen(true)}
-        onLogout={handleLogout}
-        onResetData={handleResetData}
-      />
 
       {/* District Scoping Banner for Regular Employee User */}
       {currentUser.role === 'user' && (

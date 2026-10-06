@@ -835,10 +835,16 @@ body {
   animation: fadeIn 0.3s ease;
 }
 
-/* Mobile Bottom Navigation Bar Responsive Styles */
+/* Bottom Navigation Bar - Universal App Dock for all screen sizes */
 @media (min-width: 769px) {
   .mobile-bottom-nav {
-    display: none !important;
+    max-width: 560px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    border-radius: 16px 16px 0 0 !important;
+    border: 1px solid rgba(196, 151, 86, 0.4) !important;
+    border-bottom: none !important;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.7) !important;
   }
 }
 
