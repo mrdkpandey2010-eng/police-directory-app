@@ -10,8 +10,6 @@ import { validateFileSize, compressImage } from '../utils/imageCompressor';
 export default function AuthGateway({ 
   onLoginSuccess, 
   onRegisterSubmit,
-  onOpenFirebaseSetup,
-  isFirebaseConnected = false,
   contacts, 
   coAdmins,
   posts = [],
@@ -21,8 +19,7 @@ export default function AuthGateway({
   onOpenPolicy = null
 }) {
   // Public tabs: 'user_login' | 'register' | 'co_admin'
-  const [activeTab, setActiveTab] = useState('user_login'); 
-  const [showModePopup, setShowModePopup] = useState(false);
+  const [activeTab, setActiveTab] = useState('user_login');
   
   // Dedicated Super Admin Page mode (Completely separated from public users)
   const [isSuperAdminMode, setIsSuperAdminMode] = useState(false);
@@ -368,433 +365,147 @@ export default function AuthGateway({
         flexDirection: 'column',
         gap: '1rem'
       }}>
-        {/* Top Sync & Status Bar */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '-0.35rem -0.5rem 0 0' }}>
-          {isSuperAdminMode ? (
-            <button
-              type="button"
-              onClick={() => { setIsSuperAdminMode(false); setErrorMsg(''); }}
-              style={{
-                background: 'rgba(255,255,255,0.08)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                color: '#cbd5e1',
-                padding: '3px 10px',
-                borderRadius: '16px',
-                fontSize: '0.74rem',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              ← सामान्य पुलिस पोर्टल
-            </button>
-          ) : (
-            <span style={{ fontSize: '0.72rem', color: 'var(--khaki-primary)', fontWeight: 600 }}>
-              👮 U.P. POLICE OFFICIAL
-            </span>
-          )}
-
-          {onOpenFirebaseSetup && (
-            <button
-              type="button"
-              onClick={onOpenFirebaseSetup}
-              style={{
-                background: isFirebaseConnected ? 'rgba(16,185,129,0.15)' : 'rgba(196,151,86,0.15)',
-                border: isFirebaseConnected ? '1px solid #10b981' : '1px solid var(--khaki-primary, #c49756)',
-                color: isFirebaseConnected ? '#34d399' : 'var(--khaki-light, #dfb97e)',
-                padding: '3px 8px',
-                borderRadius: '16px',
-                fontSize: '0.72rem',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              <Cloud size={12} />
-              <span>{isFirebaseConnected ? 'क्लाउड लाइव चैट' : 'क्लाउड सिंक'}</span>
-            </button>
-          )}
-        </div>
-
-        {/* Police Branding Header */}
-        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.45rem' }}>
-          <div style={{
-            height: '3px',
-            width: '60px',
-            background: 'linear-gradient(90deg, #991b1b 50%, #1e3a8a 50%)',
-            borderRadius: '2px',
-            marginBottom: '2px'
-          }} />
-
-          <div className="police-badge-icon" style={{ 
-            width: '54px', 
-            height: '54px', 
-            background: isSuperAdminMode ? 'linear-gradient(145deg, #7f1d1d, #1e1b4b)' : 'linear-gradient(145deg, #162c5b, #0b1a30)',
-            border: isSuperAdminMode ? '2px solid #ef4444' : '2px solid var(--khaki-primary, #c49756)',
-            boxShadow: isSuperAdminMode ? '0 0 15px rgba(239, 68, 68, 0.4)' : '0 0 15px rgba(196, 151, 86, 0.35)'
-          }}>
-            {isSuperAdminMode ? (
-              <KeyRound size={26} color="#fca5a5" />
-            ) : (
-              <Shield size={28} color="var(--khaki-light, #dfb97e)" />
-            )}
-          </div>
-          
-          <div>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-bright, #fff)' }}>
-              {isSuperAdminMode ? 'पुलिस महानिदेशक मुख्यालय (Super Admin)' : 'उत्तर प्रदेश पुलिस संपर्क पोर्टल'}
-            </h1>
-            <p style={{ fontSize: '0.8rem', color: isSuperAdminMode ? '#fca5a5' : 'var(--khaki-light, #dfb97e)', marginTop: '1px' }}>
-              {isSuperAdminMode ? 'मुख्यालय स्तर मास्टर प्रशासनिक नियंत्रण कक्ष' : 'आधिकारिक निर्देशिका एवं कॉलर ऐप • विभागीय लॉगिन'}
-            </p>
-          </div>
-
-          <div style={{ 
-            background: isSuperAdminMode ? 'rgba(239,68,68,0.1)' : 'rgba(196,151,86,0.1)', 
-            border: isSuperAdminMode ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(196,151,86,0.3)', 
-            borderRadius: '6px', 
-            padding: '4px 10px', 
-            fontSize: '0.74rem', 
-            color: isSuperAdminMode ? '#fca5a5' : 'var(--khaki-light, #dfb97e)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px'
-          }}>
-            <Lock size={12} color={isSuperAdminMode ? '#ef4444' : 'var(--khaki-primary, #c49756)'} />
-            <span>
-              {isSuperAdminMode ? 'अत्यंत गोपनीय: केवल अधिकृत Super Admin मास्टर पासवर्ड से प्रवेश मान्य।' : 'गोपनीय शासकीय पोर्टल: केवल अधिकृत पुलिस कार्मिकों के उपयोग हेतु।'}
-            </span>
-          </div>
-        </div>
-
-        {/* ----------------- DEDICATED SUPER ADMIN PORTAL VIEW ----------------- */}
+        {/* ----------------- SUPER ADMIN OR CLEAN REGULAR MODES ----------------- */}
         {isSuperAdminMode ? (
-          <form onSubmit={handleSuperAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            <div style={{ background: 'rgba(153, 27, 27, 0.25)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.65rem 0.75rem', borderRadius: '6px', fontSize: '0.78rem', color: '#fca5a5' }}>
-              👑 <strong>Super Admin Master Access:</strong> समस्त जनपदों, Co-Admins, मास्टर सेटिंग्स और यूज़र्स का पूर्ण प्रशासनिक नियंत्रण।
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => { setIsSuperAdminMode(false); setErrorMsg(''); }}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#cbd5e1',
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  fontSize: '0.74rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                ← वापस सामान्य लॉगिन पर जाएं
+              </button>
+              <span style={{ fontSize: '0.8rem', color: '#fca5a5', fontWeight: 700 }}>
+                👑 Super Admin
+              </span>
             </div>
 
-            {errorMsg && (
-              <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red, #ef4444)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
-                {errorMsg}
+            <form onSubmit={handleSuperAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ background: 'rgba(153, 27, 27, 0.25)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.65rem 0.75rem', borderRadius: '6px', fontSize: '0.78rem', color: '#fca5a5' }}>
+                👑 <strong>Super Admin Master Access:</strong> समस्त जनपदों, Co-Admins, मास्टर सेटिंग्स और यूज़र्स का पूर्ण प्रशासनिक नियंत्रण।
               </div>
-            )}
 
-            <div className="form-group">
-              <label className="form-label">Master Admin PIN</label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder="••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                autoFocus
-                required
-                style={{ textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25em' }}
-              />
-            </div>
+              {errorMsg && (
+                <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red, #ef4444)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
+                  {errorMsg}
+                </div>
+              )}
 
-            {/* Mandatory Policy Agreement for Super Admin */}
-            {renderTermsAgreementBox(adminTermsAgreed, setAdminTermsAgreed, showAdminTermsInline, setShowAdminTermsInline)}
+              <div className="form-group">
+                <label className="form-label">Master Admin PIN</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  placeholder="••••"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoFocus
+                  required
+                  style={{ textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25em' }}
+                />
+              </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem', background: 'linear-gradient(135deg, #991b1b, #b91c1c)' }}>
-              <KeyRound size={15} />
-              Super Admin लॉगिन
-            </button>
+              {/* Mandatory Policy Agreement for Super Admin */}
+              {renderTermsAgreementBox(adminTermsAgreed, setAdminTermsAgreed, showAdminTermsInline, setShowAdminTermsInline)}
 
-            <button 
-              type="button" 
-              onClick={() => { setIsSuperAdminMode(false); setErrorMsg(''); }}
-              style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline', marginTop: '0.2rem' }}
-            >
-              ← वापस सामान्य पोर्टल पर जाएं
-            </button>
-          </form>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.2rem', background: 'linear-gradient(135deg, #991b1b, #b91c1c)' }}>
+                <KeyRound size={15} />
+                Super Admin लॉगिन
+              </button>
+            </form>
+          </div>
         ) : (
           /* ----------------- REGULAR PUBLIC LOGIN / REGISTRATION MODES ----------------- */
           <>
-            {/* MOBILE-RESPONSIVE MODE SWITCHER (POPUP MENU BUTTON) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim, #94a3b8)', fontWeight: 600 }}>
-                प्रवेश विकल्प चुनें (Tap to Switch Login Mode):
-              </div>
-              
+            {/* CLEAN 3-TAB SELECTOR (REPLACES BULKY BRANDING & SELECTORS) */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '0.45rem',
+              marginBottom: '0.35rem'
+            }}>
               <button
                 type="button"
-                onClick={() => setShowModePopup(true)}
+                onClick={() => { setActiveTab('user_login'); setErrorMsg(''); setRegSuccess(false); }}
                 style={{
-                  width: '100%',
-                  background: 'linear-gradient(135deg, rgba(22,44,91,0.85), rgba(11,26,48,0.95))',
-                  border: '2px solid var(--khaki-primary, #c49756)',
-                  borderRadius: '10px',
-                  padding: '0.65rem 0.9rem',
+                  padding: '8px 4px',
+                  fontSize: '0.78rem',
+                  fontWeight: activeTab === 'user_login' ? 700 : 500,
+                  borderRadius: '8px',
+                  border: activeTab === 'user_login' ? '1.5px solid var(--khaki-primary, #c49756)' : '1px solid rgba(255,255,255,0.1)',
+                  background: activeTab === 'user_login' ? 'linear-gradient(135deg, rgba(196,151,86,0.3), rgba(196,151,86,0.1))' : 'rgba(255,255,255,0.03)',
+                  color: activeTab === 'user_login' ? '#fef08a' : '#94a3b8',
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
-                  transition: 'all 0.2s ease'
+                  justifyContent: 'center',
+                  gap: '5px',
+                  transition: 'all 0.15s ease'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '9px', textAlign: 'left' }}>
-                  <div style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '8px',
-                    background: 'rgba(196, 151, 86, 0.2)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
-                  }}>
-                    {activeTab === 'user_login' && <User size={18} color="var(--khaki-light)" />}
-                    {activeTab === 'register' && <UserPlus size={18} color="var(--khaki-light)" />}
-                    {activeTab === 'co_admin' && <Building size={18} color="var(--khaki-light)" />}
-                  </div>
-                  <div>
-                    <div style={{ color: '#fff', fontSize: '0.88rem', fontWeight: 700 }}>
-                      {activeTab === 'user_login' && 'कर्मचारी लॉगिन'}
-                      {activeTab === 'register' && 'नया स्व-पंजीकरण'}
-                      {activeTab === 'co_admin' && 'ज़िला Co-Admin पोर्टल'}
-                    </div>
-                    <div style={{ color: 'var(--khaki-light, #dfb97e)', fontSize: '0.72rem' }}>
-                      {activeTab === 'user_login' && 'विभागीय पुलिस कार्मिक लॉगिन'}
-                      {activeTab === 'register' && 'नवीन पुलिस कर्मचारी खाता आवेदन'}
-                      {activeTab === 'co_admin' && 'जनपद नोडल अधिकारी प्रवेश'}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{
-                  background: 'var(--khaki-primary, #c49756)',
-                  color: '#0f172a',
-                  padding: '4px 10px',
-                  borderRadius: '16px',
-                  fontSize: '0.74rem',
-                  fontWeight: 800,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
-                  <span>बदलें</span>
-                  <ChevronDown size={14} />
-                </div>
+                <User size={14} />
+                <span>कर्मचारी</span>
               </button>
 
-              {/* Quick Tab Pills for Tablet / Desktop */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '0.35rem',
-                marginTop: '0.2rem'
-              }}>
-                <button
-                  type="button"
-                  onClick={() => { setActiveTab('user_login'); setErrorMsg(''); setRegSuccess(false); }}
-                  style={{
-                    padding: '6px 4px',
-                    fontSize: '0.75rem',
-                    fontWeight: activeTab === 'user_login' ? 700 : 500,
-                    borderRadius: '6px',
-                    border: activeTab === 'user_login' ? '1px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
-                    background: activeTab === 'user_login' ? 'rgba(196,151,86,0.2)' : 'rgba(0,0,0,0.2)',
-                    color: activeTab === 'user_login' ? '#fff' : '#94a3b8',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <User size={12} />
-                  <span>कर्मचारी</span>
-                </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('register'); setErrorMsg(''); setRegSuccess(false); }}
+                style={{
+                  padding: '8px 4px',
+                  fontSize: '0.78rem',
+                  fontWeight: activeTab === 'register' ? 700 : 500,
+                  borderRadius: '8px',
+                  border: activeTab === 'register' ? '1.5px solid var(--khaki-primary, #c49756)' : '1px solid rgba(255,255,255,0.1)',
+                  background: activeTab === 'register' ? 'linear-gradient(135deg, rgba(196,151,86,0.3), rgba(196,151,86,0.1))' : 'rgba(255,255,255,0.03)',
+                  color: activeTab === 'register' ? '#fef08a' : '#94a3b8',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '5px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <UserPlus size={14} />
+                <span>पंजीकरण</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => { setActiveTab('register'); setErrorMsg(''); setRegSuccess(false); }}
-                  style={{
-                    padding: '6px 4px',
-                    fontSize: '0.75rem',
-                    fontWeight: activeTab === 'register' ? 700 : 500,
-                    borderRadius: '6px',
-                    border: activeTab === 'register' ? '1px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
-                    background: activeTab === 'register' ? 'rgba(196,151,86,0.2)' : 'rgba(0,0,0,0.2)',
-                    color: activeTab === 'register' ? '#fff' : '#94a3b8',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <UserPlus size={12} />
-                  <span>पंजीकरण</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setActiveTab('co_admin'); setErrorMsg(''); setRegSuccess(false); }}
-                  style={{
-                    padding: '6px 4px',
-                    fontSize: '0.75rem',
-                    fontWeight: activeTab === 'co_admin' ? 700 : 500,
-                    borderRadius: '6px',
-                    border: activeTab === 'co_admin' ? '1px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
-                    background: activeTab === 'co_admin' ? 'rgba(196,151,86,0.2)' : 'rgba(0,0,0,0.2)',
-                    color: activeTab === 'co_admin' ? '#fff' : '#94a3b8',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <Building size={12} />
-                  <span>Co-Admin</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('co_admin'); setErrorMsg(''); setRegSuccess(false); }}
+                style={{
+                  padding: '8px 4px',
+                  fontSize: '0.78rem',
+                  fontWeight: activeTab === 'co_admin' ? 700 : 500,
+                  borderRadius: '8px',
+                  border: activeTab === 'co_admin' ? '1.5px solid var(--khaki-primary, #c49756)' : '1px solid rgba(255,255,255,0.1)',
+                  background: activeTab === 'co_admin' ? 'linear-gradient(135deg, rgba(196,151,86,0.3), rgba(196,151,86,0.1))' : 'rgba(255,255,255,0.03)',
+                  color: activeTab === 'co_admin' ? '#fef08a' : '#94a3b8',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '5px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Building size={14} />
+                <span>Co-Admin</span>
+              </button>
             </div>
 
-            {/* POPUP MODAL SELECTOR FOR MOBILE USERS */}
-            {showModePopup && (
-              <div 
-                className="modal-overlay" 
-                onClick={() => setShowModePopup(false)}
-                style={{ zIndex: 9999 }}
-              >
-                <div 
-                  className="modal-content" 
-                  onClick={e => e.stopPropagation()}
-                  style={{ maxWidth: '420px', padding: '1.25rem' }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Shield size={20} color="var(--khaki-primary)" />
-                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', margin: 0 }}>
-                        प्रवेश विकल्प चुनें (Select Mode)
-                      </h3>
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={() => setShowModePopup(false)}
-                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-                    >
-                      <X size={20} />
-                    </button>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                    {/* Option 1: Employee Login */}
-                    <div
-                      onClick={() => {
-                        setActiveTab('user_login');
-                        setErrorMsg('');
-                        setRegSuccess(false);
-                        setShowModePopup(false);
-                      }}
-                      style={{
-                        padding: '0.85rem',
-                        borderRadius: '8px',
-                        border: activeTab === 'user_login' ? '2px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
-                        background: activeTab === 'user_login' ? 'rgba(196,151,86,0.15)' : 'rgba(15,23,42,0.6)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <User size={18} color="#60a5fa" />
-                        </div>
-                        <div>
-                          <div style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
-                            कर्मचारी लॉगिन
-                          </div>
-                          <div style={{ color: '#94a3b8', fontSize: '0.74rem' }}>
-                            विभागीय पीएनओ / मोबाइल नंबर से प्रवेश
-                          </div>
-                        </div>
-                      </div>
-                      <ChevronRight size={18} color="var(--khaki-primary)" />
-                    </div>
-
-                    {/* Option 2: Self Registration */}
-                    <div
-                      onClick={() => {
-                        setActiveTab('register');
-                        setErrorMsg('');
-                        setRegSuccess(false);
-                        setShowModePopup(false);
-                      }}
-                      style={{
-                        padding: '0.85rem',
-                        borderRadius: '8px',
-                        border: activeTab === 'register' ? '2px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
-                        background: activeTab === 'register' ? 'rgba(196,151,86,0.15)' : 'rgba(15,23,42,0.6)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(16,185,129,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <UserPlus size={18} color="#34d399" />
-                        </div>
-                        <div>
-                          <div style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
-                            नया स्व-पंजीकरण
-                          </div>
-                          <div style={{ color: '#94a3b8', fontSize: '0.74rem' }}>
-                            नवीन पुलिस कर्मचारी खाता आवेदन (फोटो अनिवार्य)
-                          </div>
-                        </div>
-                      </div>
-                      <ChevronRight size={18} color="var(--khaki-primary)" />
-                    </div>
-
-                    {/* Option 3: Co-Admin Login */}
-                    <div
-                      onClick={() => {
-                        setActiveTab('co_admin');
-                        setErrorMsg('');
-                        setRegSuccess(false);
-                        setShowModePopup(false);
-                      }}
-                      style={{
-                        padding: '0.85rem',
-                        borderRadius: '8px',
-                        border: activeTab === 'co_admin' ? '2px solid var(--khaki-primary)' : '1px solid rgba(255,255,255,0.1)',
-                        background: activeTab === 'co_admin' ? 'rgba(196,151,86,0.15)' : 'rgba(15,23,42,0.6)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(245,158,11,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Building size={18} color="#fbbf24" />
-                        </div>
-                        <div>
-                          <div style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
-                            ज़िला Co-Admin लॉगिन
-                          </div>
-                          <div style={{ color: '#94a3b8', fontSize: '0.74rem' }}>
-                            जनपद नोडल अधिकारी अधिकृत प्रबंधन
-                          </div>
-                        </div>
-                      </div>
-                      <ChevronRight size={18} color="var(--khaki-primary)" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {errorMsg && (
               <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger-red, #ef4444)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>

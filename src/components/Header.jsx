@@ -10,8 +10,6 @@ export default function Header({
   pendingCount = 0, 
   notifCount = 0, 
   chatsCount = 0, 
-  isFirebaseConnected = false, 
-  onOpenFirebaseSetup, 
   onOpenLogin, 
   onOpenRegister, 
   onOpenAdmin, 

@@ -3,7 +3,7 @@ import {
   X, Lock, Unlock, FileSpreadsheet, Download, Upload, CheckCircle, 
   XCircle, Edit3, Trash2, Clock, Users, Shield, KeyRound, Plus, 
   ShieldCheck, Settings, Power, UserCheck, Award, Building2, MapPin,
-  FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe
+  FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe, Cloud, Database
 } from 'lucide-react';
 import { 
   downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS,
@@ -14,6 +14,7 @@ import {
   getStoredPolicies, DEFAULT_POLICIES, addCustomPolicy,
   editPolicyItem, deleteCustomPolicyItem
 } from '../utils/storage';
+import { syncAllContactsToFirestore } from '../utils/firebase';
 import { validateFileSize } from '../utils/imageCompressor';
 
 export default function AdminPanel({ 
@@ -56,7 +57,9 @@ export default function AdminPanel({
   onDeleteDistrict,
   onForwardDistrictTransfer,
   onApproveDistrictTransfer,
-  onRejectDistrictTransfer
+  onRejectDistrictTransfer,
+  isFirebaseConnected = false,
+  onOpenFirebaseSetup
 }) {
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
@@ -550,13 +553,28 @@ export default function AdminPanel({
             </button>
 
             {isAdmin && (
-              <button 
-                className={`admin-tab ${activeTab === '2fa_settings' ? 'active' : ''}`}
-                onClick={() => setActiveTab('2fa_settings')}
-              >
-                <KeyRound size={16} />
-                मास्टर सुरक्षा & पिन
-              </button>
+              <>
+                <button 
+                  className={`admin-tab ${activeTab === '2fa_settings' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('2fa_settings')}
+                >
+                  <KeyRound size={16} />
+                  मास्टर सुरक्षा & पिन
+                </button>
+
+                <button 
+                  className={`admin-tab ${activeTab === 'cloud_chat' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('cloud_chat')}
+                >
+                  <Cloud size={16} />
+                  क्लाउड लाइव चैट (Firebase)
+                  {isFirebaseConnected && (
+                    <span className="tab-badge" style={{ background: '#10b981', color: '#fff', fontSize: '0.62rem', padding: '1px 5px', borderRadius: '4px' }}>
+                      सक्रिय
+                    </span>
+                  )}
+                </button>
+              </>
             )}
           </div>
 
@@ -2509,6 +2527,151 @@ export default function AdminPanel({
                 >
                   सुरक्षा पिन सहेजें (Save PIN)
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: CLOUD LIVE CHAT (Super Admin Only) */}
+          {isAdmin && activeTab === 'cloud_chat' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '720px' }}>
+              {/* Header Info Banner */}
+              <div style={{
+                background: 'rgba(30, 58, 138, 0.25)',
+                border: '1px solid var(--khaki-primary, #c49756)',
+                padding: '1rem',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div>
+                  <h4 style={{ margin: 0, color: 'var(--khaki-light, #dfb97e)', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Cloud size={20} color={isFirebaseConnected ? '#34d399' : 'var(--khaki-primary)'} />
+                    <span>Google Firebase क्लाउड लाइव चैट नियंत्रण</span>
+                  </h4>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: '#cbd5e1' }}>
+                    विभागीय चैट, समूह संदेश एवं डेटा सिंक प्रबंधन (केवल Super Admin के नियंत्रण हेतु)।
+                  </p>
+                </div>
+
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '5px 12px',
+                  borderRadius: '20px',
+                  background: isFirebaseConnected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  border: isFirebaseConnected ? '1px solid #10b981' : '1px solid #ef4444',
+                  color: isFirebaseConnected ? '#34d399' : '#fca5a5',
+                  fontSize: '0.78rem',
+                  fontWeight: 700
+                }}>
+                  <span style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: isFirebaseConnected ? '#10b981' : '#ef4444'
+                  }} />
+                  <span>{isFirebaseConnected ? 'क्लाउड लाइव चैट सक्रिय (Connected)' : 'क्लाउड सिंक निष्क्रिय (Offline)'}</span>
+                </div>
+              </div>
+
+              {/* Action Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                {/* Setup Modal Trigger */}
+                <div style={{
+                  background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '10px',
+                  padding: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem'
+                }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--khaki-light)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Settings size={16} />
+                    <span>Firebase प्रोजेक्ट व कुंजियां</span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
+                    Google Firebase Firestore क्रेडेंशियल्स (API Key, Project ID, App ID) कॉन्फ़िगर करें अथवा बदलें।
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onOpenFirebaseSetup}
+                    style={{
+                      background: 'linear-gradient(135deg, #1e40af, #1d4ed8)',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '8px 14px',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      marginTop: 'auto'
+                    }}
+                  >
+                    <Cloud size={15} />
+                    <span>क्लाउड लाइव चैट सेटअप खोलें</span>
+                  </button>
+                </div>
+
+                {/* Sync Directory to Cloud */}
+                <div style={{
+                  background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '10px',
+                  padding: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem'
+                }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--khaki-light)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Database size={16} />
+                    <span>समस्त डायरेक्टरी डेटाबेस सिंक</span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
+                    समस्त विभागीय पुलिस संपर्कों को सीधे Google Firebase Firestore पर सिंक करें ताकि सभी अधिकृत यूज़र्स तक डेटा पहुंचे।
+                  </p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!isFirebaseConnected) {
+                        alert('कृपया पहले Firebase सेटअप पूरा करें!');
+                        return;
+                      }
+                      try {
+                        await syncAllContactsToFirestore(contacts);
+                        alert('🎉 समस्त पुलिस संपर्क Google Firebase क्लाउड पर सफलतापूर्वक सिंक हो गए!');
+                      } catch (err) {
+                        alert('सिंक विफल: ' + err.message);
+                      }
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #15803d, #166534)',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '8px 14px',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      marginTop: 'auto'
+                    }}
+                  >
+                    <RefreshCw size={15} />
+                    <span>क्लाउड पर तुरंत सिंक करें</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

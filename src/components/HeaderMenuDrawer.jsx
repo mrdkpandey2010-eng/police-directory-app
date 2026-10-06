@@ -13,14 +13,12 @@ export default function HeaderMenuDrawer({
   pendingCount = 0,
   notifCount = 0,
   chatsCount = 0,
-  isFirebaseConnected = false,
   policies = DEFAULT_POLICIES,
   onOpenProfile,
   onOpenAdmin,
   onOpenChat,
   onOpenNotifications,
   onOpenFeedback,
-  onOpenFirebaseSetup,
   onOpenPolicy,
   onLogout,
   onOpenLogin,
@@ -250,20 +248,6 @@ export default function HeaderMenuDrawer({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <HardDrive size={16} color="var(--khaki-light)" />
                       <span>तुरंत 6-घंटे बैकअप तैयार करें</span>
-                    </div>
-                    <ChevronRight size={14} color="#64748b" />
-                  </button>
-                )}
-
-                {onOpenFirebaseSetup && (
-                  <button
-                    type="button"
-                    onClick={() => handleAction(onOpenFirebaseSetup)}
-                    style={menuItemStyle}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Cloud size={16} color={isFirebaseConnected ? '#34d399' : 'var(--khaki-light)'} />
-                      <span>{isFirebaseConnected ? 'Firebase लाइव क्लाउड (सक्रिय)' : 'Firebase सेटअप'}</span>
                     </div>
                     <ChevronRight size={14} color="#64748b" />
                   </button>

@@ -1210,8 +1210,6 @@ export default function App() {
         <AuthGateway
           onLoginSuccess={handleLoginSuccess}
           onRegisterSubmit={handleRegistrationSubmit}
-          onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
-          isFirebaseConnected={isFirebaseConnected}
           contacts={contacts}
           coAdmins={coAdmins}
           posts={posts}
@@ -1221,28 +1219,13 @@ export default function App() {
           onOpenPolicy={handleOpenPolicy}
         />
 
-        {/* Policy Details & Setup Modals (Lazy) */}
+        {/* Policy Details Modals (Lazy) */}
         <Suspense fallback={null}>
           <PolicyModal
             isOpen={isPolicyModalOpen}
             activePolicy={activePolicyType}
             policies={policies}
             onClose={() => setIsPolicyModalOpen(false)}
-          />
-
-          {/* Google Firebase Cloud Live Chat Setup Modal (Accessible on Login Screen) */}
-          <FirebaseSetupModal
-            isOpen={isFirebaseSetupOpen}
-            onClose={() => {
-              setIsFirebaseSetupOpen(false);
-              setIsFirebaseConnected(isFirebaseConfigured());
-            }}
-            currentUser={currentUser}
-            currentChats={chats}
-            onSyncSuccess={() => {
-              setIsFirebaseConnected(isFirebaseConfigured());
-              showToast('🎉 Google Firebase लाइव चैट क्लाउड सक्रिय!');
-            }}
           />
         </Suspense>
       </div>
@@ -1620,6 +1603,8 @@ export default function App() {
         onAddDistrict={handleAddDistrict}
         onEditDistrict={handleEditDistrict}
         onDeleteDistrict={handleDeleteDistrict}
+        isFirebaseConnected={isFirebaseConnected}
+        onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
       />
 
       {/* Notifications Modal */}
@@ -1706,13 +1691,11 @@ export default function App() {
         pendingCount={pendingCount}
         notifCount={notifications.length}
         chatsCount={unreadMessagesCount}
-        isFirebaseConnected={isFirebaseConnected}
         onOpenProfile={() => setIsProfileModalOpen(true)}
         onOpenAdmin={handleOpenAdminPanel}
         onOpenChat={() => setIsChatModalOpen(true)}
         onOpenNotifications={() => setIsNotifsModalOpen(true)}
         onOpenFeedback={() => setIsFeedbackModalOpen(true)}
-        onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
         onOpenPolicy={handleOpenPolicy}
         onLogout={handleLogout}
         onOpenLogin={() => setIsLoginModalOpen(true)}
