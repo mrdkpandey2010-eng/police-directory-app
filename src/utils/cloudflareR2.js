@@ -11,8 +11,7 @@ const CLOUDFLARE_CONFIG_KEY = 'police_cloudflare_config_v1';
 
 // Default configuration (can be updated via Admin Panel / Cloudflare Setup Modal)
 const DEFAULT_CLOUDFLARE_CONFIG = {
-  // Can be a Cloudflare Worker URL or public R2 domain
-  workerUrl: import.meta.env.VITE_CLOUDFLARE_WORKER_URL || 'https://police-directory-r2-api.workers.dev',
+  workerUrl: import.meta.env.VITE_CLOUDFLARE_WORKER_URL || 'https://police-directory-cloud-api.police-directory-app.workers.dev',
   adminApiKey: import.meta.env.VITE_CLOUDFLARE_API_KEY || 'police_admin_2026',
   bucketName: 'police-directory-bucket'
 };

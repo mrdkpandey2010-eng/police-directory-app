@@ -1,12 +1,10 @@
-name = "police-directory-r2-api"
+name = "police-directory-cloud-api"
 main = "cloudflare-worker/worker.js"
 compatibility_date = "2024-04-01"
 
-# Cloudflare R2 Bucket Binding
-# Replace "police-directory-bucket" with your actual R2 bucket name
-[[r2_buckets]]
-binding = "BUCKET"
-bucket_name = "police-directory-bucket"
+[[kv_namespaces]]
+binding = "POLICE_KV"
+id = "a0a531a02cc04d62a4f0bc375138a354"
 
 [vars]
 ADMIN_API_KEY = "police_admin_2026"
