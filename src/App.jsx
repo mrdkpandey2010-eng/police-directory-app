@@ -8,9 +8,11 @@ import MobileBottomNav from './components/MobileBottomNav';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { initNativeApp, setupHardwareBackButton } from './utils/nativeBridge';
 
+import AdminPanel from './components/AdminPanel';
+import ErrorBoundary from './components/ErrorBoundary';
+
 // Dynamic / Lazy-loaded heavy modal dialogs for 60%+ smaller bundle & fast load speed
 const RegistrationModal = lazy(() => import('./components/RegistrationModal'));
-const AdminPanel = lazy(() => import('./components/AdminPanel'));
 const EditContactModal = lazy(() => import('./components/EditContactModal'));
 const LoginModal = lazy(() => import('./components/LoginModal'));
 const UserProfileModal = lazy(() => import('./components/UserProfileModal'));
@@ -1701,7 +1703,8 @@ export default function App() {
       <TermsFooter />
 
       {/* Lazy-Loaded Modals Section */}
-      <Suspense fallback={null}>
+      <ErrorBoundary fallbackTitle="मॉड्यूल लोड करने में समस्या आई">
+        <Suspense fallback={null}>
         {/* Police Message Box & Group Messaging Modal */}
         <MessageBoxModal
         isOpen={isChatModalOpen}
@@ -1724,7 +1727,7 @@ export default function App() {
         onMarkChatAsRead={handleMarkChatAsRead}
       />
 
-      {/* Google Firebase Cloud Live Chat Setup Modal */}
+      {/* Cloudflare R2 Cloud Setup Modal */}
       <FirebaseSetupModal
         isOpen={isFirebaseSetupOpen}
         onClose={() => {
@@ -1735,7 +1738,7 @@ export default function App() {
         currentChats={chats}
         onSyncSuccess={() => {
           setIsFirebaseConnected(isFirebaseConfigured());
-          showToast('🎉 Google Firebase लाइव चैट क्लाउड सक्रिय!');
+          showToast('🎉 Cloudflare R2 लाइव सिंक सक्रिय!');
         }}
       />
 
@@ -1773,52 +1776,54 @@ export default function App() {
       />
 
       {/* Admin / Co-Admin Control Portal */}
-      <AdminPanel
-        isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
-        contacts={contacts}
-        currentUser={currentUser}
-        coAdmins={coAdmins}
-        posts={posts}
-        offices={offices}
-        districts={districts}
-        terms={terms}
-        onSaveTerms={handleSaveTerms}
-        policies={policies}
-        onAddPolicy={handleAddPolicy}
-        onEditPolicy={handleEditPolicy}
-        onDeletePolicy={handleDeletePolicy}
-        onApprove={handleApproveContact}
-        onReject={handleRejectContact}
-        onEditContact={handleStartEdit}
-        onToggleBlock={handleToggleBlock}
-        onToggleUserActive={handleToggleUserActive}
-        onDeleteContact={handleDeleteContact}
-        onContactsImported={handleContactsImported}
-        onResetPassword={handleResetPassword}
-        onAddCoAdmin={handleAddCoAdmin}
-        onDeleteCoAdmin={handleDeleteCoAdmin}
-        onToggleCoAdminActive={handleToggleCoAdminActive}
-        onPromoteUserToCoAdmin={handlePromoteUserToCoAdmin}
-        onRevokeCoAdmin={handleRevokeCoAdmin}
-        onForwardDistrictTransfer={handleForwardDistrictTransfer}
-        onApproveDistrictTransfer={handleApproveDistrictTransfer}
-        onRejectDistrictTransfer={handleRejectDistrictTransfer}
-        onAddPost={handleAddPost}
-        onEditPost={handleEditPost}
-        onDeletePost={handleDeletePost}
-        onAddOffice={handleAddOffice}
-        onEditOffice={handleEditOffice}
-        onDeleteOffice={handleDeleteOffice}
-        onAddDistrict={handleAddDistrict}
-        onEditDistrict={handleEditDistrict}
-        onDeleteDistrict={handleDeleteDistrict}
-        onLoadAllDistricts={handleLoadAllDistricts}
-        onLoadStandardPosts={handleLoadStandardPosts}
-        onResetMasterData={handleResetMasterData}
-        isFirebaseConnected={isFirebaseConnected}
-        onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
-      />
+      <ErrorBoundary fallbackTitle="एडमिन नियंत्रण कक्ष लोड करने में समस्या आई">
+        <AdminPanel
+          isOpen={isAdminModalOpen}
+          onClose={() => setIsAdminModalOpen(false)}
+          contacts={contacts}
+          currentUser={currentUser}
+          coAdmins={coAdmins}
+          posts={posts}
+          offices={offices}
+          districts={districts}
+          terms={terms}
+          onSaveTerms={handleSaveTerms}
+          policies={policies}
+          onAddPolicy={handleAddPolicy}
+          onEditPolicy={handleEditPolicy}
+          onDeletePolicy={handleDeletePolicy}
+          onApprove={handleApproveContact}
+          onReject={handleRejectContact}
+          onEditContact={handleStartEdit}
+          onToggleBlock={handleToggleBlock}
+          onToggleUserActive={handleToggleUserActive}
+          onDeleteContact={handleDeleteContact}
+          onContactsImported={handleContactsImported}
+          onResetPassword={handleResetPassword}
+          onAddCoAdmin={handleAddCoAdmin}
+          onDeleteCoAdmin={handleDeleteCoAdmin}
+          onToggleCoAdminActive={handleToggleCoAdminActive}
+          onPromoteUserToCoAdmin={handlePromoteUserToCoAdmin}
+          onRevokeCoAdmin={handleRevokeCoAdmin}
+          onForwardDistrictTransfer={handleForwardDistrictTransfer}
+          onApproveDistrictTransfer={handleApproveDistrictTransfer}
+          onRejectDistrictTransfer={handleRejectDistrictTransfer}
+          onAddPost={handleAddPost}
+          onEditPost={handleEditPost}
+          onDeletePost={handleDeletePost}
+          onAddOffice={handleAddOffice}
+          onEditOffice={handleEditOffice}
+          onDeleteOffice={handleDeleteOffice}
+          onAddDistrict={handleAddDistrict}
+          onEditDistrict={handleEditDistrict}
+          onDeleteDistrict={handleDeleteDistrict}
+          onLoadAllDistricts={handleLoadAllDistricts}
+          onLoadStandardPosts={handleLoadStandardPosts}
+          onResetMasterData={handleResetMasterData}
+          isFirebaseConnected={isFirebaseConnected}
+          onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
+        />
+      </ErrorBoundary>
 
       {/* Notifications Modal */}
       <NotificationsModal
@@ -1893,7 +1898,8 @@ export default function App() {
         onOpenAdminPolicyEdit={handleOpenAdminPanel}
         onClose={() => setIsPolicyModalOpen(false)}
       />
-      </Suspense>
+        </Suspense>
+      </ErrorBoundary>
 
       {/* Slide-over Clean Role-based Navigation Drawer */}
       <HeaderMenuDrawer

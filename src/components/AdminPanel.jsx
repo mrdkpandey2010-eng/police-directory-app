@@ -20,13 +20,13 @@ import { validateFileSize } from '../utils/imageCompressor';
 export default function AdminPanel({ 
   isOpen, 
   onClose, 
-  contacts, 
-  currentUser,
-  coAdmins,
-  posts,
-  offices,
-  districts,
-  terms,
+  contacts = [], 
+  currentUser = null,
+  coAdmins = [],
+  posts = [],
+  offices = [],
+  districts = [],
+  terms = null,
   onSaveTerms,
   policies = [],
   onAddPolicy,
@@ -265,20 +265,30 @@ export default function AdminPanel({
 
   if (!isOpen) return null;
 
-  // Filter contacts by Co-Admin district scope if Co-Admin
-  const scopedContacts = isCoAdmin 
-    ? contacts.filter(c => c.district === myDistrict)
-    : contacts;
+  // Safe arrays protecting against null/undefined in all datasets
+  const safeContacts = Array.isArray(contacts) ? contacts.filter(c => c && typeof c === 'object') : [];
+  const safeCoAdmins = Array.isArray(coAdmins) ? coAdmins.filter(ca => ca && typeof ca === 'object') : [];
+  const safeDistricts = Array.isArray(districts) ? districts : [];
+  const safePosts = Array.isArray(posts) ? posts : [];
+  const safeOffices = Array.isArray(offices) ? offices : [];
+  const safePolicies = Array.isArray(policiesList) ? policiesList : [];
+  const safeBackups = Array.isArray(backups) ? backups : [];
+  const safeCallLogs = Array.isArray(callLogs) ? callLogs : [];
+  const safePhonePermissions = Array.isArray(phonePermissions) ? phonePermissions : [];
 
-  const pendingList = scopedContacts.filter(c => c.status === 'pending');
-  const approvedList = scopedContacts.filter(c => c.status === 'approved' || c.status === 'active');
-  const inactiveList = scopedContacts.filter(c => c.status === 'inactive');
-  const blockedList = scopedContacts.filter(c => c.status === 'blocked');
+  const scopedContacts = isCoAdmin 
+    ? safeContacts.filter(c => c.district === myDistrict)
+    : safeContacts;
+
+  const pendingList = scopedContacts.filter(c => c && c.status === 'pending');
+  const approvedList = scopedContacts.filter(c => c && (c.status === 'approved' || c.status === 'active'));
+  const inactiveList = scopedContacts.filter(c => c && c.status === 'inactive');
+  const blockedList = scopedContacts.filter(c => c && c.status === 'blocked');
 
   // Pending District Transfer requests (Two-tier approval workflow)
   const transferList = isCoAdmin
-    ? scopedContacts.filter(c => c.districtTransfer && c.districtTransfer.status === 'pending_coadmin')
-    : contacts.filter(c => c.districtTransfer && (c.districtTransfer.status === 'pending_admin' || c.districtTransfer.status === 'pending_coadmin'));
+    ? scopedContacts.filter(c => c && c.districtTransfer && c.districtTransfer.status === 'pending_coadmin')
+    : safeContacts.filter(c => c && c.districtTransfer && (c.districtTransfer.status === 'pending_admin' || c.districtTransfer.status === 'pending_coadmin'));
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
@@ -473,6 +483,7 @@ export default function AdminPanel({
   };
 
   const filteredAdminContacts = scopedContacts.filter(c => {
+    if (!c) return false;
     // Status filter segmentation (active, all, inactive, blocked)
     if (adminStatusFilter === 'active') {
       const isActive = c.status === 'approved' || c.status === 'active';
@@ -568,7 +579,7 @@ export default function AdminPanel({
                   onClick={() => setActiveTab('coadmins')}
                 >
                   <ShieldCheck size={16} />
-                  Co-Admin प्रबंधन ({coAdmins.length})
+                  Co-Admin प्रबंधन ({Array.isArray(coAdmins) ? coAdmins.length : 0})
                 </button>
 
                 <button 
@@ -587,7 +598,7 @@ export default function AdminPanel({
                 onClick={() => setActiveTab('coadmin_offices')}
               >
                 <Building2 size={16} />
-                थाना / शाखा प्रबंधन ({myDistrict})
+                थाना / शाखा प्रबंधन ({myDistrict || 'ज़िला'})
               </button>
             )}
 
@@ -596,7 +607,7 @@ export default function AdminPanel({
               onClick={() => setActiveTab('terms')}
             >
               <Globe size={16} />
-              नीतियां व कस्टम लिंक्स ({policiesList.length})
+              नीतियां व कस्टम लिंक्स ({Array.isArray(policiesList) ? policiesList.length : 0})
             </button>
 
             <button 
@@ -604,7 +615,7 @@ export default function AdminPanel({
               onClick={() => setActiveTab('call_logs')}
             >
               <PhoneCall size={16} />
-              कॉल लॉग्स ({callLogs.length})
+              कॉल लॉग्स ({Array.isArray(callLogs) ? callLogs.length : 0})
             </button>
 
             <button 
@@ -612,7 +623,7 @@ export default function AdminPanel({
               onClick={() => setActiveTab('backups')}
             >
               <HardDrive size={16} />
-              6-घंटे ऑटो बैकअप ({backups.length}/5)
+              6-घंटे ऑटो बैकअप ({Array.isArray(backups) ? backups.length : 0}/5)
             </button>
 
             <button 
@@ -620,7 +631,7 @@ export default function AdminPanel({
               onClick={() => setActiveTab('phone_perms')}
             >
               <Eye size={16} />
-              नंबर अनुमति ({phonePermissions.filter(p => p.status === 'pending').length})
+              नंबर अनुमति ({Array.isArray(phonePermissions) ? phonePermissions.filter(p => p && p.status === 'pending').length : 0})
             </button>
 
             {isAdmin && (
@@ -700,7 +711,7 @@ export default function AdminPanel({
                             📞 {item.phone}
                           </div>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                            आवेदन: {new Date(item.createdAt).toLocaleDateString('hi-IN')}
+                            आवेदन: {item.createdAt ? new Date(item.createdAt).toLocaleDateString('hi-IN') : 'हाल ही में'}
                           </span>
                         </div>
                       </div>
@@ -1442,13 +1453,13 @@ export default function AdminPanel({
                     value={selectedUserIdToPromote}
                     onChange={e => {
                       setSelectedUserIdToPromote(e.target.value);
-                      const u = contacts.find(c => c.id === e.target.value);
+                      const u = safeContacts.find(c => c && c.id === e.target.value);
                       if (u) setPromoteDistrict(u.district);
                     }}
                     required
                   >
                     <option value="">-- पुलिस कर्मचारी चुनें --</option>
-                    {contacts.map(c => (
+                    {safeContacts.map(c => (
                       <option key={c.id} value={c.id}>
                         {c.name} ({c.post}, {c.district}) - {c.pno}
                       </option>
@@ -1461,10 +1472,10 @@ export default function AdminPanel({
                     value={promoteDistrict}
                     onChange={e => setPromoteDistrict(e.target.value)}
                   >
-                    {districts.filter((_, i) => i > 0).length === 0 ? (
+                    {safeDistricts.filter((_, i) => i > 0).length === 0 ? (
                       <option value="">-- कोई ज़िला नहीं --</option>
                     ) : (
-                      districts.filter((_, i) => i > 0).map((d, i) => (
+                      safeDistricts.filter((_, i) => i > 0).map((d, i) => (
                         <option key={i} value={d}>{d} ज़िला</option>
                       ))
                     )}
@@ -1480,7 +1491,7 @@ export default function AdminPanel({
               {/* Co-Admins Table */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <h4 style={{ fontSize: '1rem', color: 'var(--text-bright)', fontWeight: 700 }}>
-                  वर्तमान ज़िला Co-Admin सूची ({coAdmins.length})
+                  वर्तमान ज़िला Co-Admin सूची ({safeCoAdmins.length})
                 </h4>
                 <button className="btn btn-secondary" onClick={() => setShowAddCoAdminModal(true)}>
                   <Plus size={16} />
@@ -1502,14 +1513,14 @@ export default function AdminPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    {coAdmins.length === 0 ? (
+                    {safeCoAdmins.length === 0 ? (
                       <tr>
                         <td colSpan="7" style={{ textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8', background: 'rgba(0,0,0,0.1)' }}>
                           🛡️ कोई ज़िला Co-Admin नियुक्त नहीं है। ऊपर दिए गए '+ नया Co-Admin क्रेडेंशियल जोड़ें' बटन से नया Co-Admin नियुक्त करें।
                         </td>
                       </tr>
                     ) : (
-                      coAdmins.map(ca => {
+                      safeCoAdmins.map(ca => {
                       const isCoActive = ca.status !== 'inactive';
                       return (
                         <tr key={ca.id}>
@@ -1631,12 +1642,12 @@ export default function AdminPanel({
                   </form>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.65rem' }}>
-                    {posts.filter((_, idx) => idx > 0).length === 0 ? (
+                    {safePosts.filter((_, idx) => idx > 0).length === 0 ? (
                       <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
                         कोई पद उपलब्ध नहीं है। ऊपर दिए गए फ़ॉर्म से नया पद जोड़ें या 'मानक पद लोड करें' बटन दबाएं।
                       </div>
                     ) : (
-                      posts.filter((_, idx) => idx > 0).map((post, idx) => {
+                      safePosts.filter((_, idx) => idx > 0).map((post, idx) => {
                       const isEditing = editingPost?.oldName === post;
                       return (
                         <div 
@@ -1721,14 +1732,14 @@ export default function AdminPanel({
                         onChange={e => setOfficeFilterDistrict(e.target.value)}
                       >
                         <option value="सभी ज़िले">सभी ज़िले (All Districts)</option>
-                        {districts.filter((_, idx) => idx > 0).map((d, i) => (
+                        {safeDistricts.filter((_, idx) => idx > 0).map((d, i) => (
                           <option key={i} value={d}>{d}</option>
                         ))}
                       </select>
                     </div>
 
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
-                      कुल थाने/शाखाएं: {offices.length}
+                      कुल थाने/शाखाएं: {safeOffices.length}
                     </span>
                   </div>
 
@@ -1750,7 +1761,7 @@ export default function AdminPanel({
                       onChange={e => setNewOfficeDistrict(e.target.value)}
                       required
                     >
-                      {districts.filter((_, idx) => idx > 0).map((d, i) => (
+                      {safeDistricts.filter((_, idx) => idx > 0).map((d, i) => (
                         <option key={i} value={d}>{d}</option>
                       ))}
                     </select>
@@ -1762,12 +1773,12 @@ export default function AdminPanel({
 
                   {/* Offices Grid */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.65rem' }}>
-                    {offices.length === 0 ? (
+                    {safeOffices.length === 0 ? (
                       <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
                         कोई कार्यालय/थाना दर्ज नहीं है। ऊपर दिए गए फ़ॉर्म से नया कार्यालय जोड़ें या एक्सेल फ़ाइल से कार्मिक सूची अपलोड करें।
                       </div>
                     ) : (
-                      offices
+                      safeOffices
                         .filter(o => {
                           if (officeFilterDistrict === 'सभी ज़िले') return true;
                           return typeof o === 'object' && o.district === officeFilterDistrict;
@@ -1810,7 +1821,7 @@ export default function AdminPanel({
                                     onChange={e => setEditingOffice({ ...editingOffice, district: e.target.value })}
                                     style={{ flex: 1, padding: '0.25rem 0.5rem', fontSize: '0.78rem' }}
                                   >
-                                    {districts.filter((_, i) => i > 0).map((d, i) => (
+                                    {safeDistricts.filter((_, i) => i > 0).map((d, i) => (
                                       <option key={i} value={d}>{d}</option>
                                     ))}
                                   </select>
@@ -1891,12 +1902,12 @@ export default function AdminPanel({
                   </form>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.65rem' }}>
-                    {districts.filter((_, idx) => idx > 0).length === 0 ? (
+                    {safeDistricts.filter((_, idx) => idx > 0).length === 0 ? (
                       <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
                         कोई ज़िला दर्ज नहीं है। ऊपर दिए गए फ़ॉर्म से नया ज़िला जोड़ें या 'सभी 75 जनपद लोड करें' बटन दबाएं।
                       </div>
                     ) : (
-                      districts.filter((_, idx) => idx > 0).map((dist, idx) => {
+                      safeDistricts.filter((_, idx) => idx > 0).map((dist, idx) => {
                       const isEditing = editingDistrict?.oldName === dist;
                       return (
                         <div 
@@ -2003,7 +2014,7 @@ export default function AdminPanel({
 
               {/* List of Thanas in myDistrict */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.65rem' }}>
-                {offices
+                {safeOffices
                   .filter(o => typeof o === 'object' && o.district === myDistrict)
                   .map((officeItem, idx) => {
                     const isEditing = editingOffice?.id === officeItem.id;
@@ -3147,7 +3158,7 @@ export default function AdminPanel({
                     value={newCoAdminForm.district}
                     onChange={e => setNewCoAdminForm({ ...newCoAdminForm, district: e.target.value })}
                   >
-                    {districts.filter((_, i) => i > 0).map((d, i) => (
+                    {safeDistricts.filter((_, i) => i > 0).map((d, i) => (
                       <option key={i} value={d}>{d}</option>
                     ))}
                   </select>

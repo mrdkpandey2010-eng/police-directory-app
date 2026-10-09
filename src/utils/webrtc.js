@@ -1,7 +1,6 @@
 // In-App Peer-to-Peer Voice Calling Engine using native WebRTC & AudioContext
 import { saveCallLog, addNotification } from './storage';
-import { getFirebaseDB, addFirestoreNotification } from './firebase';
-import { collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
+import { addFirestoreNotification } from './firebase';
 
 const ICE_SERVERS = {
   iceServers: [
@@ -174,15 +173,6 @@ class InAppCallManager {
     try {
       localStorage.setItem('police_webrtc_signal_event', JSON.stringify({ ...data, _ts: Date.now() }));
     } catch (e) {}
-
-    // Also sync to Firebase Firestore if db exists
-    const db = getFirebaseDB();
-    if (db && data.callId) {
-      try {
-        const callDoc = doc(db, 'webrtc_calls', data.callId);
-        setDoc(callDoc, data, { merge: true }).catch(() => {});
-      } catch (e) {}
-    }
   }
 
   // Handle incoming signaling message
@@ -229,27 +219,6 @@ class InAppCallManager {
   // Listen for calls targeted at logged-in user
   listenForUserCalls(currentUser) {
     this.currentUser = currentUser;
-    if (!currentUser) return;
-
-    const db = getFirebaseDB();
-    if (db) {
-      if (this.firestoreUnsub) this.firestoreUnsub();
-      try {
-        const callsCol = collection(db, 'webrtc_calls');
-        this.firestoreUnsub = onSnapshot(callsCol, (snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            const data = change.doc.data();
-            if (data && data.receiverId === currentUser.id && data.status === 'calling') {
-              if (!this.activeCall) {
-                this.handleSignalMessage({ ...data, type: 'offer' });
-              }
-            } else if (data && data.callId === this.activeCall?.callId && data.status === 'ended') {
-              this.endCall(false, 'ended');
-            }
-          });
-        });
-      } catch (e) {}
-    }
   }
 
   // Start outgoing call
