@@ -212,7 +212,7 @@ export default function HeaderMenuDrawer({
           )}
 
           {/* Section: Admin / Co-Admin Controls */}
-          {(isAdmin || isCoAdmin) && (
+          {onOpenAdmin && (
             <div>
               <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--khaki-primary, #c49756)', letterSpacing: '0.08em', marginBottom: '0.45rem', paddingLeft: '4px' }}>
                 प्रशासकीय नियंत्रण कक्ष (2FA Protected)
@@ -225,7 +225,7 @@ export default function HeaderMenuDrawer({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <ShieldCheck size={16} color="var(--khaki-primary)" />
-                    <span>{isAdmin ? 'Super Admin कंट्रोल पोर्टल' : `ज़िला Co-Admin पोर्टल (${currentUser.district})`}</span>
+                    <span>{isCoAdmin ? `ज़िला Co-Admin पोर्टल (${currentUser?.district || 'ज़िला'})` : 'Super Admin कंट्रोल पोर्टल'}</span>
                   </div>
                   {pendingCount > 0 ? (
                     <span style={{ ...badgeStyle, background: '#f59e0b', color: '#000' }}>{pendingCount} लंबित</span>

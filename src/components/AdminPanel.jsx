@@ -507,8 +507,8 @@ export default function AdminPanel({
   });
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" style={{ maxWidth: '980px' }} onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay" style={{ zIndex: 100000 }} onClick={onClose}>
+      <div className="modal-content" style={{ maxWidth: '980px', zIndex: 100001 }} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

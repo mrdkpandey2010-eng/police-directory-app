@@ -155,7 +155,7 @@ export default function MobileBottomNav({
       </button>
 
       {/* 4. ADMIN CONTROL OR USER PROFILE TAB */}
-      {isAdmin ? (
+      {(isAdmin || isCoAdmin) ? (
         <button
           type="button"
           onClick={onOpenAdmin}

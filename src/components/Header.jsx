@@ -138,6 +138,43 @@ export default function Header({
             </button>
           )}
 
+          {/* Direct Admin Control Button for Admin & Co-Admin */}
+          {(isAdmin || isCoAdmin) && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={onOpenAdmin}
+              title="प्रशासकीय नियंत्रण कक्ष (Admin Control Portal)"
+              style={{
+                background: 'linear-gradient(135deg, #c49756, #8e6833)',
+                color: '#081022',
+                fontWeight: 800,
+                border: 'none',
+                padding: '0.45rem 0.85rem',
+                fontSize: '0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                borderRadius: '8px'
+              }}
+            >
+              <Shield size={14} />
+              <span>कंट्रोल</span>
+              {pendingCount > 0 && (
+                <span style={{
+                  background: '#ef4444',
+                  color: '#fff',
+                  borderRadius: '50%',
+                  padding: '1px 6px',
+                  fontSize: '0.65rem',
+                  fontWeight: 900
+                }}>
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* MAIN MODAL MENU TOGGLE BUTTON (☰ मेनु) */}
           <button 
             type="button"
