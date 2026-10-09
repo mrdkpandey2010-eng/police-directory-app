@@ -1679,13 +1679,13 @@ export const resetCoAdminPassword = (coAdminId, newPassword = '1234') => {
   return updated;
 };
 
-// ---------------- EXCEL BULK IMPORT ----------------
+// ---------------- EXCEL BULK IMPORT (MATCHED WITH REGISTRATION PAGE) ----------------
 export const importContactsFromExcel = async (file, existingContacts, districtFilter = null) => {
   const XLSX = await import('xlsx');
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
@@ -1699,32 +1699,105 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
           return;
         }
 
+        // Flexible multi-lingual header value finder
+        const getExcelValue = (row, fieldKeys) => {
+          for (const k of fieldKeys) {
+            if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+              return String(row[k]).trim();
+            }
+          }
+          const rowKeys = Object.keys(row);
+          for (const fk of fieldKeys) {
+            const cleanFk = fk.toLowerCase().replace(/[\s\-_/()\\.]/g, '');
+            for (const rk of rowKeys) {
+              const cleanRk = rk.toLowerCase().replace(/[\s\-_/()\\.]/g, '');
+              if (cleanRk === cleanFk || cleanRk.includes(cleanFk)) {
+                if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
+                  return String(row[rk]).trim();
+                }
+              }
+            }
+          }
+          return '';
+        };
+
         let updatedContacts = [...existingContacts];
         let addedCount = 0;
         let updatedCount = 0;
+        const newDistrictsSet = new Set();
+        const newPostsSet = new Set();
+        const newOfficesMap = new Map();
 
         rawRows.forEach((row, idx) => {
-          const pno = String(row['PNO'] || row['PNO Number'] || row['पीएनओ'] || row['Badge No'] || '').trim();
-          const name = String(row['Name'] || row['नाम'] || row['Officer Name'] || '').trim();
-          const post = String(row['Post'] || row['Designation'] || row['पद'] || '').trim();
-          let district = String(row['District'] || row['ज़िला'] || row['जिला'] || '').trim();
-          const office = String(row['Office'] || row['Thana'] || row['कार्यालय'] || row['थाना'] || '').trim();
-          const phone = String(row['Phone'] || row['Mobile'] || row['मोबाइल'] || row['नंबर'] || '').trim();
-          const whatsapp = String(row['WhatsApp'] || row['वॉट्सऐप'] || phone).trim();
-          const email = String(row['Email'] || row['ईमेल'] || '').trim();
-          const password = String(row['Password'] || row['पासवर्ड'] || '1234').trim();
+          const pno = getExcelValue(row, [
+            'PNO', 'PNO (पीएनओ नंबर)', 'PNO Number', 'PNO No', 'पीएनओ', 'पीएनओ नंबर', 'Badge No', 'Badge Number', 'बैज नंबर', 'PNO / पीएनओ'
+          ]);
+          const name = getExcelValue(row, [
+            'Name', 'Name (कर्मचारी का नाम)', 'Officer Name', 'Employee Name', 'नाम', 'कर्मचारी का नाम', 'अधिकारी का नाम', 'Name / नाम'
+          ]);
+          const post = getExcelValue(row, [
+            'Post', 'Post (पदनाम)', 'Designation', 'पद', 'पदनाम', 'Rank', 'रैंक', 'Post / पद'
+          ]);
+          let district = getExcelValue(row, [
+            'District', 'District (जनपद)', 'जनपद', 'ज़िला', 'जिला', 'City', 'District / जनपद'
+          ]);
+          const office = getExcelValue(row, [
+            'Office', 'Office (कार्यालय/थाना)', 'Thana', 'Police Station', 'कार्यालय', 'थाना', 'इकाई', 'कार्यालय / थाना', 'थाना/कार्यालय'
+          ]);
+          const rawPhone = getExcelValue(row, [
+            'Phone', 'Phone (मोबाइल नंबर - 10 अंक)', 'Mobile', 'Mobile Number', 'Contact', 'मोबाइल', 'मोबाइल नंबर', 'फोन', 'फोन नंबर'
+          ]);
+          const whatsapp = getExcelValue(row, [
+            'WhatsApp', 'WhatsApp (व्हाट्सएप नंबर)', 'WhatsApp Number', 'वॉट्सऐप', 'व्हाट्सएप', 'व्हाट्सएप नंबर'
+          ]);
+          const email = getExcelValue(row, [
+            'Email', 'Email (ईमेल आईडी)', 'Email ID', 'ईमेल', 'ईमेल आईडी'
+          ]);
+          const password = getExcelValue(row, [
+            'Password', 'Password (पासवर्ड)', 'Password (लॉगिन पासवर्ड)', 'पासवर्ड'
+          ]);
+          const statusStr = getExcelValue(row, [
+            'Status', 'Status (स्थिति: Approved/Pending)', 'Status (स्वीकृति स्थिति)', 'स्थिति', 'स्वीकृति स्थिति', 'स्वीकृति'
+          ]);
+          const hidePhoneStr = getExcelValue(row, [
+            'Hide_Phone', 'Hide_Phone (मोबाइल नंबर छुपाएं: No/Yes)', 'Hide Phone', 'IsPhoneHidden', 'नंबर छुपाएं', 'गोपनीय'
+          ]);
+          const remarks = getExcelValue(row, [
+            'Remarks', 'Remarks (टिप्पणी / रिमार्क्स)', 'Notes', 'RegistrationNotes', 'टिप्पणी', 'रिमार्क्स'
+          ]);
 
           if (districtFilter) {
             district = districtFilter;
           }
 
-          if (!name || !phone) {
+          if (!name || !rawPhone) {
             return;
           }
 
+          // Clean phone digits to 10 digits
+          const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10) || rawPhone;
+          const cleanWhatsapp = (whatsapp ? whatsapp.replace(/\D/g, '').slice(-10) : '') || cleanPhone;
+          const isPhoneHidden = /yes|हाँ|true|1|यस|छुप|hide/i.test(hidePhoneStr);
+          const status = /pending|लंबित|pratikhsa/i.test(statusStr) ? 'pending' : 'approved';
+
+          const finalDist = district || (districtFilter || 'लखनऊ');
+          const finalPost = post || 'आरक्षी (Constable)';
+          const finalOffice = office || 'थाना कोतवाली';
+
+          // Collect new distinct master items
+          if (finalDist && finalDist !== 'सभी ज़िले (All Districts)') {
+            newDistrictsSet.add(finalDist);
+          }
+          if (finalPost && finalPost !== 'सभी पद (All Posts)') {
+            newPostsSet.add(finalPost);
+          }
+          if (finalOffice && finalOffice !== 'सभी कार्यालय/थाने (All Offices)') {
+            newOfficesMap.set(finalOffice, finalDist);
+          }
+
           const existingIdx = updatedContacts.findIndex(c => 
-            (pno && c.pno.toLowerCase() === pno.toLowerCase()) || 
-            (c.phone === phone)
+            (pno && c.pno && c.pno.toLowerCase() === pno.toLowerCase()) || 
+            (c.phone && c.phone === cleanPhone)
           );
 
           if (existingIdx !== -1) {
@@ -1736,50 +1809,65 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
               ...updatedContacts[existingIdx],
               pno: pno || updatedContacts[existingIdx].pno,
               name: name || updatedContacts[existingIdx].name,
-              post: post || updatedContacts[existingIdx].post,
-              district: district || updatedContacts[existingIdx].district,
-              office: office || updatedContacts[existingIdx].office,
-              phone: phone || updatedContacts[existingIdx].phone,
-              whatsapp: whatsapp || updatedContacts[existingIdx].whatsapp,
+              post: finalPost || updatedContacts[existingIdx].post,
+              district: finalDist || updatedContacts[existingIdx].district,
+              office: finalOffice || updatedContacts[existingIdx].office,
+              phone: cleanPhone || updatedContacts[existingIdx].phone,
+              whatsapp: cleanWhatsapp || updatedContacts[existingIdx].whatsapp,
               email: email || updatedContacts[existingIdx].email,
-              status: 'approved'
+              password: password || updatedContacts[existingIdx].password || '1234',
+              status: status || updatedContacts[existingIdx].status || 'approved',
+              isPhoneHidden: isPhoneHidden !== undefined ? isPhoneHidden : updatedContacts[existingIdx].isPhoneHidden,
+              registrationNotes: remarks || updatedContacts[existingIdx].registrationNotes || 'एक्सेल शीट द्वारा अद्यतन',
+              updatedAt: new Date().toISOString()
             };
             updatedCount++;
           } else {
-            const finalDist = district || (districtFilter || '');
             const newCard = {
-              id: `pol-excel-${Date.now()}-${idx}`,
+              id: `pol-excel-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
               pno: pno || `PNO-${Math.floor(100000000 + Math.random() * 900000000)}`,
               name,
-              post: post || 'कर्मचारी (Staff)',
-              district: finalDist || '',
-              office: office || '',
-              phone,
-              whatsapp: whatsapp || phone,
+              post: finalPost,
+              district: finalDist,
+              office: finalOffice,
+              phone: cleanPhone,
+              whatsapp: cleanWhatsapp,
               email: email || '',
               password: password || '1234',
-              status: 'approved',
-              isRegisteredUser: false,
-              createdAt: new Date().toISOString()
+              status,
+              isPhoneHidden,
+              isRegisteredUser: true,
+              registrationNotes: remarks || 'एक्सेल शीट द्वारा आयातित (Excel Bulk Import)',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
             };
             updatedContacts.unshift(newCard);
             addedCount++;
-
-            // Auto-register distinct district, post, office into master configuration
-            if (finalDist && finalDist.trim() && finalDist.trim() !== 'सभी ज़िले (All Districts)') {
-              addDistrict(finalDist.trim());
-            }
-            if (post && post.trim() && post.trim() !== 'सभी पद (All Posts)') {
-              addPost(post.trim());
-            }
-            if (office && office.trim() && office.trim() !== 'सभी कार्यालय/थाने (All Offices)') {
-              addOffice(office.trim(), finalDist ? finalDist.trim() : '');
-            }
           }
         });
 
+        // Register any newly discovered districts, posts, offices into master data
+        newDistrictsSet.forEach(d => addDistrict(d));
+        newPostsSet.forEach(p => addPost(p));
+        newOfficesMap.forEach((dist, off) => addOffice(off, dist));
+
+        // Save contacts locally and to IDB
         saveContacts(updatedContacts);
-        resolve({ updatedContacts, addedCount, updatedCount, totalProcessed: rawRows.length });
+
+        // Immediately sync all updated contacts and master lists to Firebase Firestore
+        if (isFirebaseConfigured()) {
+          syncAllContactsToFirestore(updatedContacts).catch(console.error);
+          saveFirestoreDistricts(getStoredDistricts()).catch(console.error);
+          saveFirestorePosts(getStoredPosts()).catch(console.error);
+          saveFirestoreOffices(getStoredOffices()).catch(console.error);
+        }
+
+        resolve({ 
+          updatedContacts, 
+          addedCount, 
+          updatedCount, 
+          totalProcessed: rawRows.length 
+        });
       } catch (err) {
         reject(new Error('Excel फ़ाइल प्रोसेस करने में त्रुटि: ' + err.message));
       }
@@ -1792,35 +1880,105 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
 
 export const downloadSampleExcel = async () => {
   const XLSX = await import('xlsx');
-  const sampleData = [
+  
+  // Sheet 1: Registration Form Matched Template
+  const templateRows = [
     {
-      "PNO": "PNO-948120099",
-      "Name": "राकेश शर्मा",
-      "Post": "प्रभारी निरीक्षक (Inspector)",
-      "District": "लखनऊ",
-      "Office": "थाना गोमती नगर",
-      "Phone": "9454401999",
-      "WhatsApp": "9454401999",
-      "Email": "sho.gomtinagar@up.gov.in",
-      "Password": "1234"
+      "PNO (पीएनओ नंबर)": "948120011",
+      "Name (कर्मचारी का नाम)": "राजेश कुमार सिंह",
+      "Post (पदनाम)": "प्रभारी निरीक्षक (Inspector/SHO)",
+      "District (जनपद)": "लखनऊ",
+      "Office (कार्यालय/थाना)": "थाना हजरतगंज",
+      "Phone (मोबाइल नंबर - 10 अंक)": "9454401234",
+      "WhatsApp (व्हाट्सएप नंबर)": "9454401234",
+      "Email (ईमेल आईडी)": "sho.hazratganj@uppolice.gov.in",
+      "Password (पासवर्ड)": "1234",
+      "Status (स्थिति: Approved/Pending)": "Approved",
+      "Hide_Phone (मोबाइल नंबर छुपाएं: No/Yes)": "No",
+      "Remarks (टिप्पणी / रिमार्क्स)": "प्रभारी निरीक्षक हजरतगंज"
     },
     {
-      "PNO": "PNO-948120088",
-      "Name": "सुमन देव",
-      "Post": "उप-निरीक्षक (Sub-Inspector)",
-      "District": "वाराणसी",
-      "Office": "थाना कैंट",
-      "Phone": "9454401888",
-      "WhatsApp": "9454401888",
-      "Email": "si.suman@up.gov.in",
-      "Password": "1234"
+      "PNO (पीएनओ नंबर)": "983210452",
+      "Name (कर्मचारी का नाम)": "अमित कुमार वर्मा",
+      "Post (पदनाम)": "उप-निरीक्षक (Sub-Inspector)",
+      "District (जनपद)": "वाराणसी",
+      "Office (कार्यालय/थाना)": "थाना कैंट",
+      "Phone (मोबाइल नंबर - 10 अंक)": "9454402345",
+      "WhatsApp (व्हाट्सएप नंबर)": "9454402345",
+      "Email (ईमेल आईडी)": "si.amit@uppolice.gov.in",
+      "Password (पासवर्ड)": "1234",
+      "Status (स्थिति: Approved/Pending)": "Approved",
+      "Hide_Phone (मोबाइल नंबर छुपाएं: No/Yes)": "No",
+      "Remarks (टिप्पणी / रिमार्क्स)": "उप-निरीक्षक कैंट"
+    },
+    {
+      "PNO (पीएनओ नंबर)": "120938475",
+      "Name (कर्मचारी का नाम)": "सुनील कुमार यादव",
+      "Post (पदनाम)": "आरक्षी (Constable)",
+      "District (जनपद)": "कानपुर नगर",
+      "Office (कार्यालय/थाना)": "थाना कोतवाली",
+      "Phone (मोबाइल नंबर - 10 अंक)": "9454403456",
+      "WhatsApp (व्हाट्सएप नंबर)": "9454403456",
+      "Email (ईमेल आईडी)": "const.sunil@uppolice.gov.in",
+      "Password (पासवर्ड)": "1234",
+      "Status (स्थिति: Approved/Pending)": "Approved",
+      "Hide_Phone (मोबाइल नंबर छुपाएं: No/Yes)": "No",
+      "Remarks (टिप्पणी / रिमार्क्स)": "बीट आरक्षी कोतवाली"
+    },
+    {
+      "PNO (पीएनओ नंबर)": "145029381",
+      "Name (कर्मचारी का नाम)": "प्रियंका चतुर्वेदी",
+      "Post (पदनाम)": "मुख्य आरक्षी (Head Constable)",
+      "District (जनपद)": "प्रयागराज",
+      "Office (कार्यालय/थाना)": "महिला थाना",
+      "Phone (मोबाइल नंबर - 10 अंक)": "9454404567",
+      "WhatsApp (व्हाट्सएप नंबर)": "9454404567",
+      "Email (ईमेल आईडी)": "hc.priyanka@uppolice.gov.in",
+      "Password (पासवर्ड)": "1234",
+      "Status (स्थिति: Approved/Pending)": "Approved",
+      "Hide_Phone (मोबाइल नंबर छुपाएं: No/Yes)": "Yes",
+      "Remarks (टिप्पणी / रिमार्क्स)": "महिला हेल्पडेस्क प्रभारी"
     }
   ];
 
-  const worksheet = XLSX.utils.json_to_sheet(sampleData);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Police_Directory");
-  XLSX.writeFile(workbook, "Police_Directory_Template.xlsx");
+  const worksheet = XLSX.utils.json_to_sheet(templateRows);
+  
+  // Set generous column widths
+  worksheet['!cols'] = [
+    { wch: 22 }, // PNO
+    { wch: 26 }, // Name
+    { wch: 34 }, // Post
+    { wch: 22 }, // District
+    { wch: 26 }, // Office
+    { wch: 28 }, // Phone
+    { wch: 26 }, // WhatsApp
+    { wch: 32 }, // Email
+    { wch: 18 }, // Password
+    { wch: 28 }, // Status
+    { wch: 32 }, // Hide_Phone
+    { wch: 32 }  // Remarks
+  ];
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, "पंजीकरण_टेम्पलेट");
+
+  // Sheet 2: Master Reference for easy copy-pasting
+  const refHeader = ["उत्तर प्रदेश के सभी 75 जनपद", "मानक पुलिस पदनाम"];
+  const maxRows = Math.max(ALL_UP_DISTRICTS.length, STANDARD_POLICE_POSTS.length);
+  const refRows = [refHeader];
+  for (let i = 1; i < maxRows; i++) {
+    const dist = ALL_UP_DISTRICTS[i] || "";
+    const post = STANDARD_POLICE_POSTS[i] || "";
+    if (dist || post) {
+      refRows.push([dist, post]);
+    }
+  }
+
+  const refWorksheet = XLSX.utils.aoa_to_sheet(refRows);
+  refWorksheet['!cols'] = [{ wch: 32 }, { wch: 38 }];
+  XLSX.utils.book_append_sheet(workbook, refWorksheet, "मानक_सूची_सन्दर्भ");
+
+  XLSX.writeFile(workbook, "UP_Police_Registration_Template.xlsx");
 };
 
 // ---------------- CALL LOGS (In-App Voice Calling Audit Trail) ----------------

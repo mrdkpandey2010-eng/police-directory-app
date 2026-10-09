@@ -295,14 +295,19 @@ export default function AdminPanel({
   const handleProcessExcel = async () => {
     if (!excelFile) return;
     setIsUploading(true);
-    setImportStatusMsg(null);
+    setImportStatusMsg({
+      type: 'info',
+      text: '🔄 एक्सेल डेटा प्रोसेस हो रहा है एवं Firebase क्लाउड डेटाबेस पर लाइव सिंक किया जा रहा है...'
+    });
 
     try {
       const res = await importContactsFromExcel(excelFile, contacts, myDistrict);
-      onContactsImported(res.updatedContacts);
+      if (onContactsImported) {
+        await onContactsImported(res.updatedContacts);
+      }
       setImportStatusMsg({
         type: 'success',
-        text: `सफलतापूर्वक निष्पादित! नए जोड़े गए: ${res.addedCount}, अपडेट किए गए: ${res.updatedCount}।`
+        text: `✅ सफलतापूर्वक निष्पादित! नए जोड़े गए: ${res.addedCount}, अपडेट किए गए: ${res.updatedCount}। डेटाबेस (Firebase) पर लाइव सिंक हो गया है और सभी यूज़र्स को रियल-टाइम में दिख रहा है।`
       });
       setExcelFile(null);
     } catch (err) {
@@ -1010,13 +1015,18 @@ export default function AdminPanel({
                 </p>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-bright)' }}>
-                  सैंपल एक्सेल फ़ॉर्मेट डाउनलोड करें
-                </span>
-                <button className="btn btn-secondary" onClick={downloadSampleExcel}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', background: 'rgba(15,23,42,0.6)', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid rgba(196,151,86,0.3)' }}>
+                <div>
+                  <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-bright)', display: 'block' }}>
+                    📥 आधिकारिक एक्सेल पंजीकरण टेम्पलेट (Official Registration Template)
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--khaki-light)' }}>
+                    पंजीकरण फ़ॉर्म के समस्त फील्ड्स (PNO, Name, Post, District, Office, Phone, WhatsApp, Email, Password, Status, Hide_Phone, Remarks + उ.प्र. के 75 जनपद व मानक पद सूची संदर्भ)
+                  </span>
+                </div>
+                <button className="btn btn-secondary" onClick={downloadSampleExcel} style={{ border: '1px solid var(--gold-primary)', fontWeight: 600 }}>
                   <Download size={16} color="var(--gold-primary)" />
-                  सैंपल Excel टेंपलेट डाउनलोड करें (.xlsx)
+                  आधिकारिक Excel टेम्पलेट डाउनलोड करें (.xlsx)
                 </button>
               </div>
 
@@ -1031,7 +1041,7 @@ export default function AdminPanel({
                     {excelFile ? excelFile.name : "Excel फ़ाइल यहाँ ड्रॉप करें या क्लिक करके चुनें"}
                   </h4>
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    समर्थित प्रारूप: .xlsx, .xls, .csv (कॉलम: PNO, Name, Post, District, Office, Phone, WhatsApp, Email, Password)
+                    समर्थित प्रारूप: .xlsx, .xls, .csv (हिंदी अथवा अंग्रेज़ी कॉलम शीर्षक स्वचालित रूप से मान्य हैं)
                   </p>
                 </div>
                 <input
@@ -1050,14 +1060,14 @@ export default function AdminPanel({
                   </button>
                   <button className="btn btn-primary" onClick={handleProcessExcel} disabled={isUploading}>
                     <Upload size={16} />
-                    {isUploading ? "प्रोसेस हो रहा है..." : "एक्सेल डेटा इम्पोर्ट एवं अपडेट करें"}
+                    {isUploading ? "क्लाउड डेटाबेस पर सिंक हो रहा है..." : "एक्सेल डेटा इम्पोर्ट एवं लाइव सिंक करें"}
                   </button>
                 </div>
               )}
 
               {importStatusMsg && (
-                <div className={`status-tag ${importStatusMsg.type === 'success' ? 'status-approved' : 'status-blocked'}`} style={{ padding: '0.85rem 1rem', fontSize: '0.9rem', width: '100%', borderRadius: '8px' }}>
-                  {importStatusMsg.type === 'success' ? <CheckCircle size={18} /> : <XCircle size={18} />}
+                <div className={`status-tag ${importStatusMsg.type === 'success' ? 'status-approved' : importStatusMsg.type === 'info' ? 'status-pending' : 'status-blocked'}`} style={{ padding: '0.85rem 1rem', fontSize: '0.9rem', width: '100%', borderRadius: '8px' }}>
+                  {importStatusMsg.type === 'success' ? <CheckCircle size={18} /> : importStatusMsg.type === 'info' ? <Clock size={18} /> : <XCircle size={18} />}
                   {importStatusMsg.text}
                 </div>
               )}
