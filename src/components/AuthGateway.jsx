@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { getStoredAdminMasterPin, getStoredContacts } from '../utils/storage';
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
+import { ALL_UP_DISTRICTS, STANDARD_POLICE_POSTS } from '../data/mockContacts';
 
 export default function AuthGateway({ 
   onLoginSuccess, 
@@ -24,6 +25,21 @@ export default function AuthGateway({
   // Dedicated Super Admin Page mode (Completely separated from public users)
   const [isSuperAdminMode, setIsSuperAdminMode] = useState(false);
 
+  // Fallback safe lists for districts and posts to ensure options are never blank
+  const effectiveDistricts = useMemo(() => {
+    if (Array.isArray(districts) && districts.length > 1) {
+      return districts.filter((_, idx) => idx > 0);
+    }
+    return ALL_UP_DISTRICTS.filter((_, idx) => idx > 0);
+  }, [districts]);
+
+  const effectivePosts = useMemo(() => {
+    if (Array.isArray(posts) && posts.length > 1) {
+      return posts.filter((_, idx) => idx > 0);
+    }
+    return STANDARD_POLICE_POSTS.filter((_, idx) => idx > 0);
+  }, [posts]);
+
   // Login inputs
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -34,8 +50,8 @@ export default function AuthGateway({
   const [regForm, setRegForm] = useState({
     name: '',
     pno: '',
-    post: (posts && posts[1]) || '',
-    district: (districts && districts[1]) || '',
+    post: (posts && posts[1]) || (STANDARD_POLICE_POSTS && STANDARD_POLICE_POSTS[1]) || '',
+    district: (districts && districts[1]) || (ALL_UP_DISTRICTS && ALL_UP_DISTRICTS[1]) || '',
     office: '',
     phone: '',
     whatsapp: '',
@@ -564,7 +580,7 @@ export default function AuthGateway({
                           required
                         >
                           <option value="">-- पद चुनें --</option>
-                          {posts.filter((_, idx) => idx > 0).map((p, idx) => (
+                          {effectivePosts.map((p, idx) => (
                             <option key={idx} value={p}>{p}</option>
                           ))}
                         </select>
@@ -579,7 +595,7 @@ export default function AuthGateway({
                           required
                         >
                           <option value="">-- जनपद चुनें --</option>
-                          {districts.filter((_, idx) => idx > 0).map((d, idx) => (
+                          {effectiveDistricts.map((d, idx) => (
                             <option key={idx} value={d}>{d}</option>
                           ))}
                         </select>

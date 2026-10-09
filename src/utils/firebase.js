@@ -359,9 +359,7 @@ export const subscribeToFirestoreContacts = (onUpdate, onError) => {
       snapshot.forEach(docSnap => {
         list.push({ id: docSnap.id, ...docSnap.data() });
       });
-      if (list.length > 0) {
-        onUpdate(list);
-      }
+      onUpdate(list);
     }, (err) => {
       console.warn('Firestore contacts subscription notice:', err);
       if (onError) onError(err);
@@ -378,7 +376,10 @@ export const saveFirestoreContact = async (contact) => {
 
   try {
     const contactDocRef = doc(db, 'police_contacts', contact.id);
-    await setDoc(contactDocRef, { ...contact, updatedAt: new Date().toISOString() }, { merge: true });
+    // Deep clone and clean undefined values to avoid Firestore serialization errors
+    const cleanContact = JSON.parse(JSON.stringify(contact));
+    await setDoc(contactDocRef, { ...cleanContact, updatedAt: new Date().toISOString() }, { merge: true });
+    console.log(`[Firebase] Contact ${contact.id} (${contact.name}) synchronized to cloud Firestore`);
     return true;
   } catch (err) {
     console.error('Error saving contact to Firestore:', err);
@@ -412,7 +413,8 @@ export const syncAllContactsToFirestore = async (contacts) => {
       const batch = writeBatch(db);
       for (const c of chunk) {
         const docRef = doc(db, 'police_contacts', c.id);
-        batch.set(docRef, { ...c, updatedAt: c.updatedAt || new Date().toISOString() }, { merge: true });
+        const cleanC = JSON.parse(JSON.stringify(c));
+        batch.set(docRef, { ...cleanC, updatedAt: cleanC.updatedAt || new Date().toISOString() }, { merge: true });
       }
       await batch.commit();
     }
@@ -459,21 +461,108 @@ export const processOfflineSyncQueue = async () => {
 };
 
 /**
- * Sync dynamic master configs (posts, offices, districts, policies) in Firestore
+ * Sync dynamic master configs (posts, offices, districts, coAdmins, terms, policies) in Firestore
  */
 export const saveFirestoreMasterConfig = async (config) => {
   const db = getFirebaseDB();
   if (!db || !config) return false;
   try {
     const docRef = doc(db, 'police_system', 'master_config');
-    await setDoc(docRef, { ...config, updatedAt: new Date().toISOString() }, { merge: true });
+    const cleanConfig = JSON.parse(JSON.stringify(config));
+    await setDoc(docRef, { ...cleanConfig, updatedAt: new Date().toISOString() }, { merge: true });
+    console.log('[Firebase] Master config updated in Firestore successfully');
     return true;
   } catch (err) {
+    console.error('[Firebase] Error saving master config to Firestore:', err);
     return false;
   }
 };
 
-export const subscribeToFirestoreMasterConfig = (onUpdate) => {
+export const saveFirestoreDistricts = async (districts) => {
+  return saveFirestoreMasterConfig({ districts });
+};
+
+export const saveFirestorePosts = async (posts) => {
+  return saveFirestoreMasterConfig({ posts });
+};
+
+export const saveFirestoreOffices = async (offices) => {
+  return saveFirestoreMasterConfig({ offices });
+};
+
+export const saveFirestoreCoAdmins = async (coAdmins) => {
+  return saveFirestoreMasterConfig({ coAdmins });
+};
+
+export const saveFirestoreTerms = async (terms) => {
+  return saveFirestoreMasterConfig({ terms });
+};
+
+export const saveFirestorePolicies = async (policies) => {
+  return saveFirestoreMasterConfig({ policies });
+};
+
+export const getFirestoreMasterConfig = async () => {
+  const db = getFirebaseDB();
+  if (!db) return null;
+  try {
+    const docRef = doc(db, 'police_system', 'master_config');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data();
+    }
+    return null;
+  } catch (err) {
+    console.error('[Firebase] Failed to fetch master config:', err);
+    return null;
+  }
+};
+
+export const initFirestoreMasterConfigIfEmpty = async (defaultConfig) => {
+  const db = getFirebaseDB();
+  if (!db) return false;
+  try {
+    const docRef = doc(db, 'police_system', 'master_config');
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      console.log('[Firebase] Initializing clean master_config in Firestore...');
+      const cleanConfig = JSON.parse(JSON.stringify(defaultConfig));
+      await setDoc(docRef, { ...cleanConfig, updatedAt: new Date().toISOString() });
+      return true;
+    }
+    const data = snap.data();
+    const updates = {};
+    if (!Array.isArray(data.districts) || data.districts.length <= 1) {
+      updates.districts = defaultConfig.districts;
+    }
+    if (!Array.isArray(data.posts) || data.posts.length <= 1) {
+      updates.posts = defaultConfig.posts;
+    }
+    if (!Array.isArray(data.offices) && Array.isArray(defaultConfig.offices)) {
+      updates.offices = defaultConfig.offices;
+    }
+    if (!Array.isArray(data.coAdmins) && Array.isArray(defaultConfig.coAdmins)) {
+      updates.coAdmins = defaultConfig.coAdmins;
+    }
+    if (!data.terms && defaultConfig.terms) {
+      updates.terms = defaultConfig.terms;
+    }
+    if (!Array.isArray(data.policies) && Array.isArray(defaultConfig.policies)) {
+      updates.policies = defaultConfig.policies;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await setDoc(docRef, { ...updates, updatedAt: new Date().toISOString() }, { merge: true });
+      console.log('[Firebase] Missing master_config fields populated in Firestore');
+    }
+    return true;
+  } catch (err) {
+    console.error('[Firebase] Failed to check/init master config:', err);
+    return false;
+  }
+};
+
+export const subscribeToFirestoreMasterConfig = (onUpdate, onError) => {
   const db = getFirebaseDB();
   if (!db) return () => {};
   try {
@@ -482,10 +571,15 @@ export const subscribeToFirestoreMasterConfig = (onUpdate) => {
       if (docSnap.exists()) {
         onUpdate(docSnap.data());
       }
+    }, (err) => {
+      console.warn('Firestore master_config subscription notice:', err);
+      if (onError) onError(err);
     });
   } catch (err) {
+    console.error('Failed to subscribe to master_config in Firestore:', err);
     return () => {};
   }
 };
+
 
 

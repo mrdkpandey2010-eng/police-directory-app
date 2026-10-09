@@ -33,13 +33,23 @@ import {
   deleteFirestoreContact,
   deleteFirestoreChat,
   syncAllContactsToFirestore,
-  processOfflineSyncQueue
+  processOfflineSyncQueue,
+  saveFirestoreMasterConfig,
+  saveFirestoreDistricts,
+  saveFirestorePosts,
+  saveFirestoreOffices,
+  saveFirestoreCoAdmins,
+  saveFirestoreTerms,
+  saveFirestorePolicies,
+  subscribeToFirestoreMasterConfig,
+  initFirestoreMasterConfigIfEmpty
 } from './utils/firebase';
 import { 
   getStoredContacts, 
   loadContactsFromPermanentStorage,
   saveContacts,
   getStoredCoAdmins,
+  saveCoAdmins,
   getStoredNotifications,
   getStoredFeedbacks,
   getStoredChats,
@@ -47,8 +57,11 @@ import {
   getStoredSession,
   saveSession,
   getStoredPosts,
+  savePosts,
   getStoredOffices,
+  saveOffices,
   getStoredDistricts,
+  saveDistricts,
   addPost,
   editPost,
   deletePost,
@@ -108,7 +121,8 @@ import {
   DEFAULT_POLICIES,
   addCustomPolicy,
   editPolicyItem,
-  deleteCustomPolicyItem
+  deleteCustomPolicyItem,
+  savePolicies
 } from './utils/storage';
 import TermsFooter from './components/TermsFooter';
 import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall, PhoneMissed } from 'lucide-react';
@@ -477,6 +491,68 @@ export default function App() {
     };
   }, [isFirebaseConnected]);
 
+  // ---------------- FIRESTORE MASTER CONFIG REAL-TIME SYNC (DISTRICTS, POSTS, OFFICES, CO-ADMINS, TERMS, POLICIES) ----------------
+  useEffect(() => {
+    const isConfigured = isFirebaseConfigured();
+    if (!isConfigured) return;
+
+    // Bootstrap Firestore master_config if empty
+    initFirestoreMasterConfigIfEmpty({
+      districts: getStoredDistricts(),
+      posts: getStoredPosts(),
+      offices: getStoredOffices(),
+      coAdmins: getStoredCoAdmins(),
+      terms: getStoredTerms(),
+      policies: getStoredPolicies()
+    });
+
+    const unsubscribe = subscribeToFirestoreMasterConfig((cloudConfig) => {
+      if (!cloudConfig) return;
+
+      // 1. Sync Districts across all devices
+      if (Array.isArray(cloudConfig.districts) && cloudConfig.districts.length > 1) {
+        setDistricts(cloudConfig.districts);
+        saveDistricts(cloudConfig.districts);
+      }
+
+      // 2. Sync Posts across all devices
+      if (Array.isArray(cloudConfig.posts) && cloudConfig.posts.length > 1) {
+        setPosts(cloudConfig.posts);
+        savePosts(cloudConfig.posts);
+      }
+
+      // 3. Sync Offices / Thanas across all devices
+      if (Array.isArray(cloudConfig.offices)) {
+        setOffices(cloudConfig.offices);
+        saveOffices(cloudConfig.offices);
+      }
+
+      // 4. Sync Co-Admins across all devices
+      if (Array.isArray(cloudConfig.coAdmins)) {
+        setCoAdmins(cloudConfig.coAdmins);
+        saveCoAdmins(cloudConfig.coAdmins);
+      }
+
+      // 5. Sync Terms
+      if (cloudConfig.terms && typeof cloudConfig.terms === 'object') {
+        setTerms(cloudConfig.terms);
+        saveTerms(cloudConfig.terms);
+      }
+
+      // 6. Sync Policies
+      if (Array.isArray(cloudConfig.policies) && cloudConfig.policies.length > 0) {
+        setPolicies(cloudConfig.policies);
+        savePolicies(cloudConfig.policies);
+      }
+    }, (err) => {
+      console.warn('Firestore master_config sync notice:', err);
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isFirebaseConnected]);
+
   // Listen to real-time chat updates from Firebase Firestore
   useEffect(() => {
     const isConfigured = isFirebaseConfigured();
@@ -657,13 +733,33 @@ export default function App() {
   }, [contacts, searchQuery, selectedDistrict, selectedPost, selectedOffice, currentUser, userDistrictScope]);
 
   // Handler: Self Registration
-  const handleRegistrationSubmit = (formData) => {
+  const handleRegistrationSubmit = async (formData) => {
+    // 1. Auto-register office/thana into master list if new
+    if (formData.office && formData.office.trim()) {
+      const officeName = formData.office.trim();
+      const officeDist = formData.district || '';
+      const updatedOffices = addOffice(officeName, officeDist);
+      setOffices(updatedOffices);
+      if (isFirebaseConfigured()) {
+        saveFirestoreOffices(updatedOffices);
+      }
+    }
+
+    // 2. Register new officer locally and in IndexedDB vault
     const { updatedList, newOfficer } = registerNewOfficer(contacts, formData);
     setContacts(updatedList);
+
+    // 3. Immediately sync to Firebase Firestore
     if (isFirebaseConfigured() && newOfficer) {
-      saveFirestoreContact(newOfficer);
+      const saved = await saveFirestoreContact(newOfficer);
+      if (saved) {
+        showToast('✅ पंजीकरण क्लाउड डेटाबेस (Firebase) पर सुरक्षित सबमिट हुआ! Admin / Co-Admin Approval के बाद सक्रिय होगा।');
+      } else {
+        showToast('⚠️ स्थानीय रूप से सुरक्षित। नेटवर्क कनेक्टिविटी पर क्लाउड सिंक होगा।');
+      }
+    } else {
+      showToast('पंजीकरण सबमिट हो गया है! Admin / Co-Admin Approval के बाद प्रोफ़ाइल एक्टिव होगी।');
     }
-    showToast('पंजीकरण सबमिट हो गया है! Admin / Co-Admin Approval के बाद प्रोफ़ाइल एक्टिव होगी।');
   };
 
   // Handler: Admin / Co-Admin Approve
@@ -818,7 +914,19 @@ export default function App() {
   // Handler: Bulk Excel Import
   const handleContactsImported = (newContactsList) => {
     setContacts(newContactsList);
-    showToast('एक्सेल शीट से डेटा सफलतापूर्वक अपडेट किया गया!');
+    const currentDistricts = getStoredDistricts();
+    const currentPosts = getStoredPosts();
+    const currentOffices = getStoredOffices();
+    setDistricts(currentDistricts);
+    setPosts(currentPosts);
+    setOffices(currentOffices);
+    if (isFirebaseConfigured()) {
+      syncAllContactsToFirestore(newContactsList);
+      saveFirestoreDistricts(currentDistricts);
+      saveFirestorePosts(currentPosts);
+      saveFirestoreOffices(currentOffices);
+    }
+    showToast('✅ एक्सेल शीट से डेटा एवं मास्टर लिस्ट क्लाउड (Firebase) पर सफलतापूर्वक अपडेट हुआ!');
   };
 
   // Handler: Promote User to Co-Admin (Admin Only)
@@ -826,6 +934,11 @@ export default function App() {
     const { updatedContacts, updatedCoAdmins } = promoteUserToCoAdmin(contacts, coAdmins, userId, district);
     setContacts(updatedContacts);
     setCoAdmins(updatedCoAdmins);
+    if (isFirebaseConfigured()) {
+      saveFirestoreCoAdmins(updatedCoAdmins);
+      const promotedUser = updatedContacts.find(c => c.id === userId);
+      if (promotedUser) saveFirestoreContact(promotedUser);
+    }
     showToast('कर्मचारी को सफलतापूर्वक ज़िला Co-Admin नियुक्त किया गया!');
   };
 
@@ -835,6 +948,9 @@ export default function App() {
       const { updatedContacts, updatedCoAdmins } = revokeCoAdmin(contacts, coAdmins, coAdminId);
       setContacts(updatedContacts);
       setCoAdmins(updatedCoAdmins);
+      if (isFirebaseConfigured()) {
+        saveFirestoreCoAdmins(updatedCoAdmins);
+      }
       showToast('Co-Admin पद वापस ले लिया गया।');
     }
   };
@@ -843,6 +959,9 @@ export default function App() {
   const handleToggleCoAdminActive = (id) => {
     const updated = toggleCoAdminActive(id);
     setCoAdmins(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestoreCoAdmins(updated);
+    }
     const target = updated.find(c => c.id === id);
     const isNowActive = target.status !== 'inactive';
     showToast(isNowActive ? 'Co-Admin को सक्रिय (Active) किया गया!' : 'Co-Admin को निष्क्रिय (Inactive) किया गया!');
@@ -852,6 +971,9 @@ export default function App() {
   const handleAddCoAdmin = (data) => {
     const updated = addCoAdmin(data);
     setCoAdmins(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestoreCoAdmins(updated);
+    }
     showToast(`नया ज़िला Co-Admin (${data.district}) सफलतापूर्वक जोड़ा गया!`);
   };
 
@@ -859,6 +981,9 @@ export default function App() {
     if (window.confirm('क्या आप इस ज़िला Co-Admin को हटाना चाहते हैं?')) {
       const updated = deleteCoAdmin(id);
       setCoAdmins(updated);
+      if (isFirebaseConfigured()) {
+        saveFirestoreCoAdmins(updated);
+      }
       showToast('Co-Admin हटा दिया गया।');
     }
   };
@@ -867,6 +992,9 @@ export default function App() {
   const handleAddPost = (postName) => {
     const updated = addPost(postName);
     setPosts(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestorePosts(updated);
+    }
     showToast(`नया पद "${postName}" जोड़ा गया!`);
   };
 
@@ -874,18 +1002,27 @@ export default function App() {
     const updated = editPost(oldName, newName);
     setPosts(updated);
     setContacts(getStoredContacts());
+    if (isFirebaseConfigured()) {
+      saveFirestorePosts(updated);
+    }
     showToast(`पद "${oldName}" को बदलकर "${newName}" किया गया!`);
   };
 
   const handleDeletePost = (postName) => {
     const updated = deletePost(postName);
     setPosts(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestorePosts(updated);
+    }
     showToast(`पद "${postName}" हटा दिया गया।`);
   };
 
   const handleAddOffice = (officeName, districtName = '') => {
     const updated = addOffice(officeName, districtName);
     setOffices(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestoreOffices(updated);
+    }
     showToast(`नया कार्यालय/थाना "${officeName}" (${districtName}) जोड़ा गया!`);
   };
 
@@ -893,18 +1030,27 @@ export default function App() {
     const updated = editOffice(officeIdOrName, newName, newDistrict);
     setOffices(updated);
     setContacts(getStoredContacts());
+    if (isFirebaseConfigured()) {
+      saveFirestoreOffices(updated);
+    }
     showToast(`कार्यालय/थाना "${newName}" सफलतापूर्वक संशोधित किया गया!`);
   };
 
   const handleDeleteOffice = (officeIdOrName) => {
     const updated = deleteOffice(officeIdOrName);
     setOffices(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestoreOffices(updated);
+    }
     showToast(`कार्यालय/थाना सूची से हटाया गया।`);
   };
 
   const handleAddDistrict = (distName) => {
     const updated = addDistrict(distName);
     setDistricts(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestoreDistricts(updated);
+    }
     showToast(`नया ज़िला "${distName}" जोड़ा गया!`);
   };
 
@@ -914,24 +1060,36 @@ export default function App() {
     setContacts(getStoredContacts());
     setCoAdmins(getStoredCoAdmins());
     setOffices(getStoredOffices());
+    if (isFirebaseConfigured()) {
+      saveFirestoreDistricts(updated);
+    }
     showToast(`ज़िला "${oldName}" को बदलकर "${newName}" किया गया!`);
   };
 
   const handleDeleteDistrict = (distName) => {
     const updated = deleteDistrict(distName);
     setDistricts(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestoreDistricts(updated);
+    }
     showToast(`ज़िला "${distName}" हटा दिया गया।`);
   };
 
   const handleLoadAllDistricts = () => {
     const list = loadAll75Districts();
     setDistricts(list);
+    if (isFirebaseConfigured()) {
+      saveFirestoreDistricts(list);
+    }
     showToast('✅ उ.प्र. के सभी 75 जनपद सफलतापूर्वक लोड हो गए।');
   };
 
   const handleLoadStandardPosts = () => {
     const list = loadStandardPolicePosts();
     setPosts(list);
+    if (isFirebaseConfigured()) {
+      saveFirestorePosts(list);
+    }
     showToast('✅ पुलिस विभाग के सभी मानक पद सफलतापूर्वक लोड हो गए।');
   };
 
@@ -940,6 +1098,11 @@ export default function App() {
     setDistricts(res.districts);
     setPosts(res.posts);
     setOffices(res.offices);
+    if (isFirebaseConfigured()) {
+      saveFirestoreDistricts(res.districts);
+      saveFirestorePosts(res.posts);
+      saveFirestoreOffices(res.offices);
+    }
     showToast('🗑️ मास्टर डेटाबेस खाली (Zero) कर दिया गया।');
   };
 

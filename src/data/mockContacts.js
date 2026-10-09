@@ -8,23 +8,7 @@ export const initialCoAdmins = [];
 export const initialNotifications = [];
 export const initialFeedbacks = [];
 
-// Fresh initial districts - start clean (admin can add custom or load all 75)
-export const DISTRICTS = [
-  "सभी ज़िले (All Districts)"
-];
-
-// Fresh initial posts - start clean (admin can add custom or load standard ranks)
-export const POSTS = [
-  "सभी पद (All Posts)"
-];
-
-export const DEFAULT_OFFICE_ITEMS = [];
-
-export const OFFICES = [
-  "सभी कार्यालय/थाने (All Offices)"
-];
-
-// Master Reference: All 75 Official Uttar Pradesh Districts (Available on demand in Admin Panel)
+// Master Reference: All 75 Official Uttar Pradesh Districts
 export const ALL_UP_DISTRICTS = [
   "सभी ज़िले (All Districts)",
   "अयोध्या", "अंबेडकर नगर", "अमेठी", "अमरोहा", "आगरा", "आजमगढ़", "अलीगढ़", 
@@ -55,4 +39,14 @@ export const STANDARD_POLICE_POSTS = [
   "उप-निरीक्षक (Sub-Inspector)",
   "मुख्य आरक्षी (Head Constable)",
   "आरक्षी (Constable)"
+];
+
+// Official Uttar Pradesh Police standard districts & posts
+export const DISTRICTS = ALL_UP_DISTRICTS;
+export const POSTS = STANDARD_POLICE_POSTS;
+
+export const DEFAULT_OFFICE_ITEMS = [];
+
+export const OFFICES = [
+  "सभी कार्यालय/थाने (All Offices)"
 ];

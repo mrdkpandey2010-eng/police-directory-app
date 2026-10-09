@@ -26,7 +26,13 @@ import {
   saveFirestoreContact, 
   syncAllContactsToFirestore, 
   isFirebaseConfigured, 
-  deleteFirestoreContact 
+  deleteFirestoreContact,
+  saveFirestoreDistricts,
+  saveFirestorePosts,
+  saveFirestoreOffices,
+  saveFirestoreCoAdmins,
+  saveFirestoreTerms,
+  saveFirestorePolicies
 } from './firebase';
 
 const CONTACTS_KEY = 'police_directory_contacts_v2';
@@ -118,6 +124,9 @@ export const saveTerms = (termsData) => {
       localStorage.setItem(TERMS_KEY, JSON.stringify(updated));
     } catch (e) {}
     idbSet(TERMS_KEY, updated);
+    if (isFirebaseConfigured()) {
+      saveFirestoreTerms(updated);
+    }
     return updated;
   } catch (err) {
     console.error('Error saving terms', err);
@@ -200,6 +209,9 @@ export const savePolicies = (policiesList) => {
       localStorage.setItem(POLICIES_KEY, JSON.stringify(policiesList));
     } catch (e) {}
     idbSet(POLICIES_KEY, policiesList);
+    if (isFirebaseConfigured()) {
+      saveFirestorePolicies(policiesList);
+    }
   } catch (err) {
     console.error('Error saving policies', err);
   }
@@ -260,21 +272,7 @@ export const getStoredPosts = () => {
       return DEFAULT_POSTS;
     }
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_POSTS;
-    
-    // Purge old 8-item demo posts list if lingering
-    const oldDemo = [
-      "सभी पद (All Posts)",
-      "पुलिस वरिष्ठ अधीक्षक (SSP)",
-      "पुलिस अधीक्षक (SP)",
-      "अपर पुलिस अधीक्षक (ASP)",
-      "क्षेत्राधिकारी (DSP)",
-      "प्रभारी निरीक्षक (Inspector)",
-      "उप-निरीक्षक (Sub-Inspector)",
-      "मुख्य आरक्षी (Head Constable)",
-      "आरक्षी (Constable)"
-    ];
-    if (parsed.length === oldDemo.length && oldDemo.every((p, i) => p === parsed[i])) {
+    if (!Array.isArray(parsed) || parsed.length <= 1) {
       localStorage.setItem(POSTS_KEY, JSON.stringify(DEFAULT_POSTS));
       idbSet(POSTS_KEY, DEFAULT_POSTS);
       return DEFAULT_POSTS;
@@ -292,6 +290,9 @@ export const savePosts = (posts) => {
     } catch (e) {}
     idbSet(POSTS_KEY, posts);
   } catch (err) {}
+  if (isFirebaseConfigured()) {
+    saveFirestorePosts(posts);
+  }
 };
 
 export const addPost = (postName) => {
@@ -377,6 +378,9 @@ export const saveOffices = (offices) => {
     } catch (e) {}
     idbSet(OFFICES_KEY, offices);
   } catch (err) {}
+  if (isFirebaseConfigured()) {
+    saveFirestoreOffices(offices);
+  }
 };
 
 export const addOffice = (officeName, districtName = '') => {
@@ -490,11 +494,7 @@ export const getStoredDistricts = () => {
       return DEFAULT_DISTRICTS;
     }
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_DISTRICTS;
-
-    // Purge old 8-item demo districts list if lingering
-    const oldDemo = ["सभी ज़िले (All Districts)", "लखनऊ", "कानपुर नगर", "वाराणसी", "आगरा", "प्रयागराज", "गोरखपुर", "मेरठ", "बरेली"];
-    if (parsed.length === oldDemo.length && oldDemo.every((d, i) => d === parsed[i])) {
+    if (!Array.isArray(parsed) || parsed.length <= 1) {
       localStorage.setItem(DISTRICTS_KEY, JSON.stringify(DEFAULT_DISTRICTS));
       idbSet(DISTRICTS_KEY, DEFAULT_DISTRICTS);
       return DEFAULT_DISTRICTS;
@@ -529,6 +529,9 @@ export const saveDistricts = (districts) => {
     } catch (e) {}
     idbSet(DISTRICTS_KEY, districts);
   } catch (err) {}
+  if (isFirebaseConfigured()) {
+    saveFirestoreDistricts(districts);
+  }
 };
 
 export const addDistrict = (distName) => {
@@ -718,6 +721,9 @@ export const saveCoAdmins = (coadmins) => {
       localStorage.setItem(COADMINS_KEY, JSON.stringify(valid));
     } catch (e) {}
     idbSet(COADMINS_KEY, valid);
+    if (isFirebaseConfigured()) {
+      saveFirestoreCoAdmins(valid);
+    }
   } catch (err) {
     console.error('Error saving coadmins', err);
   }
@@ -1518,20 +1524,21 @@ export const resetToDefaultContacts = () => {
 // ---------------- USER SELF-REGISTRATION (Status: Pending) ----------------
 export const registerNewOfficer = (contacts, officerData) => {
   const newOfficer = {
-    id: `pol-reg-${Date.now()}`,
-    pno: officerData.pno ? officerData.pno.trim() : `PNO-${Math.floor(100000000 + Math.random() * 900000000)}`,
-    name: officerData.name.trim(),
-    post: officerData.post,
-    district: officerData.district,
-    office: officerData.office.trim(),
-    phone: officerData.phone.trim(),
-    whatsapp: officerData.whatsapp ? officerData.whatsapp.trim() : officerData.phone.trim(),
-    email: officerData.email ? officerData.email.trim() : '',
-    password: officerData.password ? officerData.password.trim() : '1234',
+    id: `pol-reg-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    pno: (officerData.pno ? officerData.pno.trim() : `PNO-${Math.floor(100000000 + Math.random() * 900000000)}`),
+    name: (officerData.name || '').trim(),
+    post: officerData.post || 'आरक्षी (Constable)',
+    district: officerData.district || 'लखनऊ',
+    office: (officerData.office || '').trim(),
+    phone: (officerData.phone || '').trim(),
+    whatsapp: (officerData.whatsapp ? officerData.whatsapp.trim() : (officerData.phone || '').trim()),
+    email: (officerData.email ? officerData.email.trim() : ''),
+    password: (officerData.password ? officerData.password.trim() : '1234'),
     status: 'pending',
     isRegisteredUser: true,
     uniformPhoto: officerData.uniformPhoto || null,
     uniformPhotoUploaded: Boolean(officerData.uniformPhoto),
+    isPhoneHidden: Boolean(officerData.isPhoneHidden),
     createdAt: new Date().toISOString(),
     registrationNotes: officerData.registrationNotes || 'कर्मचारी द्वारा स्व-पंजीकरण (वर्दी फोटो संलग्न)।'
   };

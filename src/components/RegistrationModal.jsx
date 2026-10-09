@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload } from 'lucide-react';
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
+import { ALL_UP_DISTRICTS, STANDARD_POLICE_POSTS } from '../data/mockContacts';
 
 export default function RegistrationModal({ 
   isOpen, 
@@ -11,11 +12,25 @@ export default function RegistrationModal({
   posts = [],
   offices = []
 }) {
+  const effectiveDistricts = React.useMemo(() => {
+    if (Array.isArray(districts) && districts.length > 1) {
+      return districts.filter((_, idx) => idx > 0);
+    }
+    return ALL_UP_DISTRICTS.filter((_, idx) => idx > 0);
+  }, [districts]);
+
+  const effectivePosts = React.useMemo(() => {
+    if (Array.isArray(posts) && posts.length > 1) {
+      return posts.filter((_, idx) => idx > 0);
+    }
+    return STANDARD_POLICE_POSTS.filter((_, idx) => idx > 0);
+  }, [posts]);
+
   const [formData, setFormData] = useState({
     pno: '',
     name: '',
-    post: (posts && posts[1]) || '',
-    district: (districts && districts[1]) || '',
+    post: (posts && posts[1]) || (STANDARD_POLICE_POSTS && STANDARD_POLICE_POSTS[1]) || '',
+    district: (districts && districts[1]) || (ALL_UP_DISTRICTS && ALL_UP_DISTRICTS[1]) || '',
     office: '',
     phone: '',
     whatsapp: '',
@@ -193,7 +208,7 @@ export default function RegistrationModal({
                   onChange={handleChange}
                 >
                   <option value="">-- पद चुनें --</option>
-                  {posts.filter((_, idx) => idx > 0).map((p, idx) => (
+                  {effectivePosts.map((p, idx) => (
                     <option key={idx} value={p}>{p}</option>
                   ))}
                 </select>
@@ -211,7 +226,7 @@ export default function RegistrationModal({
                   required
                 >
                   <option value="">-- जनपद चुनें --</option>
-                  {districts.filter((_, idx) => idx > 0).map((d, idx) => (
+                  {effectiveDistricts.map((d, idx) => (
                     <option key={idx} value={d}>{d}</option>
                   ))}
                 </select>
