@@ -2052,8 +2052,9 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
       }
 
       // Sync contacts in batches with real-time feedback
+      let cloudErrorNotice = '';
       try {
-        await syncAllContactsToFirestore(updatedContacts, (chunkInfo) => {
+        const syncOk = await syncAllContactsToFirestore(updatedContacts, (chunkInfo) => {
           if (onProgress) {
             const cloudPct = Math.round(84 + (chunkInfo.percent * 0.15));
             onProgress({
@@ -2066,9 +2067,17 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
             });
           }
         });
-        isCloudSynced = true;
+        isCloudSynced = Boolean(syncOk);
       } catch (cloudErr) {
         console.warn('[Firebase] Cloud sync batch warning:', cloudErr);
+        isCloudSynced = false;
+        cloudErrorNotice = cloudErr?.message || 'क्लाउड सिंक लंबित';
+        // Enqueue to offline queue so it retries when connectivity is active
+        try {
+          for (const c of updatedContacts) {
+            idbEnqueueSync('save_contact', c);
+          }
+        } catch (qErr) {}
       }
     }
 
@@ -2076,8 +2085,8 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
       onProgress({
         step: 6,
         percent: 100,
-        title: 'सफलतापूर्वक पूर्ण',
-        message: `✅ कुल ${rawRows.length} पंक्तियाँ प्रोसेस हुईं! नए जोड़े गए: ${addedCount}, अपडेट: ${updatedCount}।`
+        title: isCloudSynced ? 'सफलतापूर्वक पूर्ण' : 'लोकल सुरक्षित (क्लाउड सिंक लंबित)',
+        message: `✅ कुल ${rawRows.length} पंक्तियाँ प्रोसेस हुईं! नए: ${addedCount}, अपडेट: ${updatedCount}। ${isCloudSynced ? 'Firebase पर लाइव सिंक सफल।' : 'लोकल में सुरक्षित।'}`
       });
     }
 
@@ -2093,7 +2102,8 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
       newDistrictsCount: newDistrictsSet.size,
       newPostsCount: newPostsSet.size,
       newOfficesCount: newOfficesMap.size,
-      isCloudSynced
+      isCloudSynced,
+      cloudErrorNotice
     };
 
   } catch (err) {

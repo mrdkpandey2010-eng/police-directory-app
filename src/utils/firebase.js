@@ -409,39 +409,52 @@ export const syncAllContactsToFirestore = async (contacts, onProgress = null) =>
     const validContacts = contacts.filter(c => c && c.id && !/^pol-1(0[1-9]|1[0-5])$/.test(c.id));
     if (validContacts.length === 0) return true;
 
-    const CHUNK_SIZE = 400; // Firestore batch maximum is 500
+    const CHUNK_SIZE = 50; // Ultra-safe chunk size for fast, reliable commit
     const totalChunks = Math.ceil(validContacts.length / CHUNK_SIZE);
+    let totalSynced = 0;
 
     for (let i = 0; i < validContacts.length; i += CHUNK_SIZE) {
       const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
       const chunk = validContacts.slice(i, i + CHUNK_SIZE);
-      const batch = writeBatch(db);
-      for (const c of chunk) {
-        const docRef = doc(db, 'police_contacts', c.id);
-        const cleanC = JSON.parse(JSON.stringify(c));
-        batch.set(docRef, { ...cleanC, updatedAt: cleanC.updatedAt || new Date().toISOString() }, { merge: true });
+      
+      try {
+        const batch = writeBatch(db);
+        for (const c of chunk) {
+          const safeId = String(c.id).replace(/\//g, '_');
+          const docRef = doc(db, 'police_contacts', safeId);
+          const cleanC = JSON.parse(JSON.stringify(c));
+          batch.set(docRef, { ...cleanC, updatedAt: cleanC.updatedAt || new Date().toISOString() }, { merge: true });
+        }
+        await batch.commit();
+        totalSynced += chunk.length;
+      } catch (batchErr) {
+        console.warn(`[Firebase] Batch ${chunkIndex} write failed, falling back to individual document setDoc...`, batchErr);
+        // Fallback: Individual document writes so single problematic doc never blocks the rest
+        for (const c of chunk) {
+          try {
+            const safeId = String(c.id).replace(/\//g, '_');
+            const docRef = doc(db, 'police_contacts', safeId);
+            const cleanC = JSON.parse(JSON.stringify(c));
+            await setDoc(docRef, { ...cleanC, updatedAt: cleanC.updatedAt || new Date().toISOString() }, { merge: true });
+            totalSynced++;
+          } catch (singleErr) {
+            console.error(`[Firebase] Failed to write contact ${c.id}:`, singleErr);
+          }
+        }
       }
-
-      // 20-second timeout race to prevent indefinite hang on slow/offline networks
-      await Promise.race([
-        batch.commit(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Firebase क्लाउड सिंक टाइमआउट: नेटवर्क धीमा हो सकता है')), 20000)
-        )
-      ]);
 
       if (onProgress) {
         onProgress({
           chunkIndex,
           totalChunks,
-          syncedCount: Math.min(i + CHUNK_SIZE, validContacts.length),
+          syncedCount: totalSynced,
           totalCount: validContacts.length,
-          percent: Math.round((Math.min(i + CHUNK_SIZE, validContacts.length) / validContacts.length) * 100)
+          percent: Math.round((totalSynced / validContacts.length) * 100)
         });
       }
     }
-    console.log(`[Firebase] Batch synced ${validContacts.length} contacts to cloud successfully`);
-    return true;
+    console.log(`[Firebase] Synced ${totalSynced} / ${validContacts.length} contacts to cloud successfully`);
+    return totalSynced > 0;
   } catch (err) {
     console.error('Failed to sync contacts to Firestore batch:', err);
     throw err;

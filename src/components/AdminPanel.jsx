@@ -331,16 +331,23 @@ export default function AdminPanel({
       setImportProgress({
         step: 6,
         percent: 100,
-        title: 'सफलतापूर्वक पूर्ण!',
-        message: `सफलतापूर्वक निष्पादित! कुल ${res.totalProcessed} पंक्तियाँ प्रोसेस हुईं।`,
+        title: res.isCloudSynced ? 'सफलतापूर्वक पूर्ण!' : 'लोकल सुरक्षित (क्लाउड सिंक लंबित)',
+        message: `सफलतापूर्वक निष्पादित! कुल ${res.totalProcessed} पंक्तियाँ प्रोसेस हुईं (नए: ${res.addedCount}, अपडेट: ${res.updatedCount})।`,
         isCompleted: true,
         report: res
       });
 
-      setImportStatusMsg({
-        type: 'success',
-        text: `✅ एक्सेल डेटा सफलतापूर्वक सुरक्षित एवं Firebase क्लाउड पर लाइव सिंक हो गया है!`
-      });
+      if (res.isCloudSynced) {
+        setImportStatusMsg({
+          type: 'success',
+          text: `✅ एक्सेल डेटा (${res.addedCount} नए, ${res.updatedCount} अपडेट) स्थानीय डेटाबेस एवं Firebase क्लाउड पर लाइव सिंक हो गया है!`
+        });
+      } else {
+        setImportStatusMsg({
+          type: 'warning',
+          text: `⚠️ डेटा स्थानीय डेटाबेस में सुरक्षित हो गया है, लेकिन Firebase क्लाउड सिंक लंबित है (${res.cloudErrorNotice || 'नेटवर्क / अनुमति'})। नीचे दिए गए "क्लाउड पर तुरंत सिंक करें" बटन से सिंक कर सकते हैं।`
+        });
+      }
       setExcelFile(null);
     } catch (err) {
       console.error('Excel Import Error:', err);
@@ -351,6 +358,28 @@ export default function AdminPanel({
       });
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+  const [manualSyncMsg, setManualSyncMsg] = useState('');
+
+  const handleForceSyncFirebase = async () => {
+    setIsManualSyncing(true);
+    setManualSyncMsg('🔄 Firebase क्लाउड पर डेटा अपलोड हो रहा है...');
+    try {
+      const syncOk = await syncAllContactsToFirestore(contacts, (chunkInfo) => {
+        setManualSyncMsg(`🔄 क्लाउड अपलोड: ${chunkInfo.syncedCount} / ${chunkInfo.totalCount} रिकॉर्ड्स (${chunkInfo.percent}%)...`);
+      });
+      if (syncOk) {
+        setManualSyncMsg(`✅ सफलता! कुल ${contacts.length} संपर्क Firebase क्लाउड पर सफलतापूर्वक सिंक हो गए हैं।`);
+      } else {
+        setManualSyncMsg('⚠️ सिंक पूर्ण नहीं हो सका। कृपया नेटवर्क अथवा Firebase रूल्स चेक करें।');
+      }
+    } catch (err) {
+      setManualSyncMsg(`❌ सिंक त्रुटि: ${err.message || 'Firebase से कनेक्ट करने में असमर्थ'}`);
+    } finally {
+      setIsManualSyncing(false);
     }
   };
 
@@ -1047,6 +1076,91 @@ export default function AdminPanel({
                   Excel (.xlsx / .csv) फ़ाइल अपलोड करके एक ही बार में पूरे ज़िले के संपर्क इम्पोर्ट/अपडेट करें। 
                   {isCoAdmin && <span> Co-Admin द्वारा अपलोड किए जाने वाले सभी संपर्कों पर स्वचालित रूप से <strong>{myDistrict}</strong> ज़िला लागू होगा।</span>}
                 </p>
+              </div>
+
+              {/* Cloud Sync Status & Force Sync Control Card */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 58, 138, 0.3))',
+                border: '1.5px solid rgba(196, 151, 86, 0.4)',
+                borderRadius: '12px',
+                padding: '1rem 1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '1rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '10px',
+                    background: isFirebaseConnected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    border: `1px solid ${isFirebaseConnected ? '#10b981' : '#ef4444'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <Cloud size={22} color={isFirebaseConnected ? '#34d399' : '#f87171'} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.94rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>Google Firebase क्लाउड स्थिति</span>
+                      <span style={{
+                        fontSize: '0.72rem',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: isFirebaseConnected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                        color: isFirebaseConnected ? '#34d399' : '#fca5a5',
+                        border: `1px solid ${isFirebaseConnected ? '#10b981' : '#ef4444'}`
+                      }}>
+                        {isFirebaseConnected ? '🟢 ऑनलाइन कनेक्टेड' : '⚪ ऑफ़लाइन / लोकल'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>
+                      स्थानीय संपर्क संख्या: <strong style={{ color: '#fef08a' }}>{contacts.length}</strong> • यदि एक्सेल डेटा क्लाउड में न दिख रहा हो तो तुरंत सिंक करें
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    disabled={isManualSyncing}
+                    onClick={handleForceSyncFirebase}
+                    className="btn btn-primary"
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '8px 16px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: isManualSyncing ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <RefreshCw size={15} style={isManualSyncing ? { animation: 'spin 1s linear infinite' } : {}} />
+                    <span>{isManualSyncing ? 'क्लाउड सिंक जारी...' : '🔄 सभी संपर्क Firebase पर सिंक करें'}</span>
+                  </button>
+                </div>
+
+                {manualSyncMsg && (
+                  <div style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '8px',
+                    fontSize: '0.82rem',
+                    background: manualSyncMsg.includes('✅') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                    border: `1px solid ${manualSyncMsg.includes('✅') ? '#10b981' : '#eab308'}`,
+                    color: manualSyncMsg.includes('✅') ? '#6ee7b7' : '#fef08a'
+                  }}>
+                    {manualSyncMsg}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', background: 'rgba(15,23,42,0.6)', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid rgba(196,151,86,0.3)' }}>

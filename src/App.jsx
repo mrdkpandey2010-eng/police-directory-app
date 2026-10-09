@@ -434,12 +434,26 @@ export default function App() {
     if (!isConfigured) return;
 
     const unsubscribe = subscribeToFirestoreContacts((cloudContacts) => {
-      if (!Array.isArray(cloudContacts) || cloudContacts.length === 0) return;
+      if (!Array.isArray(cloudContacts)) return;
+
+      const localList = getStoredContacts();
+
+      // Two-Way Sync: If cloud is completely empty, push all local contacts to Firestore immediately
+      if (cloudContacts.length === 0) {
+        if (localList && localList.length > 0) {
+          const cleanLocal = localList.filter(c => c && c.id && !/^pol-1(0[1-9]|1[0-5])$/.test(c.id));
+          if (cleanLocal.length > 0) {
+            console.log(`[Two-Way Sync] Cloud is empty; uploading ${cleanLocal.length} local contacts to Firestore...`);
+            syncAllContactsToFirestore(cleanLocal);
+          }
+        }
+        return;
+      }
 
       setContacts((prevContacts) => {
         const contactMap = new Map();
-        const localList = (prevContacts && prevContacts.length > 0) ? prevContacts : getStoredContacts();
-        localList.forEach(c => {
+        const currentList = (prevContacts && prevContacts.length > 0) ? prevContacts : localList;
+        currentList.forEach(c => {
           if (c && c.id) contactMap.set(c.id, c);
         });
 
@@ -912,7 +926,7 @@ export default function App() {
   };
 
   // Handler: Bulk Excel Import
-  const handleContactsImported = (newContactsList) => {
+  const handleContactsImported = async (newContactsList) => {
     setContacts(newContactsList);
     const currentDistricts = getStoredDistricts();
     const currentPosts = getStoredPosts();
@@ -920,7 +934,23 @@ export default function App() {
     setDistricts(currentDistricts);
     setPosts(currentPosts);
     setOffices(currentOffices);
-    showToast('✅ एक्सेल शीट से डेटा एवं मास्टर लिस्ट क्लाउड (Firebase) पर सफलतापूर्वक अपडेट हुआ!');
+
+    if (isFirebaseConfigured() && Array.isArray(newContactsList) && newContactsList.length > 0) {
+      try {
+        await syncAllContactsToFirestore(newContactsList);
+        await saveFirestoreMasterConfig({
+          districts: currentDistricts,
+          posts: currentPosts,
+          offices: currentOffices
+        });
+        showToast('✅ एक्सेल डेटा एवं मास्टर लिस्ट Firebase क्लाउड पर लाइव सिंक हो गया!');
+      } catch (err) {
+        console.warn('[Sync] Background cloud sync note:', err);
+        showToast('⚠️ स्थानीय डेटाबेस अपडेट हुआ (क्लाउड सिंक बैकग्राउंड में पुनः प्रयास करेगा)');
+      }
+    } else {
+      showToast('✅ एक्सेल शीट से डेटा स्थानीय डेटाबेस में सफलतापूर्वक अपडेट हुआ!');
+    }
   };
 
   // Handler: Promote User to Co-Admin (Admin Only)
