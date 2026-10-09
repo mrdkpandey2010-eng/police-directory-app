@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx';
 import { 
   initialContacts, 
   initialCoAdmins, 
@@ -1682,420 +1683,434 @@ export const resetCoAdminPassword = (coAdminId, newPassword = '1234') => {
 
 // ---------------- EXCEL BULK IMPORT (MATCHED WITH REGISTRATION PAGE) ----------------
 export const importContactsFromExcel = async (file, existingContacts, districtFilter = null, onProgress = null) => {
-  const XLSX = await import('xlsx');
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+  const xlsxLib = XLSX;
 
-    reader.onload = async (e) => {
-      try {
-        if (onProgress) {
-          onProgress({
-            step: 1,
-            percent: 15,
-            title: 'फ़ाइल विश्लेषण',
-            message: 'एक्सेल कार्यपुस्तिका (Workbook) एवं शीट्स लोड हो रही हैं...'
-          });
-        }
+  try {
+    if (onProgress) {
+      onProgress({
+        step: 1,
+        percent: 15,
+        title: 'फ़ाइल विश्लेषण',
+        message: 'एक्सेल कार्यपुस्तिका (Workbook) लोड की जा रही है...'
+      });
+    }
 
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
+    // Direct native ArrayBuffer reading (synchronous memory pipeline, never drops events or hangs)
+    let arrayBuffer;
+    if (file && typeof file.arrayBuffer === 'function') {
+      arrayBuffer = await file.arrayBuffer();
+    } else {
+      arrayBuffer = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => reject(new Error('फ़ाइल पढ़ने में विफलता हुई।'));
+        reader.readAsArrayBuffer(file);
+      });
+    }
 
-        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-          throw new Error('एक्सेल फ़ाइल में कोई वर्कशीट (Sheet) नहीं मिली।');
-        }
+    if (onProgress) {
+      onProgress({
+        step: 1,
+        percent: 25,
+        title: 'शीट पहचान',
+        message: 'एक्सेल शीट्स एवं कॉलम हेडर का विश्लेषण किया जा रहा है...'
+      });
+    }
 
-        // Intelligently identify the sheet that contains the employee data
-        let targetSheetName = workbook.SheetNames[0];
-        for (const sName of workbook.SheetNames) {
-          if (/पंजीकरण|template|टेम्पलेट|contacts|police|direct|data|कर्मचारी|सूची/i.test(sName)) {
+    const data = new Uint8Array(arrayBuffer);
+    const workbook = xlsxLib.read(data, { type: 'array' });
+
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      throw new Error('एक्सेल फ़ाइल में कोई वर्कशीट (Sheet) नहीं मिली।');
+    }
+
+    // Intelligently identify the sheet that contains the employee data
+    let targetSheetName = workbook.SheetNames[0];
+    for (const sName of workbook.SheetNames) {
+      if (/पंजीकरण|template|टेम्पलेट|contacts|police|direct|data|कर्मचारी|सूची/i.test(sName)) {
+        targetSheetName = sName;
+        break;
+      }
+    }
+    
+    // If targetSheetName is a reference sheet, try another sheet
+    if (/सन्दर्भ|reference|master|मानक/i.test(targetSheetName) && workbook.SheetNames.length > 1) {
+      const alternate = workbook.SheetNames.find(s => !/सन्दर्भ|reference|master|मानक/i.test(s));
+      if (alternate) targetSheetName = alternate;
+    }
+
+    const worksheet = workbook.Sheets[targetSheetName];
+    let rawRows = xlsxLib.utils.sheet_to_json(worksheet, { defval: '' });
+
+    if (!rawRows || rawRows.length === 0) {
+      // Check if any other sheet has data
+      for (const sName of workbook.SheetNames) {
+        if (sName !== targetSheetName) {
+          const testSheet = workbook.Sheets[sName];
+          const testRows = xlsxLib.utils.sheet_to_json(testSheet, { defval: '' });
+          if (testRows && testRows.length > 0) {
             targetSheetName = sName;
+            rawRows = testRows;
             break;
           }
         }
-        
-        // If targetSheetName is a reference sheet, try another sheet
-        if (/सन्दर्भ|reference|master|मानक/i.test(targetSheetName) && workbook.SheetNames.length > 1) {
-          const alternate = workbook.SheetNames.find(s => !/सन्दर्भ|reference|master|मानक/i.test(s));
-          if (alternate) targetSheetName = alternate;
-        }
-
-        const worksheet = workbook.Sheets[targetSheetName];
-        let rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-
-        if (!rawRows || rawRows.length === 0) {
-          // Check if any other sheet has data
-          for (const sName of workbook.SheetNames) {
-            if (sName !== targetSheetName) {
-              const testSheet = workbook.Sheets[sName];
-              const testRows = XLSX.utils.sheet_to_json(testSheet, { defval: '' });
-              if (testRows && testRows.length > 0) {
-                targetSheetName = sName;
-                rawRows = testRows;
-                break;
-              }
-            }
-          }
-        }
-
-        if (!rawRows || rawRows.length === 0) {
-          throw new Error('चयनित Excel शीट पूर्णतः खाली है। कृपया आधिकारिक टेम्पलेट में डेटा भरकर अपलोड करें।');
-        }
-
-        if (onProgress) {
-          onProgress({
-            step: 2,
-            percent: 30,
-            title: 'शीट पढ़ी गई',
-            message: `शीट "${targetSheetName}" से कुल ${rawRows.length} पंक्तियाँ मिलीं। डेटा निष्कर्षण प्रारंभ...`,
-            totalRows: rawRows.length,
-            sheetName: targetSheetName
-          });
-        }
-
-        // Flexible multi-lingual header value finder
-        const getExcelValue = (row, fieldKeys) => {
-          for (const k of fieldKeys) {
-            if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
-              return String(row[k]).trim();
-            }
-          }
-          const rowKeys = Object.keys(row);
-          for (const fk of fieldKeys) {
-            const cleanFk = fk.toLowerCase().replace(/[\s\-_/()\\.]/g, '');
-            for (const rk of rowKeys) {
-              const cleanRk = rk.toLowerCase().replace(/[\s\-_/()\\.]/g, '');
-              if (cleanRk === cleanFk || cleanRk.includes(cleanFk) || cleanFk.includes(cleanRk)) {
-                if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
-                  return String(row[rk]).trim();
-                }
-              }
-            }
-          }
-          return '';
-        };
-
-        let updatedContacts = [...existingContacts];
-        let addedCount = 0;
-        let updatedCount = 0;
-        const skippedRows = [];
-        const newDistrictsSet = new Set();
-        const newPostsSet = new Set();
-        const newOfficesMap = new Map();
-
-        const totalRows = rawRows.length;
-
-        for (let idx = 0; idx < totalRows; idx++) {
-          const row = rawRows[idx];
-          const rowNum = idx + 2;
-
-          const pno = getExcelValue(row, [
-            'PNO', 'PNO (पीएनओ नंबर)', 'PNO Number', 'PNO No', 'पीएनओ', 'पीएनओ नंबर', 'Badge No', 'Badge Number', 'बैज नंबर', 'PNO / पीएनओ'
-          ]);
-          const name = getExcelValue(row, [
-            'Name', 'Name (कर्मचारी का नाम)', 'Officer Name', 'Employee Name', 'नाम', 'कर्मचारी का नाम', 'अधिकारी का नाम', 'Name / नाम'
-          ]);
-          const post = getExcelValue(row, [
-            'Post', 'Post (पदनाम)', 'Designation', 'पद', 'पदनाम', 'Rank', 'रैंक', 'Post / पद'
-          ]);
-          let district = getExcelValue(row, [
-            'District', 'District (जनपद)', 'जनपद', 'ज़िला', 'जिला', 'City', 'District / जनपद'
-          ]);
-          const office = getExcelValue(row, [
-            'Office', 'Office (कार्यालय/थाना)', 'Thana', 'Police Station', 'कार्यालय', 'थाना', 'इकाई', 'कार्यालय / थाना', 'थाना/कार्यालय'
-          ]);
-          const rawPhone = getExcelValue(row, [
-            'Phone', 'Phone (मोबाइल नंबर - 10 अंक)', 'Mobile', 'Mobile Number', 'Contact', 'मोबाइल', 'मोबाइल नंबर', 'फोन', 'फोन नंबर'
-          ]);
-          const whatsapp = getExcelValue(row, [
-            'WhatsApp', 'WhatsApp (व्हाट्सएप नंबर)', 'WhatsApp Number', 'वॉट्सऐप', 'व्हाट्सएप', 'व्हाट्सएप नंबर'
-          ]);
-          const email = getExcelValue(row, [
-            'Email', 'Email (ईमेल आईडी)', 'Email ID', 'ईमेल', 'ईमेल आईडी'
-          ]);
-          const password = getExcelValue(row, [
-            'Password', 'Password (पासवर्ड)', 'Password (लॉगिन पासवर्ड)', 'पासवर्ड'
-          ]);
-          const statusStr = getExcelValue(row, [
-            'Status', 'Status (स्थिति: Approved/Pending)', 'Status (स्वीकृति स्थिति)', 'स्थिति', 'स्वीकृति स्थिति', 'स्वीकृति'
-          ]);
-          const hidePhoneStr = getExcelValue(row, [
-            'Hide_Phone', 'Hide_Phone (मोबाइल नंबर छुपाएं: No/Yes)', 'Hide Phone', 'IsPhoneHidden', 'नंबर छुपाएं', 'गोपनीय'
-          ]);
-          const remarks = getExcelValue(row, [
-            'Remarks', 'Remarks (टिप्पणी / रिमार्क्स)', 'Notes', 'RegistrationNotes', 'टिप्पणी', 'रिमार्क्स'
-          ]);
-
-          if (districtFilter) {
-            district = districtFilter;
-          }
-
-          // Clean phone digits to 10 digits
-          let cleanPhone = '';
-          if (rawPhone) {
-            const digits = String(rawPhone).replace(/\D/g, '');
-            cleanPhone = digits.length >= 10 ? digits.slice(-10) : digits;
-          }
-
-          // Validation
-          if (!name || !cleanPhone || cleanPhone.length < 10) {
-            skippedRows.push({
-              rowNum,
-              name: name || 'अनाम',
-              phone: rawPhone || 'अनुपलब्ध',
-              reason: !name ? 'नाम (Name) अनुपलब्ध' : '10-अंकों का वैध मोबाइल नंबर अनुपलब्ध'
-            });
-            continue;
-          }
-
-          const cleanWhatsapp = (whatsapp ? String(whatsapp).replace(/\D/g, '').slice(-10) : '') || cleanPhone;
-          const isPhoneHidden = /yes|हाँ|true|1|यस|छुप|hide/i.test(hidePhoneStr);
-          const status = /pending|लंबित|pratikhsa/i.test(statusStr) ? 'pending' : 'approved';
-
-          const finalDist = district || (districtFilter || 'लखनऊ');
-          const finalPost = post || 'आरक्षी (Constable)';
-          const finalOffice = office || 'थाना कोतवाली';
-
-          // Collect new distinct master items
-          if (finalDist && finalDist !== 'सभी ज़िले (All Districts)' && finalDist !== 'सभी ज़िले') {
-            newDistrictsSet.add(finalDist);
-          }
-          if (finalPost && finalPost !== 'सभी पद (All Posts)' && finalPost !== 'सभी पद') {
-            newPostsSet.add(finalPost);
-          }
-          if (finalOffice && finalOffice !== 'सभी कार्यालय/थाने (All Offices)' && finalOffice !== 'सभी कार्यालय/थाने') {
-            newOfficesMap.set(finalOffice, finalDist);
-          }
-
-          const existingIdx = updatedContacts.findIndex(c => 
-            (pno && c.pno && String(c.pno).toLowerCase() === String(pno).toLowerCase()) || 
-            (c.phone && c.phone === cleanPhone)
-          );
-
-          if (existingIdx !== -1) {
-            if (districtFilter && updatedContacts[existingIdx].district !== districtFilter) {
-              skippedRows.push({
-                rowNum,
-                name,
-                phone: cleanPhone,
-                reason: `कार्मिक अन्य जनपद (${updatedContacts[existingIdx].district}) में पंजीकृत है`
-              });
-              continue;
-            }
-
-            updatedContacts[existingIdx] = {
-              ...updatedContacts[existingIdx],
-              pno: pno || updatedContacts[existingIdx].pno,
-              name: name || updatedContacts[existingIdx].name,
-              post: finalPost || updatedContacts[existingIdx].post,
-              district: finalDist || updatedContacts[existingIdx].district,
-              office: finalOffice || updatedContacts[existingIdx].office,
-              phone: cleanPhone || updatedContacts[existingIdx].phone,
-              whatsapp: cleanWhatsapp || updatedContacts[existingIdx].whatsapp,
-              email: email || updatedContacts[existingIdx].email,
-              password: password || updatedContacts[existingIdx].password || '1234',
-              status: status || updatedContacts[existingIdx].status || 'approved',
-              isPhoneHidden: isPhoneHidden !== undefined ? isPhoneHidden : updatedContacts[existingIdx].isPhoneHidden,
-              registrationNotes: remarks || updatedContacts[existingIdx].registrationNotes || 'एक्सेल शीट द्वारा अद्यतन',
-              updatedAt: new Date().toISOString()
-            };
-            updatedCount++;
-          } else {
-            const newCard = {
-              id: `pol-excel-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
-              pno: pno || `PNO-${Math.floor(100000000 + Math.random() * 900000000)}`,
-              name,
-              post: finalPost,
-              district: finalDist,
-              office: finalOffice,
-              phone: cleanPhone,
-              whatsapp: cleanWhatsapp,
-              email: email || '',
-              password: password || '1234',
-              status,
-              isPhoneHidden,
-              isRegisteredUser: true,
-              registrationNotes: remarks || 'एक्सेल शीट द्वारा आयातित (Excel Bulk Import)',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            };
-            updatedContacts.unshift(newCard);
-            addedCount++;
-          }
-
-          // Periodic progress update
-          if (idx % 25 === 0 || idx === totalRows - 1) {
-            if (onProgress) {
-              const currentPercent = Math.round(30 + ((idx + 1) / totalRows) * 35);
-              onProgress({
-                step: 2,
-                percent: currentPercent,
-                title: 'सत्यापन व निष्कर्षण',
-                message: `सत्यापन जारी: ${idx + 1} / ${totalRows} पंक्तियाँ (नए: ${addedCount}, अपडेट: ${updatedCount})...`,
-                processedCount: idx + 1,
-                totalRows,
-                addedCount,
-                updatedCount,
-                skippedCount: skippedRows.length
-              });
-            }
-          }
-        }
-
-        // STEP 3: MASTER DATA UPDATE (BATCHED IN ONE OPERATION)
-        if (onProgress) {
-          onProgress({
-            step: 3,
-            percent: 70,
-            title: 'मास्टर डेटा एकीकरण',
-            message: 'नए जनपद, पद एवं थानों को मास्टर सूची में एकीकृत किया जा रहा है...'
-          });
-        }
-
-        // Batch merge districts
-        const currentDistricts = getStoredDistricts();
-        const mergedDistricts = [...currentDistricts];
-        newDistrictsSet.forEach(d => {
-          if (!mergedDistricts.includes(d)) mergedDistricts.push(d);
-        });
-        if (mergedDistricts.length !== currentDistricts.length) {
-          try { localStorage.setItem(DISTRICTS_KEY, JSON.stringify(mergedDistricts)); } catch (e) {}
-          idbSet(DISTRICTS_KEY, mergedDistricts);
-        }
-
-        // Batch merge posts
-        const currentPosts = getStoredPosts();
-        const mergedPosts = [...currentPosts];
-        newPostsSet.forEach(p => {
-          if (!mergedPosts.includes(p)) mergedPosts.push(p);
-        });
-        if (mergedPosts.length !== currentPosts.length) {
-          try { localStorage.setItem(POSTS_KEY, JSON.stringify(mergedPosts)); } catch (e) {}
-          idbSet(POSTS_KEY, mergedPosts);
-        }
-
-        // Batch merge offices
-        const currentOffices = getStoredOffices();
-        const mergedOffices = [...currentOffices];
-        newOfficesMap.forEach((dist, off) => {
-          const exists = mergedOffices.some(o => 
-            typeof o === 'object' ? (o.name === off && o.district === dist) : o === off
-          );
-          if (!exists) {
-            mergedOffices.push({
-              id: `off-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-              name: off,
-              district: dist
-            });
-          }
-        });
-        if (mergedOffices.length !== currentOffices.length) {
-          try { localStorage.setItem(OFFICES_KEY, JSON.stringify(mergedOffices)); } catch (e) {}
-          idbSet(OFFICES_KEY, mergedOffices);
-        }
-
-        // STEP 4: SAVE CONTACTS LOCALLY & TO INDEXEDDB
-        if (onProgress) {
-          onProgress({
-            step: 4,
-            percent: 78,
-            title: 'लोकल डेटाबेस सुरक्षित',
-            message: 'स्थानीय मेमोरी एवं IndexedDB में सुरक्षित किया जा रहा है...'
-          });
-        }
-
-        try {
-          localStorage.setItem(CONTACTS_KEY, JSON.stringify(updatedContacts));
-        } catch (e) {}
-        await idbSaveContacts(updatedContacts);
-
-        // STEP 5: SYNC TO FIREBASE CLOUD FIRESTORE
-        let isCloudSynced = false;
-        if (isFirebaseConfigured()) {
-          if (onProgress) {
-            onProgress({
-              step: 5,
-              percent: 82,
-              title: 'Firebase लाइव सिंक',
-              message: 'Google Firebase Firestore क्लाउड पर डेटा अपलोड हो रहा है...'
-            });
-          }
-
-          // Sync master config in single call
-          try {
-            await saveFirestoreMasterConfig({
-              districts: mergedDistricts,
-              posts: mergedPosts,
-              offices: mergedOffices
-            });
-          } catch (mErr) {
-            console.warn('[Firebase] Master config sync warning:', mErr);
-          }
-
-          // Sync contacts in batches with real-time feedback
-          try {
-            await syncAllContactsToFirestore(updatedContacts, (chunkInfo) => {
-              if (onProgress) {
-                const cloudPct = Math.round(82 + (chunkInfo.percent * 0.16));
-                onProgress({
-                  step: 5,
-                  percent: cloudPct,
-                  title: 'Firebase लाइव सिंक',
-                  message: `क्लाउड पर अपलोड: ${chunkInfo.syncedCount} / ${chunkInfo.totalCount} रिकॉर्ड्स (बैच ${chunkInfo.chunkIndex}/${chunkInfo.totalChunks})...`,
-                  syncedCount: chunkInfo.syncedCount,
-                  totalCount: chunkInfo.totalCount
-                });
-              }
-            });
-            isCloudSynced = true;
-          } catch (cloudErr) {
-            console.warn('[Firebase] Cloud sync batch warning:', cloudErr);
-          }
-        }
-
-        if (onProgress) {
-          onProgress({
-            step: 6,
-            percent: 100,
-            title: 'सफलतापूर्वक पूर्ण',
-            message: `✅ कुल ${rawRows.length} पंक्तियाँ प्रोसेस हुईं! नए जोड़े गए: ${addedCount}, अपडेट: ${updatedCount}।`
-          });
-        }
-
-        resolve({
-          success: true,
-          updatedContacts,
-          totalProcessed: rawRows.length,
-          addedCount,
-          updatedCount,
-          skippedCount: skippedRows.length,
-          skippedReasons: skippedRows,
-          sheetName: targetSheetName,
-          newDistrictsCount: newDistrictsSet.size,
-          newPostsCount: newPostsSet.size,
-          newOfficesCount: newOfficesMap.size,
-          isCloudSynced
-        });
-
-      } catch (err) {
-        if (onProgress) {
-          onProgress({
-            step: -1,
-            percent: 0,
-            title: 'त्रुटि',
-            message: err.message || 'एक्सेल फ़ाइल लोड करने में समस्या आई।'
-          });
-        }
-        reject(err);
       }
+    }
+
+    if (!rawRows || rawRows.length === 0) {
+      throw new Error('चयनित Excel शीट पूर्णतः खाली है। कृपया आधिकारिक टेम्पलेट में डेटा भरकर अपलोड करें।');
+    }
+
+    if (onProgress) {
+      onProgress({
+        step: 2,
+        percent: 32,
+        title: 'डेटा निष्कर्षण प्रारंभ',
+        message: `शीट "${targetSheetName}" से कुल ${rawRows.length} पंक्तियाँ मिलीं। सत्यापन व मिलान जारी...`,
+        totalRows: rawRows.length,
+        sheetName: targetSheetName
+      });
+    }
+
+    // Flexible multi-lingual header value finder
+    const getExcelValue = (row, fieldKeys) => {
+      for (const k of fieldKeys) {
+        if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+          return String(row[k]).trim();
+        }
+      }
+      const rowKeys = Object.keys(row);
+      for (const fk of fieldKeys) {
+        const cleanFk = fk.toLowerCase().replace(/[\s\-_/()\\.]/g, '');
+        for (const rk of rowKeys) {
+          const cleanRk = rk.toLowerCase().replace(/[\s\-_/()\\.]/g, '');
+          if (cleanRk === cleanFk || cleanRk.includes(cleanFk) || cleanFk.includes(cleanRk)) {
+            if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
+              return String(row[rk]).trim();
+            }
+          }
+        }
+      }
+      return '';
     };
 
-    reader.onerror = () => reject(new Error('फ़ाइल पढ़ने में विफलता हुई। कृपया फ़ाइल पुनः चुनें।'));
-    reader.readAsArrayBuffer(file);
-  });
+    let updatedContacts = [...existingContacts];
+    let addedCount = 0;
+    let updatedCount = 0;
+    const skippedRows = [];
+    const newDistrictsSet = new Set();
+    const newPostsSet = new Set();
+    const newOfficesMap = new Map();
+
+    const totalRows = rawRows.length;
+
+    for (let idx = 0; idx < totalRows; idx++) {
+      const row = rawRows[idx];
+      const rowNum = idx + 2;
+
+      const pno = getExcelValue(row, [
+        'PNO', 'PNO (पीएनओ नंबर)', 'PNO Number', 'PNO No', 'पीएनओ', 'पीएनओ नंबर', 'Badge No', 'Badge Number', 'बैज नंबर', 'PNO / पीएनओ'
+      ]);
+      const name = getExcelValue(row, [
+        'Name', 'Name (कर्मचारी का नाम)', 'Officer Name', 'Employee Name', 'नाम', 'कर्मचारी का नाम', 'अधिकारी का नाम', 'Name / नाम'
+      ]);
+      const post = getExcelValue(row, [
+        'Post', 'Post (पदनाम)', 'Designation', 'पद', 'पदनाम', 'Rank', 'रैंक', 'Post / पद'
+      ]);
+      let district = getExcelValue(row, [
+        'District', 'District (जनपद)', 'जनपद', 'ज़िला', 'जिला', 'City', 'District / जनपद'
+      ]);
+      const office = getExcelValue(row, [
+        'Office', 'Office (कार्यालय/थाना)', 'Thana', 'Police Station', 'कार्यालय', 'थाना', 'इकाई', 'कार्यालय / थाना', 'थाना/कार्यालय'
+      ]);
+      const rawPhone = getExcelValue(row, [
+        'Phone', 'Phone (मोबाइल नंबर - 10 अंक)', 'Mobile', 'Mobile Number', 'Contact', 'मोबाइल', 'मोबाइल नंबर', 'फोन', 'फोन नंबर'
+      ]);
+      const whatsapp = getExcelValue(row, [
+        'WhatsApp', 'WhatsApp (व्हाट्सएप नंबर)', 'WhatsApp Number', 'वॉट्सऐप', 'व्हाट्सएप', 'व्हाट्सएप नंबर'
+      ]);
+      const email = getExcelValue(row, [
+        'Email', 'Email (ईमेल आईडी)', 'Email ID', 'ईमेल', 'ईमेल आईडी'
+      ]);
+      const password = getExcelValue(row, [
+        'Password', 'Password (पासवर्ड)', 'Password (लॉगिन पासवर्ड)', 'पासवर्ड'
+      ]);
+      const statusStr = getExcelValue(row, [
+        'Status', 'Status (स्थिति: Approved/Pending)', 'Status (स्वीकृति स्थिति)', 'स्थिति', 'स्वीकृति स्थिति', 'स्वीकृति'
+      ]);
+      const hidePhoneStr = getExcelValue(row, [
+        'Hide_Phone', 'Hide_Phone (मोबाइल नंबर छुपाएं: No/Yes)', 'Hide Phone', 'IsPhoneHidden', 'नंबर छुपाएं', 'गोपनीय'
+      ]);
+      const remarks = getExcelValue(row, [
+        'Remarks', 'Remarks (टिप्पणी / रिमार्क्स)', 'Notes', 'RegistrationNotes', 'टिप्पणी', 'रिमार्क्स'
+      ]);
+
+      if (districtFilter) {
+        district = districtFilter;
+      }
+
+      // Clean phone digits to 10 digits
+      let cleanPhone = '';
+      if (rawPhone) {
+        const digits = String(rawPhone).replace(/\D/g, '');
+        cleanPhone = digits.length >= 10 ? digits.slice(-10) : digits;
+      }
+
+      // Validation
+      if (!name || !cleanPhone || cleanPhone.length < 10) {
+        skippedRows.push({
+          rowNum,
+          name: name || 'अनाम',
+          phone: rawPhone || 'अनुपलब्ध',
+          reason: !name ? 'नाम (Name) अनुपलब्ध' : '10-अंकों का वैध मोबाइल नंबर अनुपलब्ध'
+        });
+        continue;
+      }
+
+      const cleanWhatsapp = (whatsapp ? String(whatsapp).replace(/\D/g, '').slice(-10) : '') || cleanPhone;
+      const isPhoneHidden = /yes|हाँ|true|1|यस|छुप|hide/i.test(hidePhoneStr);
+      const status = /pending|लंबित|pratikhsa/i.test(statusStr) ? 'pending' : 'approved';
+
+      const finalDist = district || (districtFilter || 'लखनऊ');
+      const finalPost = post || 'आरक्षी (Constable)';
+      const finalOffice = office || 'थाना कोतवाली';
+
+      // Collect new distinct master items
+      if (finalDist && finalDist !== 'सभी ज़िले (All Districts)' && finalDist !== 'सभी ज़िले') {
+        newDistrictsSet.add(finalDist);
+      }
+      if (finalPost && finalPost !== 'सभी पद (All Posts)' && finalPost !== 'सभी पद') {
+        newPostsSet.add(finalPost);
+      }
+      if (finalOffice && finalOffice !== 'सभी कार्यालय/थाने (All Offices)' && finalOffice !== 'सभी कार्यालय/थाने') {
+        newOfficesMap.set(finalOffice, finalDist);
+      }
+
+      const existingIdx = updatedContacts.findIndex(c => 
+        (pno && c.pno && String(c.pno).toLowerCase() === String(pno).toLowerCase()) || 
+        (c.phone && c.phone === cleanPhone)
+      );
+
+      if (existingIdx !== -1) {
+        if (districtFilter && updatedContacts[existingIdx].district !== districtFilter) {
+          skippedRows.push({
+            rowNum,
+            name,
+            phone: cleanPhone,
+            reason: `कार्मिक अन्य जनपद (${updatedContacts[existingIdx].district}) में पंजीकृत है`
+          });
+          continue;
+        }
+
+        updatedContacts[existingIdx] = {
+          ...updatedContacts[existingIdx],
+          pno: pno || updatedContacts[existingIdx].pno,
+          name: name || updatedContacts[existingIdx].name,
+          post: finalPost || updatedContacts[existingIdx].post,
+          district: finalDist || updatedContacts[existingIdx].district,
+          office: finalOffice || updatedContacts[existingIdx].office,
+          phone: cleanPhone || updatedContacts[existingIdx].phone,
+          whatsapp: cleanWhatsapp || updatedContacts[existingIdx].whatsapp,
+          email: email || updatedContacts[existingIdx].email,
+          password: password || updatedContacts[existingIdx].password || '1234',
+          status: status || updatedContacts[existingIdx].status || 'approved',
+          isPhoneHidden: isPhoneHidden !== undefined ? isPhoneHidden : updatedContacts[existingIdx].isPhoneHidden,
+          registrationNotes: remarks || updatedContacts[existingIdx].registrationNotes || 'एक्सेल शीट द्वारा अद्यतन',
+          updatedAt: new Date().toISOString()
+        };
+        updatedCount++;
+      } else {
+        const newCard = {
+          id: `pol-excel-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
+          pno: pno || `PNO-${Math.floor(100000000 + Math.random() * 900000000)}`,
+          name,
+          post: finalPost,
+          district: finalDist,
+          office: finalOffice,
+          phone: cleanPhone,
+          whatsapp: cleanWhatsapp,
+          email: email || '',
+          password: password || '1234',
+          status,
+          isPhoneHidden,
+          isRegisteredUser: true,
+          registrationNotes: remarks || 'एक्सेल शीट द्वारा आयातित (Excel Bulk Import)',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        updatedContacts.unshift(newCard);
+        addedCount++;
+      }
+
+      // Periodic progress update
+      if (idx % 20 === 0 || idx === totalRows - 1) {
+        if (onProgress) {
+          const currentPercent = Math.round(32 + ((idx + 1) / totalRows) * 36);
+          onProgress({
+            step: 2,
+            percent: currentPercent,
+            title: 'सत्यापन व निष्कर्षण',
+            message: `सत्यापन जारी: ${idx + 1} / ${totalRows} पंक्तियाँ (नए: ${addedCount}, अपडेट: ${updatedCount})...`,
+            processedCount: idx + 1,
+            totalRows,
+            addedCount,
+            updatedCount,
+            skippedCount: skippedRows.length
+          });
+        }
+      }
+    }
+
+    // STEP 3: MASTER DATA UPDATE (BATCHED IN ONE OPERATION)
+    if (onProgress) {
+      onProgress({
+        step: 3,
+        percent: 72,
+        title: 'मास्टर डेटा एकीकरण',
+        message: 'नए जनपद, पद एवं थानों को मास्टर सूची में एकीकृत किया जा रहा है...'
+      });
+    }
+
+    // Batch merge districts
+    const currentDistricts = getStoredDistricts();
+    const mergedDistricts = [...currentDistricts];
+    newDistrictsSet.forEach(d => {
+      if (!mergedDistricts.includes(d)) mergedDistricts.push(d);
+    });
+    if (mergedDistricts.length !== currentDistricts.length) {
+      try { localStorage.setItem(DISTRICTS_KEY, JSON.stringify(mergedDistricts)); } catch (e) {}
+      idbSet(DISTRICTS_KEY, mergedDistricts);
+    }
+
+    // Batch merge posts
+    const currentPosts = getStoredPosts();
+    const mergedPosts = [...currentPosts];
+    newPostsSet.forEach(p => {
+      if (!mergedPosts.includes(p)) mergedPosts.push(p);
+    });
+    if (mergedPosts.length !== currentPosts.length) {
+      try { localStorage.setItem(POSTS_KEY, JSON.stringify(mergedPosts)); } catch (e) {}
+      idbSet(POSTS_KEY, mergedPosts);
+    }
+
+    // Batch merge offices
+    const currentOffices = getStoredOffices();
+    const mergedOffices = [...currentOffices];
+    newOfficesMap.forEach((dist, off) => {
+      const exists = mergedOffices.some(o => 
+        typeof o === 'object' ? (o.name === off && o.district === dist) : o === off
+      );
+      if (!exists) {
+        mergedOffices.push({
+          id: `off-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          name: off,
+          district: dist
+        });
+      }
+    });
+    if (mergedOffices.length !== currentOffices.length) {
+      try { localStorage.setItem(OFFICES_KEY, JSON.stringify(mergedOffices)); } catch (e) {}
+      idbSet(OFFICES_KEY, mergedOffices);
+    }
+
+    // STEP 4: SAVE CONTACTS LOCALLY & TO INDEXEDDB
+    if (onProgress) {
+      onProgress({
+        step: 4,
+        percent: 80,
+        title: 'लोकल डेटाबेस सुरक्षित',
+        message: 'स्थानीय मेमोरी एवं IndexedDB में सुरक्षित किया जा रहा है...'
+      });
+    }
+
+    try {
+      localStorage.setItem(CONTACTS_KEY, JSON.stringify(updatedContacts));
+    } catch (e) {}
+    await idbSaveContacts(updatedContacts);
+
+    // STEP 5: SYNC TO FIREBASE CLOUD FIRESTORE
+    let isCloudSynced = false;
+    if (isFirebaseConfigured()) {
+      if (onProgress) {
+        onProgress({
+          step: 5,
+          percent: 84,
+          title: 'Firebase लाइव सिंक',
+          message: 'Google Firebase Firestore क्लाउड पर डेटा अपलोड हो रहा है...'
+        });
+      }
+
+      // Sync master config in single call
+      try {
+        await saveFirestoreMasterConfig({
+          districts: mergedDistricts,
+          posts: mergedPosts,
+          offices: mergedOffices
+        });
+      } catch (mErr) {
+        console.warn('[Firebase] Master config sync warning:', mErr);
+      }
+
+      // Sync contacts in batches with real-time feedback
+      try {
+        await syncAllContactsToFirestore(updatedContacts, (chunkInfo) => {
+          if (onProgress) {
+            const cloudPct = Math.round(84 + (chunkInfo.percent * 0.15));
+            onProgress({
+              step: 5,
+              percent: cloudPct,
+              title: 'Firebase लाइव सिंक',
+              message: `क्लाउड पर अपलोड: ${chunkInfo.syncedCount} / ${chunkInfo.totalCount} रिकॉर्ड्स (बैच ${chunkInfo.chunkIndex}/${chunkInfo.totalChunks})...`,
+              syncedCount: chunkInfo.syncedCount,
+              totalCount: chunkInfo.totalCount
+            });
+          }
+        });
+        isCloudSynced = true;
+      } catch (cloudErr) {
+        console.warn('[Firebase] Cloud sync batch warning:', cloudErr);
+      }
+    }
+
+    if (onProgress) {
+      onProgress({
+        step: 6,
+        percent: 100,
+        title: 'सफलतापूर्वक पूर्ण',
+        message: `✅ कुल ${rawRows.length} पंक्तियाँ प्रोसेस हुईं! नए जोड़े गए: ${addedCount}, अपडेट: ${updatedCount}।`
+      });
+    }
+
+    return {
+      success: true,
+      updatedContacts,
+      totalProcessed: rawRows.length,
+      addedCount,
+      updatedCount,
+      skippedCount: skippedRows.length,
+      skippedReasons: skippedRows,
+      sheetName: targetSheetName,
+      newDistrictsCount: newDistrictsSet.size,
+      newPostsCount: newPostsSet.size,
+      newOfficesCount: newOfficesMap.size,
+      isCloudSynced
+    };
+
+  } catch (err) {
+    if (onProgress) {
+      onProgress({
+        step: -1,
+        percent: 0,
+        title: 'त्रुटि',
+        message: err.message || 'एक्सेल फ़ाइल लोड करने में समस्या आई।'
+      });
+    }
+    throw err;
+  }
 };
 
 export const downloadSampleExcel = async () => {
-  const XLSX = await import('xlsx');
+  const xlsxLib = XLSX;
   
   // Sheet 1: Registration Form Matched Template
   const templateRows = [
