@@ -43,10 +43,10 @@ export default function HeaderMenuDrawer({
       top: 0,
       left: 0,
       right: 0,
-      bottom: 0,
+      bottom: '62px',
       background: 'rgba(2, 6, 23, 0.75)',
       backdropFilter: 'blur(8px)',
-      zIndex: 9990,
+      zIndex: 10000,
       display: 'flex',
       justifyContent: 'flex-end',
       transition: 'opacity 0.25s ease'
@@ -62,7 +62,8 @@ export default function HeaderMenuDrawer({
           display: 'flex',
           flexDirection: 'column',
           overflowY: 'auto',
-          color: '#f8fafc'
+          color: '#f8fafc',
+          paddingBottom: '20px'
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -370,7 +371,11 @@ export default function HeaderMenuDrawer({
           }}>
             <button
               type="button"
-              onClick={() => handleAction(onLogout)}
+              onClick={() => {
+                if (window.confirm('क्या आप निश्चित रूप से उत्तर प्रदेश पुलिस पोर्टल से सुरक्षित लॉगआउट (Logout) करना चाहते हैं?')) {
+                  handleAction(onLogout);
+                }
+              }}
               style={{
                 width: '100%',
                 padding: '0.7rem',

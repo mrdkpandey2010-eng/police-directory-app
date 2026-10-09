@@ -90,7 +90,7 @@ export default function MobileBottomNav({
         bottom: 0,
         left: 0,
         right: 0,
-        zIndex: 990,
+        zIndex: 10050,
         background: 'rgba(7, 14, 28, 0.94)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
@@ -101,7 +101,8 @@ export default function MobileBottomNav({
         justifyContent: 'space-around',
         paddingLeft: '4px',
         paddingRight: '4px',
-        paddingBottom: 'max(6px, env(safe-area-inset-bottom, 6px))'
+        paddingBottom: 'max(6px, env(safe-area-inset-bottom, 6px))',
+        pointerEvents: 'auto'
       }}
     >
       {/* 1. DIRECTORY / HOME TAB */}

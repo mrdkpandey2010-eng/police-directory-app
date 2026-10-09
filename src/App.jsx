@@ -1931,7 +1931,7 @@ export default function App() {
           setIsNotifsModalOpen(false);
           setIsAdminModalOpen(false);
           setIsProfileModalOpen(false);
-          setIsMenuDrawerOpen(true);
+          setIsMenuDrawerOpen(prev => !prev);
         }}
         onNavigateHome={() => {
           setIsChatModalOpen(false);
