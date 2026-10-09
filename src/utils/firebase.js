@@ -401,14 +401,19 @@ export const deleteFirestoreContact = async (contactId) => {
   }
 };
 
-export const syncAllContactsToFirestore = async (contacts) => {
+export const syncAllContactsToFirestore = async (contacts, onProgress = null) => {
   const db = getFirebaseDB();
   if (!db || !Array.isArray(contacts) || contacts.length === 0) return false;
 
   try {
     const validContacts = contacts.filter(c => c && c.id && !/^pol-1(0[1-9]|1[0-5])$/.test(c.id));
+    if (validContacts.length === 0) return true;
+
     const CHUNK_SIZE = 400; // Firestore batch maximum is 500
+    const totalChunks = Math.ceil(validContacts.length / CHUNK_SIZE);
+
     for (let i = 0; i < validContacts.length; i += CHUNK_SIZE) {
+      const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
       const chunk = validContacts.slice(i, i + CHUNK_SIZE);
       const batch = writeBatch(db);
       for (const c of chunk) {
@@ -416,13 +421,30 @@ export const syncAllContactsToFirestore = async (contacts) => {
         const cleanC = JSON.parse(JSON.stringify(c));
         batch.set(docRef, { ...cleanC, updatedAt: cleanC.updatedAt || new Date().toISOString() }, { merge: true });
       }
-      await batch.commit();
+
+      // 20-second timeout race to prevent indefinite hang on slow/offline networks
+      await Promise.race([
+        batch.commit(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Firebase क्लाउड सिंक टाइमआउट: नेटवर्क धीमा हो सकता है')), 20000)
+        )
+      ]);
+
+      if (onProgress) {
+        onProgress({
+          chunkIndex,
+          totalChunks,
+          syncedCount: Math.min(i + CHUNK_SIZE, validContacts.length),
+          totalCount: validContacts.length,
+          percent: Math.round((Math.min(i + CHUNK_SIZE, validContacts.length) / validContacts.length) * 100)
+        });
+      }
     }
     console.log(`[Firebase] Batch synced ${validContacts.length} contacts to cloud successfully`);
     return true;
   } catch (err) {
     console.error('Failed to sync contacts to Firestore batch:', err);
-    return false;
+    throw err;
   }
 };
 

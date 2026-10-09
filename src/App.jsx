@@ -920,12 +920,6 @@ export default function App() {
     setDistricts(currentDistricts);
     setPosts(currentPosts);
     setOffices(currentOffices);
-    if (isFirebaseConfigured()) {
-      syncAllContactsToFirestore(newContactsList);
-      saveFirestoreDistricts(currentDistricts);
-      saveFirestorePosts(currentPosts);
-      saveFirestoreOffices(currentOffices);
-    }
     showToast('✅ एक्सेल शीट से डेटा एवं मास्टर लिस्ट क्लाउड (Firebase) पर सफलतापूर्वक अपडेट हुआ!');
   };
 

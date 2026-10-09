@@ -3,7 +3,7 @@ import {
   X, Lock, Unlock, FileSpreadsheet, Download, Upload, CheckCircle, 
   XCircle, Edit3, Trash2, Clock, Users, Shield, KeyRound, Plus, 
   ShieldCheck, Settings, Power, UserCheck, Award, Building2, MapPin,
-  FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe, Cloud, Database
+  FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe, Cloud, Database, AlertTriangle
 } from 'lucide-react';
 import { 
   downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS,
@@ -108,6 +108,8 @@ export default function AdminPanel({
   const [excelFile, setExcelFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [importStatusMsg, setImportStatusMsg] = useState(null);
+  const [importProgress, setImportProgress] = useState(null);
+  const [showSkippedDetails, setShowSkippedDetails] = useState(false);
   const fileInputRef = useRef(null);
 
   // Search inside admin table
@@ -295,22 +297,54 @@ export default function AdminPanel({
   const handleProcessExcel = async () => {
     if (!excelFile) return;
     setIsUploading(true);
-    setImportStatusMsg({
-      type: 'info',
-      text: '🔄 एक्सेल डेटा प्रोसेस हो रहा है एवं Firebase क्लाउड डेटाबेस पर लाइव सिंक किया जा रहा है...'
+    setImportStatusMsg(null);
+    setShowSkippedDetails(false);
+    setImportProgress({
+      step: 1,
+      percent: 10,
+      title: 'प्रारंभ हो रहा है...',
+      message: 'एक्सेल फ़ाइल लोड की जा रही है...',
+      totalRows: 0,
+      processedCount: 0,
+      addedCount: 0,
+      updatedCount: 0,
+      skippedCount: 0
     });
 
     try {
-      const res = await importContactsFromExcel(excelFile, contacts, myDistrict);
+      const res = await importContactsFromExcel(
+        excelFile, 
+        contacts, 
+        myDistrict,
+        (progressUpdate) => {
+          setImportProgress(prev => ({
+            ...prev,
+            ...progressUpdate
+          }));
+        }
+      );
+
       if (onContactsImported) {
         await onContactsImported(res.updatedContacts);
       }
+
+      setImportProgress({
+        step: 6,
+        percent: 100,
+        title: 'सफलतापूर्वक पूर्ण!',
+        message: `सफलतापूर्वक निष्पादित! कुल ${res.totalProcessed} पंक्तियाँ प्रोसेस हुईं।`,
+        isCompleted: true,
+        report: res
+      });
+
       setImportStatusMsg({
         type: 'success',
-        text: `✅ सफलतापूर्वक निष्पादित! नए जोड़े गए: ${res.addedCount}, अपडेट किए गए: ${res.updatedCount}। डेटाबेस (Firebase) पर लाइव सिंक हो गया है और सभी यूज़र्स को रियल-टाइम में दिख रहा है।`
+        text: `✅ एक्सेल डेटा सफलतापूर्वक सुरक्षित एवं Firebase क्लाउड पर लाइव सिंक हो गया है!`
       });
       setExcelFile(null);
     } catch (err) {
+      console.error('Excel Import Error:', err);
+      setImportProgress(null);
       setImportStatusMsg({
         type: 'error',
         text: err.message || 'एक्सेल फ़ाइल लोड करने में समस्या आई।'
@@ -1053,22 +1087,222 @@ export default function AdminPanel({
                 />
               </div>
 
-              {excelFile && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-                  <button className="btn btn-secondary" onClick={() => setExcelFile(null)}>
-                    फ़ाइल हटाएँ
-                  </button>
-                  <button className="btn btn-primary" onClick={handleProcessExcel} disabled={isUploading}>
-                    <Upload size={16} />
-                    {isUploading ? "क्लाउड डेटाबेस पर सिंक हो रहा है..." : "एक्सेल डेटा इम्पोर्ट एवं लाइव सिंक करें"}
-                  </button>
+              {/* File Action Bar */}
+              {excelFile && !isUploading && !importProgress?.isCompleted && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(15,23,42,0.6)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                    चयनित फ़ाइल: <strong style={{ color: '#f8fafc' }}>{excelFile.name}</strong> ({(excelFile.size / 1024).toFixed(1)} KB)
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button className="btn btn-secondary" onClick={() => { setExcelFile(null); setImportProgress(null); setImportStatusMsg(null); }}>
+                      फ़ाइल हटाएँ
+                    </button>
+                    <button className="btn btn-primary" onClick={handleProcessExcel}>
+                      <Upload size={16} />
+                      एक्सेल डेटा इम्पोर्ट एवं लाइव सिंक करें
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {importStatusMsg && (
-                <div className={`status-tag ${importStatusMsg.type === 'success' ? 'status-approved' : importStatusMsg.type === 'info' ? 'status-pending' : 'status-blocked'}`} style={{ padding: '0.85rem 1rem', fontSize: '0.9rem', width: '100%', borderRadius: '8px' }}>
-                  {importStatusMsg.type === 'success' ? <CheckCircle size={18} /> : importStatusMsg.type === 'info' ? <Clock size={18} /> : <XCircle size={18} />}
-                  {importStatusMsg.text}
+              {/* LIVE REAL-TIME PROGRESS BAR & TRACKER */}
+              {isUploading && importProgress && (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 58, 138, 0.35))',
+                  border: '1.5px solid var(--khaki-primary, #c49756)',
+                  borderRadius: '12px',
+                  padding: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
+                }}>
+                  {/* Progress Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <RefreshCw size={20} color="var(--khaki-light)" style={{ animation: 'spin 1.5s linear infinite' }} />
+                      <span style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
+                        {importProgress.title || 'एक्सेल डेटा प्रोसेसिंग जारी...'}
+                      </span>
+                    </div>
+                    <span style={{
+                      background: 'rgba(234, 179, 8, 0.2)',
+                      border: '1px solid #eab308',
+                      color: '#facc15',
+                      padding: '3px 10px',
+                      borderRadius: '20px',
+                      fontWeight: 800,
+                      fontSize: '0.9rem'
+                    }}>
+                      {importProgress.percent || 15}%
+                    </span>
+                  </div>
+
+                  {/* Animated Glowing Progress Bar */}
+                  <div style={{
+                    width: '100%',
+                    height: '14px',
+                    background: 'rgba(255,255,255,0.08)',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    position: 'relative'
+                  }}>
+                    <div style={{
+                      width: `${importProgress.percent || 15}%`,
+                      height: '100%',
+                      background: 'linear-gradient(90deg, #3b82f6, #10b981, #eab308)',
+                      borderRadius: '8px',
+                      transition: 'width 0.35s ease',
+                      boxShadow: '0 0 12px rgba(16, 185, 129, 0.5)'
+                    }} />
+                  </div>
+
+                  {/* Current Status Message */}
+                  <div style={{ fontSize: '0.86rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+                    {importProgress.message}
+                  </div>
+
+                  {/* Step Checklist Badges */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{ fontSize: '0.76rem', color: importProgress.step >= 2 ? '#34d399' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      {importProgress.step >= 2 ? '✅' : '⏳'} 1. फ़ाइल व शीट लोड
+                    </div>
+                    <div style={{ fontSize: '0.76rem', color: importProgress.step >= 3 ? '#34d399' : importProgress.step === 2 ? '#facc15' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      {importProgress.step >= 3 ? '✅' : importProgress.step === 2 ? '🔄' : '⏳'} 2. पंक्ति सत्यापन
+                    </div>
+                    <div style={{ fontSize: '0.76rem', color: importProgress.step >= 5 ? '#34d399' : importProgress.step === 4 ? '#facc15' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      {importProgress.step >= 5 ? '✅' : importProgress.step === 4 ? '🔄' : '⏳'} 3. लोकल डेटाबेस
+                    </div>
+                    <div style={{ fontSize: '0.76rem', color: importProgress.step >= 6 ? '#34d399' : importProgress.step === 5 ? '#facc15' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      {importProgress.step >= 6 ? '✅' : importProgress.step === 5 ? '🔄' : '⏳'} 4. Firebase सिंक
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUCCESS DASHBOARD SUMMARY CARD */}
+              {importProgress?.isCompleted && importProgress?.report && (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(6, 78, 59, 0.4), rgba(15, 23, 42, 0.95))',
+                  border: '1.5px solid #10b981',
+                  borderRadius: '12px',
+                  padding: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                  boxShadow: '0 8px 24px rgba(16, 185, 129, 0.2)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CheckCircle size={22} color="#34d399" />
+                      <div>
+                        <h4 style={{ margin: 0, color: '#34d399', fontSize: '1.05rem', fontWeight: 800 }}>
+                          एक्सेल डेटा सफलतापूर्वक अपलोड एवं लाइव सिंक हो गया!
+                        </h4>
+                        <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>
+                          शीट: <strong>{importProgress.report.sheetName}</strong> • {new Date().toLocaleTimeString('hi-IN')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ fontSize: '0.78rem', padding: '4px 10px' }}
+                      onClick={() => { setImportProgress(null); setImportStatusMsg(null); }}
+                    >
+                      अन्य फ़ाइल अपलोड करें
+                    </button>
+                  </div>
+
+                  {/* 4 Stat Metric Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.65rem' }}>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>कुल पंक्तियाँ</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f8fafc' }}>{importProgress.report.totalProcessed}</div>
+                    </div>
+                    <div style={{ background: 'rgba(16,185,129,0.15)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.3)', textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.74rem', color: '#6ee7b7' }}>नए कार्मिक (Added)</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#34d399' }}>+{importProgress.report.addedCount}</div>
+                    </div>
+                    <div style={{ background: 'rgba(59,130,246,0.15)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.3)', textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.74rem', color: '#93c5fd' }}>अपडेट किए गए</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#60a5fa' }}>{importProgress.report.updatedCount}</div>
+                    </div>
+                    <div style={{ background: importProgress.report.skippedCount > 0 ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: importProgress.report.skippedCount > 0 ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(255,255,255,0.06)', textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.74rem', color: importProgress.report.skippedCount > 0 ? '#fca5a5' : '#94a3b8' }}>छूटे रिकॉर्ड्स (Skipped)</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: importProgress.report.skippedCount > 0 ? '#ef4444' : '#94a3b8' }}>{importProgress.report.skippedCount}</div>
+                    </div>
+                  </div>
+
+                  {/* Metadata & Cloud Badges */}
+                  <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', fontSize: '0.78rem', color: '#cbd5e1', background: 'rgba(0,0,0,0.25)', padding: '0.65rem 0.85rem', borderRadius: '8px' }}>
+                    <span>🏢 नए थाने/शाखाएं दर्ज: <strong style={{ color: '#facc15' }}>{importProgress.report.newOfficesCount}</strong></span>
+                    <span>•</span>
+                    <span>📍 नए जनपद: <strong style={{ color: '#facc15' }}>{importProgress.report.newDistrictsCount}</strong></span>
+                    <span>•</span>
+                    <span>👮 नए पद: <strong style={{ color: '#facc15' }}>{importProgress.report.newPostsCount}</strong></span>
+                    <span>•</span>
+                    <span>☁️ क्लाउड स्थिति: <strong style={{ color: importProgress.report.isCloudSynced ? '#34d399' : '#94a3b8' }}>{importProgress.report.isCloudSynced ? '🟢 Firebase Firestore पर लाइव सिंक (सक्रिय)' : '⚪ स्थानीय रूप से सुरक्षित'}</strong></span>
+                  </div>
+
+                  {/* Expandable Skipped Rows Reason */}
+                  {importProgress.report.skippedCount > 0 && (
+                    <div style={{ borderTop: '1px dashed rgba(239,68,68,0.3)', paddingTop: '0.65rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.8rem', color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <AlertTriangle size={14} />
+                          {importProgress.report.skippedCount} पंक्तियाँ मान्य नाम/10-अंकों का मोबाइल नंबर न होने के कारण नहीं जोड़ी गईं।
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.72rem', padding: '2px 8px' }}
+                          onClick={() => setShowSkippedDetails(!showSkippedDetails)}
+                        >
+                          {showSkippedDetails ? 'विवरण छुपाएं' : 'छूटी पंक्तियाँ देखें'}
+                        </button>
+                      </div>
+
+                      {showSkippedDetails && (
+                        <div style={{ marginTop: '0.5rem', maxHeight: '160px', overflowY: 'auto', background: 'rgba(0,0,0,0.4)', borderRadius: '6px', padding: '0.5rem', fontSize: '0.74rem' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', color: '#cbd5e1' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', textAlign: 'left' }}>
+                                <th style={{ padding: '4px' }}>पंक्ति</th>
+                                <th style={{ padding: '4px' }}>नाम</th>
+                                <th style={{ padding: '4px' }}>मोबाइल</th>
+                                <th style={{ padding: '4px' }}>कारण</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {importProgress.report.skippedReasons.map((sk, sIdx) => (
+                                <tr key={sIdx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                  <td style={{ padding: '4px', color: '#facc15' }}>#{sk.rowNum}</td>
+                                  <td style={{ padding: '4px' }}>{sk.name}</td>
+                                  <td style={{ padding: '4px' }}>{sk.phone}</td>
+                                  <td style={{ padding: '4px', color: '#fca5a5' }}>{sk.reason}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Error Message */}
+              {importStatusMsg && importStatusMsg.type === 'error' && (
+                <div className="status-tag status-blocked" style={{ padding: '0.85rem 1rem', fontSize: '0.9rem', width: '100%', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <XCircle size={18} />
+                  <div>
+                    <strong>त्रुटि: </strong>{importStatusMsg.text}
+                    <div style={{ fontSize: '0.76rem', color: '#fca5a5', marginTop: '3px' }}>
+                      सुझाव: कृपया ऊपर दिए गए बटन से 'आधिकारिक Excel टेम्पलेट (.xlsx)' डाउनलोड करें और उसी फ़ॉर्मेट में डेटा भरकर अपलोड करें।
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

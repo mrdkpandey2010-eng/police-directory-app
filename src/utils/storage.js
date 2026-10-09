@@ -32,7 +32,8 @@ import {
   saveFirestoreOffices,
   saveFirestoreCoAdmins,
   saveFirestoreTerms,
-  saveFirestorePolicies
+  saveFirestorePolicies,
+  saveFirestoreMasterConfig
 } from './firebase';
 
 const CONTACTS_KEY = 'police_directory_contacts_v2';
@@ -1680,23 +1681,75 @@ export const resetCoAdminPassword = (coAdminId, newPassword = '1234') => {
 };
 
 // ---------------- EXCEL BULK IMPORT (MATCHED WITH REGISTRATION PAGE) ----------------
-export const importContactsFromExcel = async (file, existingContacts, districtFilter = null) => {
+export const importContactsFromExcel = async (file, existingContacts, districtFilter = null, onProgress = null) => {
   const XLSX = await import('xlsx');
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = async (e) => {
       try {
+        if (onProgress) {
+          onProgress({
+            step: 1,
+            percent: 15,
+            title: 'फ़ाइल विश्लेषण',
+            message: 'एक्सेल कार्यपुस्तिका (Workbook) एवं शीट्स लोड हो रही हैं...'
+          });
+        }
+
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
+
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          throw new Error('एक्सेल फ़ाइल में कोई वर्कशीट (Sheet) नहीं मिली।');
+        }
+
+        // Intelligently identify the sheet that contains the employee data
+        let targetSheetName = workbook.SheetNames[0];
+        for (const sName of workbook.SheetNames) {
+          if (/पंजीकरण|template|टेम्पलेट|contacts|police|direct|data|कर्मचारी|सूची/i.test(sName)) {
+            targetSheetName = sName;
+            break;
+          }
+        }
         
-        const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+        // If targetSheetName is a reference sheet, try another sheet
+        if (/सन्दर्भ|reference|master|मानक/i.test(targetSheetName) && workbook.SheetNames.length > 1) {
+          const alternate = workbook.SheetNames.find(s => !/सन्दर्भ|reference|master|मानक/i.test(s));
+          if (alternate) targetSheetName = alternate;
+        }
+
+        const worksheet = workbook.Sheets[targetSheetName];
+        let rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
         if (!rawRows || rawRows.length === 0) {
-          reject(new Error('Excel फ़ाइल खाली है या उसमें कोई डेटा नहीं है।'));
-          return;
+          // Check if any other sheet has data
+          for (const sName of workbook.SheetNames) {
+            if (sName !== targetSheetName) {
+              const testSheet = workbook.Sheets[sName];
+              const testRows = XLSX.utils.sheet_to_json(testSheet, { defval: '' });
+              if (testRows && testRows.length > 0) {
+                targetSheetName = sName;
+                rawRows = testRows;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!rawRows || rawRows.length === 0) {
+          throw new Error('चयनित Excel शीट पूर्णतः खाली है। कृपया आधिकारिक टेम्पलेट में डेटा भरकर अपलोड करें।');
+        }
+
+        if (onProgress) {
+          onProgress({
+            step: 2,
+            percent: 30,
+            title: 'शीट पढ़ी गई',
+            message: `शीट "${targetSheetName}" से कुल ${rawRows.length} पंक्तियाँ मिलीं। डेटा निष्कर्षण प्रारंभ...`,
+            totalRows: rawRows.length,
+            sheetName: targetSheetName
+          });
         }
 
         // Flexible multi-lingual header value finder
@@ -1711,7 +1764,7 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
             const cleanFk = fk.toLowerCase().replace(/[\s\-_/()\\.]/g, '');
             for (const rk of rowKeys) {
               const cleanRk = rk.toLowerCase().replace(/[\s\-_/()\\.]/g, '');
-              if (cleanRk === cleanFk || cleanRk.includes(cleanFk)) {
+              if (cleanRk === cleanFk || cleanRk.includes(cleanFk) || cleanFk.includes(cleanRk)) {
                 if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
                   return String(row[rk]).trim();
                 }
@@ -1724,11 +1777,17 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
         let updatedContacts = [...existingContacts];
         let addedCount = 0;
         let updatedCount = 0;
+        const skippedRows = [];
         const newDistrictsSet = new Set();
         const newPostsSet = new Set();
         const newOfficesMap = new Map();
 
-        rawRows.forEach((row, idx) => {
+        const totalRows = rawRows.length;
+
+        for (let idx = 0; idx < totalRows; idx++) {
+          const row = rawRows[idx];
+          const rowNum = idx + 2;
+
           const pno = getExcelValue(row, [
             'PNO', 'PNO (पीएनओ नंबर)', 'PNO Number', 'PNO No', 'पीएनओ', 'पीएनओ नंबर', 'Badge No', 'Badge Number', 'बैज नंबर', 'PNO / पीएनओ'
           ]);
@@ -1770,13 +1829,25 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
             district = districtFilter;
           }
 
-          if (!name || !rawPhone) {
-            return;
+          // Clean phone digits to 10 digits
+          let cleanPhone = '';
+          if (rawPhone) {
+            const digits = String(rawPhone).replace(/\D/g, '');
+            cleanPhone = digits.length >= 10 ? digits.slice(-10) : digits;
           }
 
-          // Clean phone digits to 10 digits
-          const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10) || rawPhone;
-          const cleanWhatsapp = (whatsapp ? whatsapp.replace(/\D/g, '').slice(-10) : '') || cleanPhone;
+          // Validation
+          if (!name || !cleanPhone || cleanPhone.length < 10) {
+            skippedRows.push({
+              rowNum,
+              name: name || 'अनाम',
+              phone: rawPhone || 'अनुपलब्ध',
+              reason: !name ? 'नाम (Name) अनुपलब्ध' : '10-अंकों का वैध मोबाइल नंबर अनुपलब्ध'
+            });
+            continue;
+          }
+
+          const cleanWhatsapp = (whatsapp ? String(whatsapp).replace(/\D/g, '').slice(-10) : '') || cleanPhone;
           const isPhoneHidden = /yes|हाँ|true|1|यस|छुप|hide/i.test(hidePhoneStr);
           const status = /pending|लंबित|pratikhsa/i.test(statusStr) ? 'pending' : 'approved';
 
@@ -1785,24 +1856,30 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
           const finalOffice = office || 'थाना कोतवाली';
 
           // Collect new distinct master items
-          if (finalDist && finalDist !== 'सभी ज़िले (All Districts)') {
+          if (finalDist && finalDist !== 'सभी ज़िले (All Districts)' && finalDist !== 'सभी ज़िले') {
             newDistrictsSet.add(finalDist);
           }
-          if (finalPost && finalPost !== 'सभी पद (All Posts)') {
+          if (finalPost && finalPost !== 'सभी पद (All Posts)' && finalPost !== 'सभी पद') {
             newPostsSet.add(finalPost);
           }
-          if (finalOffice && finalOffice !== 'सभी कार्यालय/थाने (All Offices)') {
+          if (finalOffice && finalOffice !== 'सभी कार्यालय/थाने (All Offices)' && finalOffice !== 'सभी कार्यालय/थाने') {
             newOfficesMap.set(finalOffice, finalDist);
           }
 
           const existingIdx = updatedContacts.findIndex(c => 
-            (pno && c.pno && c.pno.toLowerCase() === pno.toLowerCase()) || 
+            (pno && c.pno && String(c.pno).toLowerCase() === String(pno).toLowerCase()) || 
             (c.phone && c.phone === cleanPhone)
           );
 
           if (existingIdx !== -1) {
             if (districtFilter && updatedContacts[existingIdx].district !== districtFilter) {
-              return;
+              skippedRows.push({
+                rowNum,
+                name,
+                phone: cleanPhone,
+                reason: `कार्मिक अन्य जनपद (${updatedContacts[existingIdx].district}) में पंजीकृत है`
+              });
+              continue;
             }
 
             updatedContacts[existingIdx] = {
@@ -1844,36 +1921,175 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
             updatedContacts.unshift(newCard);
             addedCount++;
           }
-        });
 
-        // Register any newly discovered districts, posts, offices into master data
-        newDistrictsSet.forEach(d => addDistrict(d));
-        newPostsSet.forEach(p => addPost(p));
-        newOfficesMap.forEach((dist, off) => addOffice(off, dist));
-
-        // Save contacts locally and to IDB
-        saveContacts(updatedContacts);
-
-        // Immediately sync all updated contacts and master lists to Firebase Firestore
-        if (isFirebaseConfigured()) {
-          syncAllContactsToFirestore(updatedContacts).catch(console.error);
-          saveFirestoreDistricts(getStoredDistricts()).catch(console.error);
-          saveFirestorePosts(getStoredPosts()).catch(console.error);
-          saveFirestoreOffices(getStoredOffices()).catch(console.error);
+          // Periodic progress update
+          if (idx % 25 === 0 || idx === totalRows - 1) {
+            if (onProgress) {
+              const currentPercent = Math.round(30 + ((idx + 1) / totalRows) * 35);
+              onProgress({
+                step: 2,
+                percent: currentPercent,
+                title: 'सत्यापन व निष्कर्षण',
+                message: `सत्यापन जारी: ${idx + 1} / ${totalRows} पंक्तियाँ (नए: ${addedCount}, अपडेट: ${updatedCount})...`,
+                processedCount: idx + 1,
+                totalRows,
+                addedCount,
+                updatedCount,
+                skippedCount: skippedRows.length
+              });
+            }
+          }
         }
 
-        resolve({ 
-          updatedContacts, 
-          addedCount, 
-          updatedCount, 
-          totalProcessed: rawRows.length 
+        // STEP 3: MASTER DATA UPDATE (BATCHED IN ONE OPERATION)
+        if (onProgress) {
+          onProgress({
+            step: 3,
+            percent: 70,
+            title: 'मास्टर डेटा एकीकरण',
+            message: 'नए जनपद, पद एवं थानों को मास्टर सूची में एकीकृत किया जा रहा है...'
+          });
+        }
+
+        // Batch merge districts
+        const currentDistricts = getStoredDistricts();
+        const mergedDistricts = [...currentDistricts];
+        newDistrictsSet.forEach(d => {
+          if (!mergedDistricts.includes(d)) mergedDistricts.push(d);
         });
+        if (mergedDistricts.length !== currentDistricts.length) {
+          try { localStorage.setItem(DISTRICTS_KEY, JSON.stringify(mergedDistricts)); } catch (e) {}
+          idbSet(DISTRICTS_KEY, mergedDistricts);
+        }
+
+        // Batch merge posts
+        const currentPosts = getStoredPosts();
+        const mergedPosts = [...currentPosts];
+        newPostsSet.forEach(p => {
+          if (!mergedPosts.includes(p)) mergedPosts.push(p);
+        });
+        if (mergedPosts.length !== currentPosts.length) {
+          try { localStorage.setItem(POSTS_KEY, JSON.stringify(mergedPosts)); } catch (e) {}
+          idbSet(POSTS_KEY, mergedPosts);
+        }
+
+        // Batch merge offices
+        const currentOffices = getStoredOffices();
+        const mergedOffices = [...currentOffices];
+        newOfficesMap.forEach((dist, off) => {
+          const exists = mergedOffices.some(o => 
+            typeof o === 'object' ? (o.name === off && o.district === dist) : o === off
+          );
+          if (!exists) {
+            mergedOffices.push({
+              id: `off-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              name: off,
+              district: dist
+            });
+          }
+        });
+        if (mergedOffices.length !== currentOffices.length) {
+          try { localStorage.setItem(OFFICES_KEY, JSON.stringify(mergedOffices)); } catch (e) {}
+          idbSet(OFFICES_KEY, mergedOffices);
+        }
+
+        // STEP 4: SAVE CONTACTS LOCALLY & TO INDEXEDDB
+        if (onProgress) {
+          onProgress({
+            step: 4,
+            percent: 78,
+            title: 'लोकल डेटाबेस सुरक्षित',
+            message: 'स्थानीय मेमोरी एवं IndexedDB में सुरक्षित किया जा रहा है...'
+          });
+        }
+
+        try {
+          localStorage.setItem(CONTACTS_KEY, JSON.stringify(updatedContacts));
+        } catch (e) {}
+        await idbSaveContacts(updatedContacts);
+
+        // STEP 5: SYNC TO FIREBASE CLOUD FIRESTORE
+        let isCloudSynced = false;
+        if (isFirebaseConfigured()) {
+          if (onProgress) {
+            onProgress({
+              step: 5,
+              percent: 82,
+              title: 'Firebase लाइव सिंक',
+              message: 'Google Firebase Firestore क्लाउड पर डेटा अपलोड हो रहा है...'
+            });
+          }
+
+          // Sync master config in single call
+          try {
+            await saveFirestoreMasterConfig({
+              districts: mergedDistricts,
+              posts: mergedPosts,
+              offices: mergedOffices
+            });
+          } catch (mErr) {
+            console.warn('[Firebase] Master config sync warning:', mErr);
+          }
+
+          // Sync contacts in batches with real-time feedback
+          try {
+            await syncAllContactsToFirestore(updatedContacts, (chunkInfo) => {
+              if (onProgress) {
+                const cloudPct = Math.round(82 + (chunkInfo.percent * 0.16));
+                onProgress({
+                  step: 5,
+                  percent: cloudPct,
+                  title: 'Firebase लाइव सिंक',
+                  message: `क्लाउड पर अपलोड: ${chunkInfo.syncedCount} / ${chunkInfo.totalCount} रिकॉर्ड्स (बैच ${chunkInfo.chunkIndex}/${chunkInfo.totalChunks})...`,
+                  syncedCount: chunkInfo.syncedCount,
+                  totalCount: chunkInfo.totalCount
+                });
+              }
+            });
+            isCloudSynced = true;
+          } catch (cloudErr) {
+            console.warn('[Firebase] Cloud sync batch warning:', cloudErr);
+          }
+        }
+
+        if (onProgress) {
+          onProgress({
+            step: 6,
+            percent: 100,
+            title: 'सफलतापूर्वक पूर्ण',
+            message: `✅ कुल ${rawRows.length} पंक्तियाँ प्रोसेस हुईं! नए जोड़े गए: ${addedCount}, अपडेट: ${updatedCount}।`
+          });
+        }
+
+        resolve({
+          success: true,
+          updatedContacts,
+          totalProcessed: rawRows.length,
+          addedCount,
+          updatedCount,
+          skippedCount: skippedRows.length,
+          skippedReasons: skippedRows,
+          sheetName: targetSheetName,
+          newDistrictsCount: newDistrictsSet.size,
+          newPostsCount: newPostsSet.size,
+          newOfficesCount: newOfficesMap.size,
+          isCloudSynced
+        });
+
       } catch (err) {
-        reject(new Error('Excel फ़ाइल प्रोसेस करने में त्रुटि: ' + err.message));
+        if (onProgress) {
+          onProgress({
+            step: -1,
+            percent: 0,
+            title: 'त्रुटि',
+            message: err.message || 'एक्सेल फ़ाइल लोड करने में समस्या आई।'
+          });
+        }
+        reject(err);
       }
     };
 
-    reader.onerror = () => reject(new Error('फ़ाइल पढ़ने में विफलता हुई।'));
+    reader.onerror = () => reject(new Error('फ़ाइल पढ़ने में विफलता हुई। कृपया फ़ाइल पुनः चुनें।'));
     reader.readAsArrayBuffer(file);
   });
 };
