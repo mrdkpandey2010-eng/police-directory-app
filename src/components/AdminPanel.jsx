@@ -1106,7 +1106,7 @@ export default function AdminPanel({
                   </div>
                   <div>
                     <div style={{ fontSize: '0.94rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>Google Firebase क्लाउड स्थिति</span>
+                      <span>Cloudflare R2 क्लाउड स्थिति</span>
                       <span style={{
                         fontSize: '0.72rem',
                         padding: '2px 8px',
@@ -1115,7 +1115,7 @@ export default function AdminPanel({
                         color: isFirebaseConnected ? '#34d399' : '#fca5a5',
                         border: `1px solid ${isFirebaseConnected ? '#10b981' : '#ef4444'}`
                       }}>
-                        {isFirebaseConnected ? '🟢 ऑनलाइन कनेक्टेड' : '⚪ ऑफ़लाइन / लोकल'}
+                        {isFirebaseConnected ? '🟢 Cloudflare R2 कनेक्टेड (50,000+ यूज़र्स)' : '⚪ ऑफ़लाइन / लोकल'}
                       </span>
                     </div>
                     <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>
@@ -1131,7 +1131,7 @@ export default function AdminPanel({
                     onClick={handleForceSyncFirebase}
                     className="btn btn-primary"
                     style={{
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      background: 'linear-gradient(135deg, #f97316, #ea580c)',
                       border: 'none',
                       color: '#fff',
                       padding: '8px 16px',
@@ -1144,7 +1144,7 @@ export default function AdminPanel({
                     }}
                   >
                     <RefreshCw size={15} style={isManualSyncing ? { animation: 'spin 1s linear infinite' } : {}} />
-                    <span>{isManualSyncing ? 'क्लाउड सिंक जारी...' : '🔄 सभी संपर्क Firebase पर सिंक करें'}</span>
+                    <span>{isManualSyncing ? 'क्लाउड सिंक जारी...' : '🔄 सभी संपर्क Cloudflare R2 पर सिंक करें'}</span>
                   </button>
                 </div>
 

@@ -17,7 +17,7 @@ const UserProfileModal = lazy(() => import('./components/UserProfileModal'));
 const NotificationsModal = lazy(() => import('./components/NotificationsModal'));
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 const MessageBoxModal = lazy(() => import('./components/MessageBoxModal'));
-const FirebaseSetupModal = lazy(() => import('./components/FirebaseSetupModal'));
+const FirebaseSetupModal = lazy(() => import('./components/CloudflareSetupModal'));
 const PolicyModal = lazy(() => import('./components/PolicyModal'));
 const LoginDisclaimerModal = lazy(() => import('./components/LoginDisclaimerModal'));
 const Admin2FAModal = lazy(() => import('./components/Admin2FAModal'));
