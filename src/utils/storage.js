@@ -2028,15 +2028,15 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
     } catch (e) {}
     await idbSaveContacts(updatedContacts);
 
-    // STEP 5: SYNC TO FIREBASE CLOUD FIRESTORE
+    // STEP 5: SYNC TO CLOUDFLARE R2 CLOUD
     let isCloudSynced = false;
     if (isFirebaseConfigured()) {
       if (onProgress) {
         onProgress({
           step: 5,
           percent: 84,
-          title: 'Firebase लाइव सिंक',
-          message: 'Google Firebase Firestore क्लाउड पर डेटा अपलोड हो रहा है...'
+          title: 'Cloudflare R2 लाइव सिंक',
+          message: 'Cloudflare R2 क्लाउड पर डेटा सुरक्षित अपलोड हो रहा है...'
         });
       }
 
@@ -2048,7 +2048,7 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
           offices: mergedOffices
         });
       } catch (mErr) {
-        console.warn('[Firebase] Master config sync warning:', mErr);
+        console.warn('[Cloudflare] Master config sync warning:', mErr);
       }
 
       // Sync contacts in batches with real-time feedback
@@ -2060,7 +2060,7 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
             onProgress({
               step: 5,
               percent: cloudPct,
-              title: 'Firebase लाइव सिंक',
+              title: 'Cloudflare R2 लाइव सिंक',
               message: `क्लाउड पर अपलोड: ${chunkInfo.syncedCount} / ${chunkInfo.totalCount} रिकॉर्ड्स (बैच ${chunkInfo.chunkIndex}/${chunkInfo.totalChunks})...`,
               syncedCount: chunkInfo.syncedCount,
               totalCount: chunkInfo.totalCount
@@ -2069,7 +2069,7 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
         });
         isCloudSynced = Boolean(syncOk);
       } catch (cloudErr) {
-        console.warn('[Firebase] Cloud sync batch warning:', cloudErr);
+        console.warn('[Cloudflare] Cloud sync batch warning:', cloudErr);
         isCloudSynced = false;
         cloudErrorNotice = cloudErr?.message || 'क्लाउड सिंक लंबित';
         // Enqueue to offline queue so it retries when connectivity is active
@@ -2086,7 +2086,7 @@ export const importContactsFromExcel = async (file, existingContacts, districtFi
         step: 6,
         percent: 100,
         title: isCloudSynced ? 'सफलतापूर्वक पूर्ण' : 'लोकल सुरक्षित (क्लाउड सिंक लंबित)',
-        message: `✅ कुल ${rawRows.length} पंक्तियाँ प्रोसेस हुईं! नए: ${addedCount}, अपडेट: ${updatedCount}। ${isCloudSynced ? 'Firebase पर लाइव सिंक सफल।' : 'लोकल में सुरक्षित।'}`
+        message: `✅ कुल ${rawRows.length} पंक्तियाँ प्रोसेस हुईं! नए: ${addedCount}, अपडेट: ${updatedCount}। ${isCloudSynced ? 'Cloudflare R2 पर लाइव सिंक सफल।' : 'लोकल में सुरक्षित।'}`
       });
     }
 

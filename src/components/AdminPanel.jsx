@@ -352,12 +352,12 @@ export default function AdminPanel({
       if (res.isCloudSynced) {
         setImportStatusMsg({
           type: 'success',
-          text: `✅ एक्सेल डेटा (${res.addedCount} नए, ${res.updatedCount} अपडेट) स्थानीय डेटाबेस एवं Firebase क्लाउड पर लाइव सिंक हो गया है!`
+          text: `✅ एक्सेल डेटा (${res.addedCount} नए, ${res.updatedCount} अपडेट) स्थानीय डेटाबेस एवं Cloudflare R2 क्लाउड पर लाइव सिंक हो गया है!`
         });
       } else {
         setImportStatusMsg({
           type: 'warning',
-          text: `⚠️ डेटा स्थानीय डेटाबेस में सुरक्षित हो गया है, लेकिन Firebase क्लाउड सिंक लंबित है (${res.cloudErrorNotice || 'नेटवर्क / अनुमति'})। नीचे दिए गए "क्लाउड पर तुरंत सिंक करें" बटन से सिंक कर सकते हैं।`
+          text: `⚠️ डेटा स्थानीय डेटाबेस में सुरक्षित हो गया है, लेकिन Cloudflare R2 क्लाउड सिंक लंबित है (${res.cloudErrorNotice || 'नेटवर्क / अनुमति'})। नीचे दिए गए "क्लाउड पर तुरंत सिंक करें" बटन से सिंक कर सकते हैं।`
         });
       }
       setExcelFile(null);
@@ -375,18 +375,18 @@ export default function AdminPanel({
 
   const handleForceSyncFirebase = async () => {
     setIsManualSyncing(true);
-    setManualSyncMsg('🔄 Firebase क्लाउड पर डेटा अपलोड हो रहा है...');
+    setManualSyncMsg('🔄 Cloudflare R2 क्लाउड पर डेटा अपलोड हो रहा है...');
     try {
       const syncOk = await syncAllContactsToFirestore(contacts, (chunkInfo) => {
         setManualSyncMsg(`🔄 क्लाउड अपलोड: ${chunkInfo.syncedCount} / ${chunkInfo.totalCount} रिकॉर्ड्स (${chunkInfo.percent}%)...`);
       });
       if (syncOk) {
-        setManualSyncMsg(`✅ सफलता! कुल ${contacts.length} संपर्क Firebase क्लाउड पर सफलतापूर्वक सिंक हो गए हैं।`);
+        setManualSyncMsg(`✅ सफलता! कुल ${contacts.length} संपर्क Cloudflare R2 क्लाउड पर सफलतापूर्वक सिंक हो गए हैं।`);
       } else {
-        setManualSyncMsg('⚠️ सिंक पूर्ण नहीं हो सका। कृपया नेटवर्क अथवा Firebase रूल्स चेक करें।');
+        setManualSyncMsg('⚠️ सिंक पूर्ण नहीं हो सका। कृपया नेटवर्क कनेक्शन चेक करें।');
       }
     } catch (err) {
-      setManualSyncMsg(`❌ सिंक त्रुटि: ${err.message || 'Firebase से कनेक्ट करने में असमर्थ'}`);
+      setManualSyncMsg(`❌ सिंक त्रुटि: ${err.message || 'Cloudflare R2 से कनेक्ट करने में असमर्थ'}`);
     } finally {
       setIsManualSyncing(false);
     }
@@ -2966,10 +2966,10 @@ export default function AdminPanel({
                 <div>
                   <h4 style={{ margin: 0, color: 'var(--khaki-light, #dfb97e)', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Cloud size={20} color={isFirebaseConnected ? '#34d399' : 'var(--khaki-primary)'} />
-                    <span>Google Firebase क्लाउड लाइव चैट नियंत्रण</span>
+                    <span>Cloudflare R2 क्लाउड लाइव चैट एवं डायरेक्टरी नियंत्रण</span>
                   </h4>
                   <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: '#cbd5e1' }}>
-                    विभागीय चैट, समूह संदेश एवं डेटा सिंक प्रबंधन (केवल Super Admin के नियंत्रण हेतु)।
+                    विभागीय चैट, समूह संदेश एवं डेटा सिंक प्रबंधन (Cloudflare Edge API, 50,000+ कार्मिक)।
                   </p>
                 </div>
 
@@ -2991,7 +2991,7 @@ export default function AdminPanel({
                     borderRadius: '50%',
                     background: isFirebaseConnected ? '#10b981' : '#ef4444'
                   }} />
-                  <span>{isFirebaseConnected ? 'क्लाउड लाइव चैट सक्रिय (Connected)' : 'क्लाउड सिंक निष्क्रिय (Offline)'}</span>
+                  <span>{isFirebaseConnected ? 'Cloudflare R2 लाइव सिंक सक्रिय (Connected)' : 'क्लाउड सिंक निष्क्रिय (Offline)'}</span>
                 </div>
               </div>
 
@@ -3009,10 +3009,10 @@ export default function AdminPanel({
                 }}>
                   <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--khaki-light)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Settings size={16} />
-                    <span>Firebase प्रोजेक्ट व कुंजियां</span>
+                    <span>Cloudflare R2 वर्कर व कुंजियां</span>
                   </div>
                   <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
-                    Google Firebase Firestore क्रेडेंशियल्स (API Key, Project ID, App ID) कॉन्फ़िगर करें अथवा बदलें।
+                    Cloudflare Worker API URL एवं Admin API Key कॉन्फ़िगर करें अथवा बदलें।
                   </p>
                   <button
                     type="button"
@@ -3034,7 +3034,7 @@ export default function AdminPanel({
                     }}
                   >
                     <Cloud size={15} />
-                    <span>क्लाउड लाइव चैट सेटअप खोलें</span>
+                    <span>Cloudflare R2 क्लाउड सेटअप खोलें</span>
                   </button>
                 </div>
 
@@ -3053,18 +3053,18 @@ export default function AdminPanel({
                     <span>समस्त डायरेक्टरी डेटाबेस सिंक</span>
                   </div>
                   <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
-                    समस्त विभागीय पुलिस संपर्कों को सीधे Google Firebase Firestore पर सिंक करें ताकि सभी अधिकृत यूज़र्स तक डेटा पहुंचे।
+                    समस्त विभागीय पुलिस संपर्कों को सीधे Cloudflare R2 क्लाउड पर सिंक करें ताकि सभी अधिकृत यूज़र्स तक डेटा पहुंचे।
                   </p>
                   <button
                     type="button"
                     onClick={async () => {
                       if (!isFirebaseConnected) {
-                        alert('कृपया पहले Firebase सेटअप पूरा करें!');
+                        alert('कृपया पहले Cloudflare R2 सेटअप पूरा करें!');
                         return;
                       }
                       try {
                         await syncAllContactsToFirestore(contacts);
-                        alert('🎉 समस्त पुलिस संपर्क Google Firebase क्लाउड पर सफलतापूर्वक सिंक हो गए!');
+                        alert('🎉 समस्त पुलिस संपर्क Cloudflare R2 क्लाउड पर सफलतापूर्वक सिंक हो गए!');
                       } catch (err) {
                         alert('सिंक विफल: ' + err.message);
                       }
