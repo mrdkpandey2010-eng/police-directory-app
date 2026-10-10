@@ -110,6 +110,8 @@ export default function AdminPanel({
   const [importStatusMsg, setImportStatusMsg] = useState(null);
   const [importProgress, setImportProgress] = useState(null);
   const [showSkippedDetails, setShowSkippedDetails] = useState(false);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+  const [manualSyncMsg, setManualSyncMsg] = useState('');
   const fileInputRef = useRef(null);
 
   // Search inside admin table
@@ -370,9 +372,6 @@ export default function AdminPanel({
       setIsUploading(false);
     }
   };
-
-  const [isManualSyncing, setIsManualSyncing] = useState(false);
-  const [manualSyncMsg, setManualSyncMsg] = useState('');
 
   const handleForceSyncFirebase = async () => {
     setIsManualSyncing(true);

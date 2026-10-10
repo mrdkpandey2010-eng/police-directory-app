@@ -65,7 +65,7 @@ export default function Admin2FAModal({ isOpen, onClose, onSuccess, currentUser 
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 10000,
+      zIndex: 100050,
       padding: '1rem'
     }}>
       <div style={{

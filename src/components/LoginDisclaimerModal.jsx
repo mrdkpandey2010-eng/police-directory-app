@@ -27,7 +27,7 @@ export default function LoginDisclaimerModal({ isOpen, onAgree, onOpenPolicy, us
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 9999,
+      zIndex: 100060,
       padding: '1rem'
     }}>
       <div style={{
