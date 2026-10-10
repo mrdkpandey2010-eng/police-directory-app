@@ -175,7 +175,8 @@ export default function App() {
 
   // Post-Login Mandatory Disclaimer Gate
   const [isDisclaimerModalOpen, setIsDisclaimerModalOpen] = useState(false);
-  const [disclaimerAgreed, setDisclaimerAgreed] = useState(false);
+  const [disclaimerAgreed, setDisclaimerAgreed] = useState(true);
+  const [isPhotoGateDismissed, setIsPhotoGateDismissed] = useState(false);
 
   // Toggle Slide Menu Drawer
   const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false);
@@ -364,13 +365,8 @@ export default function App() {
       if (savedUser.role === 'user') {
         setSelectedDistrict(savedUser.district || '');
       }
-      const agreed = sessionStorage.getItem(`police_disclaimer_agreed_${savedUser.id}`) === 'true';
-      if (!agreed) {
-        setIsDisclaimerModalOpen(true);
-        setDisclaimerAgreed(false);
-      } else {
-        setDisclaimerAgreed(true);
-      }
+      setDisclaimerAgreed(true);
+      setIsDisclaimerModalOpen(false);
     } else {
       if (savedUser && isSessionExpired) {
         saveSession(null);
@@ -641,15 +637,11 @@ export default function App() {
       setSelectedDistrict('');
     }
 
-    // Check mandatory post-login disclaimer
-    const alreadyAgreed = sessionStorage.getItem(`police_disclaimer_agreed_${userObj.id}`) === 'true';
-    if (!alreadyAgreed) {
-      setIsDisclaimerModalOpen(true);
-      setDisclaimerAgreed(false);
-    } else {
-      setIsDisclaimerModalOpen(false);
-      setDisclaimerAgreed(true);
-    }
+    // Show home screen directly on login without blocking disclaimer modal
+    setIsDisclaimerModalOpen(false);
+    setDisclaimerAgreed(true);
+    setIsPhotoGateDismissed(false);
+    sessionStorage.setItem(`police_disclaimer_agreed_${userObj.id}`, 'true');
 
     showToast(`सफलतापूर्वक लॉगिन: ${userObj.name} (${userObj.role === 'admin' ? 'Super Admin' : userObj.role === 'co_admin' ? `Co-Admin ${userObj.district}` : 'User'})`);
   };
@@ -716,19 +708,23 @@ export default function App() {
 
       // Co-Admin: Strictly scoped to their posted district
       if (currentUser?.role === 'co_admin') {
-        if (c.district !== currentUser.district) return false;
+        const userDist = (currentUser.district || '').trim().toLowerCase();
+        const contactDist = (c.district || '').trim().toLowerCase();
+        if (contactDist !== userDist) return false;
       }
 
       // Regular Employee User:
       if (currentUser?.role === 'user') {
         // If in "केवल मेरा जनपद" mode, strictly show their district
         if (userDistrictScope === 'my_district') {
-          if (c.district !== currentUser.district) return false;
+          const userDist = (currentUser.district || '').trim().toLowerCase();
+          const contactDist = (c.district || '').trim().toLowerCase();
+          if (userDist && contactDist !== userDist) return false;
         }
       }
 
       // Explicit District Filter dropdown
-      if (selectedDistrict && c.district !== selectedDistrict) {
+      if (selectedDistrict && (c.district || '').trim().toLowerCase() !== selectedDistrict.trim().toLowerCase()) {
         return false;
       }
 
@@ -760,6 +756,11 @@ export default function App() {
       return true;
     });
   }, [contacts, searchQuery, selectedDistrict, selectedPost, selectedOffice, currentUser, userDistrictScope]);
+
+  // Maximum 10 Contact Cards displayed on home screen to reduce DOM load (Point 6)
+  const displayedContacts = useMemo(() => {
+    return filteredContacts.slice(0, 10);
+  }, [filteredContacts]);
 
   // Handler: Self Registration
   const handleRegistrationSubmit = async (formData) => {
@@ -1162,22 +1163,25 @@ export default function App() {
     if (existing) {
       setActiveChatId(existing.id);
     } else {
-      const { updatedChats, targetChatId } = sendDirectMessage(
-        chats, 
-        contacts, 
-        currentUser, 
-        targetContact, 
-        `जय हिंद, ${targetContact.name} जी!`
-      );
+      // Initialize clean direct chat without auto-sending any message (Point 3)
+      const targetChatId = `chat-p2p-${currentUser.id}-${targetContact.id}`;
+      const newChatObj = {
+        id: targetChatId,
+        type: "direct",
+        title: `${targetContact.name} (${targetContact.district || 'उत्तर प्रदेश'})`,
+        participants: [currentUser.id, targetContact.id],
+        district: targetContact.district || 'उत्तर प्रदेश',
+        lastMessage: 'चैट शुरू हुई',
+        lastUpdated: new Date().toISOString(),
+        messages: []
+      };
+      const updatedChats = [newChatObj, ...chats];
       setChats(updatedChats);
+      saveChats(updatedChats);
       setActiveChatId(targetChatId);
-      setNotifications(getStoredNotifications());
 
-      if (isFirebaseConfigured() && targetChatId) {
-        const updatedChat = updatedChats.find(c => c.id === targetChatId);
-        if (updatedChat) {
-          saveFirestoreChat(updatedChat);
-        }
+      if (isFirebaseConfigured()) {
+        saveFirestoreChat(newChatObj);
       }
     }
     setIsChatModalOpen(true);
@@ -1403,6 +1407,25 @@ export default function App() {
     setSelectedOffice('');
   };
 
+  const handleNavigateHome = () => {
+    setIsChatModalOpen(false);
+    setActiveChatId(null);
+    setIsNotifsModalOpen(false);
+    setIsFeedbackModalOpen(false);
+    setIsAdminModalOpen(false);
+    setIsAdmin2FAModalOpen(false);
+    setIsProfileModalOpen(false);
+    setIsEditModalOpen(false);
+    setEditingContact(null);
+    setIsMenuDrawerOpen(false);
+    setIsPolicyModalOpen(false);
+    setIsFirebaseSetupOpen(false);
+    setIsRegisterModalOpen(false);
+    setIsLoginModalOpen(false);
+    setIsPhotoGateDismissed(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const hasActiveFilters = Boolean(searchQuery || (currentUser?.role === 'admin' && selectedDistrict) || selectedPost || selectedOffice);
 
   // Scoped pending counts
@@ -1484,14 +1507,16 @@ export default function App() {
         onLogout={handleLogout}
         onResetData={handleResetMasterData}
         onOpenMenu={() => setIsMenuDrawerOpen(prev => !prev)}
+        onNavigateHome={handleNavigateHome}
       />
 
-      {/* Mandatory Uniform Photo Verification Gate */}
-      {currentUser && currentUser.role === 'user' && !currentUser.uniformPhoto && (
+      {/* Mandatory Uniform Photo Verification Gate (Dismissible to access home screen) */}
+      {currentUser && currentUser.role === 'user' && !currentUser.uniformPhoto && !isPhotoGateDismissed && (
         <UniformPhotoGate 
           currentUser={currentUser}
           onSavePhoto={(photo) => handleUpdateUniformPhoto(currentUser.id, photo)}
           onLogout={handleLogout}
+          onDismiss={() => setIsPhotoGateDismissed(true)}
         />
       )}
 
@@ -1715,9 +1740,10 @@ export default function App() {
         hasActiveFilters={hasActiveFilters}
       />
 
-      {/* Contact Cards Grid (Scoped by authenticated district) */}
+      {/* Contact Cards Grid (Scoped by authenticated district - Max 10 cards displayed for load reduction) */}
       <ContactList
-        contacts={filteredContacts}
+        contacts={displayedContacts}
+        totalCount={filteredContacts.length}
         currentUser={currentUser}
         permissions={phonePermissions}
         onEditContact={handleStartEdit}
@@ -1757,6 +1783,7 @@ export default function App() {
         onDeleteGroupChat={handleDeleteGroupChat}
         onAppendMessage={handleAppendMessage}
         onMarkChatAsRead={handleMarkChatAsRead}
+        onStartEmptyDirectChat={handleOpenChatWithContact}
       />
 
       {/* Cloudflare R2 Cloud Setup Modal */}
@@ -2001,14 +2028,7 @@ export default function App() {
           setIsProfileModalOpen(false);
           setIsMenuDrawerOpen(prev => !prev);
         }}
-        onNavigateHome={() => {
-          setIsChatModalOpen(false);
-          setIsNotifsModalOpen(false);
-          setIsAdminModalOpen(false);
-          setIsProfileModalOpen(false);
-          setIsMenuDrawerOpen(false);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        onNavigateHome={handleNavigateHome}
         isChatModalOpen={isChatModalOpen}
         isNotifsModalOpen={isNotifsModalOpen}
         isAdminModalOpen={isAdminModalOpen}

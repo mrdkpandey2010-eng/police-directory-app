@@ -8,7 +8,8 @@ import { validateFileSize, compressImage } from '../utils/imageCompressor';
 export default function UniformPhotoGate({ 
   currentUser, 
   onSavePhoto, 
-  onLogout 
+  onLogout,
+  onDismiss
 }) {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -114,25 +115,45 @@ export default function UniformPhotoGate({
             </div>
           </div>
 
-          <button 
-            onClick={onLogout}
-            style={{
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: '#fef3c7',
-              padding: '6px 12px',
-              borderRadius: '8px',
-              fontSize: '0.76rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-            title="लॉगआउट करें"
-          >
-            <LogOut size={13} />
-            लॉगआउट
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {onDismiss && (
+              <button 
+                onClick={onDismiss}
+                style={{
+                  background: 'rgba(255,255,255,0.15)',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  color: '#fff',
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  fontSize: '0.76rem',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+                title="होम स्क्रीन पर जाएं"
+              >
+                बाद में करें (होम स्क्रीन)
+              </button>
+            )}
+            <button 
+              onClick={onLogout}
+              style={{
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: '#fef3c7',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                fontSize: '0.76rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+              title="लॉगआउट करें"
+            >
+              <LogOut size={13} />
+              लॉगआउट
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -325,6 +346,27 @@ export default function UniformPhotoGate({
             <CheckCircle2 size={18} />
             <span>{isUploading ? 'सत्यापित किया जा रहा है...' : 'फोटो सत्यापित करें एवं ऐप का संचालन शुरू करें'}</span>
           </button>
+
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              style={{
+                width: '100%',
+                marginTop: '10px',
+                padding: '10px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(255,255,255,0.06)',
+                color: '#cbd5e1',
+                fontWeight: 600,
+                fontSize: '0.84rem',
+                cursor: 'pointer'
+              }}
+            >
+              बाद में अपलोड करें (सीधे होम स्क्रीन निर्देशिका देखें)
+            </button>
+          )}
         </div>
       </div>
     </div>

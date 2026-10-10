@@ -4,6 +4,7 @@ import { SearchX } from 'lucide-react';
 
 export default function ContactList({ 
   contacts, 
+  totalCount = 0,
   currentUser, 
   permissions = [],
   onEditContact, 
@@ -16,6 +17,8 @@ export default function ContactList({
   onOpenChatWithContact,
   onPermissionUpdated
 }) {
+  const effectiveTotal = totalCount || contacts.length;
+
   if (contacts.length === 0) {
     return (
       <div className="empty-state" style={{ padding: '2rem 1rem', textAlign: 'center' }}>
@@ -35,10 +38,23 @@ export default function ContactList({
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
         <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-bright, #fff)', margin: 0 }}>
-          संपर्क निर्देशिका ({contacts.length} सक्रिय पुलिस कार्मिक)
+          संपर्क निर्देशिका ({contacts.length}{effectiveTotal > contacts.length ? ` / कुल ${effectiveTotal}` : ''} सक्रिय पुलिस कार्मिक)
         </h2>
+        {effectiveTotal > contacts.length && (
+          <span style={{
+            fontSize: '0.74rem',
+            color: 'var(--khaki-light, #dfb97e)',
+            background: 'rgba(196, 151, 86, 0.15)',
+            border: '1px solid rgba(196, 151, 86, 0.35)',
+            borderRadius: '6px',
+            padding: '3px 8px',
+            fontWeight: 600
+          }}>
+            ⚡ तीव्र गति हेतु अधिकतम 10 कार्ड प्रदर्शित (विशिष्ट कार्मिक हेतु फ़िल्टर/खोज का उपयोग करें)
+          </span>
+        )}
       </div>
 
       <div className="contacts-grid">

@@ -4,7 +4,7 @@ import {
   PhoneCall, Search, Plus, X, Download, FileText, 
   FileSpreadsheet, Image as ImageIcon, MapPin, 
   Share2, Check, CheckCheck, Compass, Info, ShieldCheck,
-  UserPlus, UserMinus, LogOut, Trash2, Crown, Shield
+  UserPlus, UserMinus, LogOut, Trash2, Crown, Shield, Home
 } from 'lucide-react';
 import { getChatsForUser, getUnreadCountForChat } from '../utils/storage';
 import { callManager } from '../utils/webrtc';
@@ -15,18 +15,19 @@ export default function MessageBoxModal({
   onClose, 
   chats = [], 
   contacts = [], 
-  currentUser,
-  activeChatId,
-  setActiveChatId,
-  onSendDirectMessage,
-  onSendGroupMessage,
-  onCreateGroupChat,
-  onAddGroupParticipants,
-  onRemoveGroupParticipant,
-  onLeaveGroupChat,
-  onDeleteGroupChat,
-  onAppendMessage,
-  onMarkChatAsRead
+  currentUser, 
+  activeChatId, 
+  setActiveChatId, 
+  onSendDirectMessage, 
+  onSendGroupMessage, 
+  onCreateGroupChat, 
+  onAddGroupParticipants, 
+  onRemoveGroupParticipant, 
+  onLeaveGroupChat, 
+  onDeleteGroupChat, 
+  onAppendMessage, 
+  onMarkChatAsRead,
+  onStartEmptyDirectChat
 }) {
   const [activeTab, setActiveTab] = useState('direct'); // 'direct' | 'group'
   const [chatSearch, setChatSearch] = useState('');
@@ -353,7 +354,7 @@ export default function MessageBoxModal({
     setShowAttachMenu(false);
   };
 
-  // Start new direct chat with selected officer
+  // Start new direct chat with selected officer (No auto-sending message, Point 3)
   const handleStartDirectChat = (contact) => {
     setShowNewDirectModal(false);
     setActiveTab('direct');
@@ -368,7 +369,12 @@ export default function MessageBoxModal({
       setActiveChatId(existing.id);
       setMobileView('chat');
     } else {
-      onSendDirectMessage(currentUser, contact, `जय हिंद ${contact.name} जी!`);
+      if (onStartEmptyDirectChat) {
+        onStartEmptyDirectChat(contact);
+      } else {
+        const targetChatId = `chat-p2p-${currentUser.id}-${contact.id}`;
+        setActiveChatId(targetChatId);
+      }
       setMobileView('chat');
     }
   };
@@ -421,8 +427,8 @@ export default function MessageBoxModal({
         position: 'fixed',
         inset: 0,
         width: '100vw',
-        height: '100vh',
-        zIndex: 9999,
+        height: '100dvh',
+        zIndex: 100060,
         background: '#070e1c',
         display: 'flex',
         flexDirection: 'column',
@@ -430,7 +436,7 @@ export default function MessageBoxModal({
         color: '#f8fafc',
         fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
         paddingTop: 'env(safe-area-inset-top, 0px)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        paddingBottom: '0px',
         paddingLeft: 'env(safe-area-inset-left, 0px)',
         paddingRight: 'env(safe-area-inset-right, 0px)'
       }}
@@ -1523,29 +1529,35 @@ export default function MessageBoxModal({
                 </div>
               )}
 
-              {/* WhatsApp Bottom Input Bar */}
+              {/* WhatsApp Bottom Input Bar (Always Visible at bottom, Point 4) */}
               <form 
                 onSubmit={handleSendMessage}
                 style={{
-                  padding: '0.55rem 0.75rem',
+                  padding: '0.65rem 0.85rem',
+                  paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0.75rem))',
                   background: '#0c1830',
-                  borderTop: '1px solid rgba(196, 151, 86, 0.25)',
+                  borderTop: '1px solid rgba(196, 151, 86, 0.35)',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.5rem',
-                  flexShrink: 0
+                  gap: '0.55rem',
+                  flexShrink: 0,
+                  position: 'sticky',
+                  bottom: 0,
+                  zIndex: 70,
+                  boxShadow: '0 -4px 15px rgba(0, 0, 0, 0.6)'
                 }}
               >
                 {/* Paperclip Attachment Trigger */}
                 <button
+                  id="chat-attach-btn"
                   type="button"
                   onClick={() => setShowAttachMenu(prev => !prev)}
                   style={{
                     background: showAttachMenu ? 'rgba(196, 151, 86, 0.3)' : 'rgba(255, 255, 255, 0.08)',
                     border: '1px solid rgba(196, 151, 86, 0.3)',
                     color: 'var(--khaki-primary, #c49756)',
-                    width: '38px',
-                    height: '38px',
+                    width: '40px',
+                    height: '40px',
                     borderRadius: '50%',
                     display: 'flex',
                     alignItems: 'center',
@@ -1560,30 +1572,32 @@ export default function MessageBoxModal({
 
                 {/* Text Input */}
                 <input
+                  id="chat-input-text"
                   ref={chatInputRef}
                   type="text"
-                  placeholder="संदेश लिखें (जय हिंद, ड्यूटी रिपोर्ट, आदि)..."
+                  placeholder="संदेश लिखें..."
                   value={inputText}
                   onChange={e => setInputText(e.target.value)}
                   style={{
                     flex: 1,
-                    padding: '9px 14px',
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    padding: '10px 14px',
+                    background: 'rgba(255, 255, 255, 0.07)',
+                    border: '1px solid rgba(255, 255, 255, 0.18)',
                     borderRadius: '24px',
                     color: '#fff',
-                    fontSize: '0.86rem',
+                    fontSize: '0.88rem',
                     outline: 'none'
                   }}
                 />
 
                 {/* Circular Send Button */}
                 <button
+                  id="chat-send-btn"
                   type="submit"
                   disabled={!inputText.trim() && !attachedFile}
                   style={{
-                    width: '38px',
-                    height: '38px',
+                    width: '40px',
+                    height: '40px',
                     borderRadius: '50%',
                     background: (!inputText.trim() && !attachedFile) 
                       ? 'rgba(255, 255, 255, 0.1)' 
@@ -1599,7 +1613,7 @@ export default function MessageBoxModal({
                   }}
                   title="भेजें"
                 >
-                  <Send size={16} />
+                  <Send size={17} />
                 </button>
               </form>
             </>
@@ -1710,6 +1724,7 @@ export default function MessageBoxModal({
                 eligibleDirectContacts.map(contact => (
                   <div
                     key={contact.id}
+                    className="officer-direct-row"
                     onClick={() => handleStartDirectChat(contact)}
                     style={{
                       padding: '0.55rem 0.75rem',

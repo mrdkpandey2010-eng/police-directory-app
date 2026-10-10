@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   Shield, UserPlus, Lock, RefreshCw, Bell, MessageSquare, 
-  User, LogOut, CheckCircle, Clock, KeyRound, Cloud, Menu
+  User, LogOut, CheckCircle, Clock, KeyRound, Cloud, Menu, Home
 } from 'lucide-react';
 
 export default function Header({ 
@@ -19,7 +19,8 @@ export default function Header({
   onOpenChat, 
   onLogout, 
   onResetData,
-  onOpenMenu
+  onOpenMenu,
+  onNavigateHome
 }) {
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
@@ -135,6 +136,32 @@ export default function Header({
             >
               <Lock size={14} />
               <span>लॉगिन</span>
+            </button>
+          )}
+
+          {/* Universal Home Tab Button (Point 2) */}
+          {onNavigateHome && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onNavigateHome}
+              title="मुख्य होम स्क्रीन पर वापस जाएं (Home Tab)"
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid var(--khaki-border, rgba(196,151,86,0.35))',
+                color: 'var(--khaki-light, #dfb97e)',
+                padding: '0.45rem 0.85rem',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              <Home size={16} color="var(--khaki-primary, #c49756)" />
+              <span>होम (Home)</span>
             </button>
           )}
 

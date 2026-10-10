@@ -3,7 +3,7 @@ import {
   X, Lock, Unlock, FileSpreadsheet, Download, Upload, CheckCircle, 
   XCircle, Edit3, Trash2, Clock, Users, Shield, KeyRound, Plus, 
   ShieldCheck, Settings, Power, UserCheck, Award, Building2, MapPin,
-  FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe, Cloud, Database, AlertTriangle
+  FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe, Cloud, Database, AlertTriangle, Home
 } from 'lucide-react';
 import { 
   downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS,
@@ -523,9 +523,32 @@ export default function AdminPanel({
               </div>
             </div>
           </div>
-          <button className="close-btn" onClick={onClose}>
-            <X size={20} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button 
+              type="button" 
+              onClick={onClose}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: '1px solid rgba(196,151,86,0.3)',
+                color: 'var(--khaki-light, #dfb97e)',
+                padding: '5px 10px',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+              title="होम स्क्रीन पर वापस जाएं (Home Tab)"
+            >
+              <Home size={15} color="var(--khaki-primary)" />
+              <span>होम (Home)</span>
+            </button>
+            <button className="close-btn" onClick={onClose} title="बंद करें">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="admin-dashboard">

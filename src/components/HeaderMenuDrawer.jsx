@@ -316,50 +316,6 @@ export default function HeaderMenuDrawer({
               </div>
             </div>
           )}
-
-          {/* Section: Policies & Rules */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', paddingLeft: '4px', paddingRight: '4px' }}>
-              <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--khaki-primary, #c49756)', letterSpacing: '0.08em' }}>
-                शासकीय नीतियां एवं लिंक्स
-              </div>
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => handleAction(onOpenAdmin)}
-                  style={{
-                    background: 'rgba(196, 151, 86, 0.15)',
-                    border: '1px solid rgba(196, 151, 86, 0.4)',
-                    color: 'var(--khaki-light)',
-                    fontSize: '0.68rem',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontWeight: 600
-                  }}
-                  title="नीतियां व कस्टम लिंक संसोधित करें या नया जोड़ें"
-                >
-                  + नया जोड़ें / संसोधन
-                </button>
-              )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {((policies && policies.length > 0) ? policies : DEFAULT_POLICIES).map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handleAction(() => onOpenPolicy && onOpenPolicy(p.id))}
-                  style={menuItemStyle}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <ShieldAlert size={16} color="var(--khaki-light)" />
-                    <span style={{ fontSize: '0.84rem' }}>{p.title}</span>
-                  </div>
-                  <ChevronRight size={14} color="#64748b" />
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Drawer Footer with Logout / Session exit */}

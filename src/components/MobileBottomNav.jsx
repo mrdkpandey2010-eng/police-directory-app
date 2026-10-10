@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, MessageSquare, Bell, ShieldCheck, User, Menu } from 'lucide-react';
+import { Home, Users, MessageSquare, Bell, ShieldCheck, User, Menu } from 'lucide-react';
 
 export default function MobileBottomNav({
   currentUser,
@@ -105,17 +105,17 @@ export default function MobileBottomNav({
         pointerEvents: 'auto'
       }}
     >
-      {/* 1. DIRECTORY / HOME TAB */}
+      {/* 1. HOME TAB */}
       <button
         type="button"
         onClick={onNavigateHome}
         style={navItemStyle(isHomeActive)}
-        title="पुलिस निर्देशिका (Home Directory)"
+        title="होम स्क्रीन निर्देशिका (Home Tab)"
       >
         <div style={iconContainerStyle(isHomeActive)}>
-          <Users size={19} color={isHomeActive ? '#fef08a' : '#94a3b8'} strokeWidth={isHomeActive ? 2.4 : 2} />
+          <Home size={19} color={isHomeActive ? '#fef08a' : '#94a3b8'} strokeWidth={isHomeActive ? 2.4 : 2} />
         </div>
-        <span style={labelStyle(isHomeActive)}>निर्देशिका</span>
+        <span style={labelStyle(isHomeActive)}>होम</span>
       </button>
 
       {/* 2. CHATS / MESSAGES TAB */}

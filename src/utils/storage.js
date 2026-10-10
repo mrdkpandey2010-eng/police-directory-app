@@ -1192,20 +1192,7 @@ export const createGroupChat = (chats, creator, groupTitle, participantIds, desc
     district: creator.district || 'सभी ज़िले (All Districts)',
     lastMessage: `समूह का निर्माण ${creator.name} द्वारा किया गया।`,
     lastUpdated: new Date().toISOString(),
-    messages: [
-      {
-        id: `grp-msg-${Date.now()}`,
-        senderId: creator.id,
-        senderName: creator.name,
-        senderPost: creator.post || 'ग्रुप एडमिन',
-        senderDistrict: creator.district,
-        senderPno: creator.pno,
-        text: `जय हिंद। "${groupTitle.trim()}" समूह का निर्माण विभागीय समन्वय हेतु किया गया है।`,
-        file: null,
-        timestamp: new Date().toISOString(),
-        readBy: [creator.id]
-      }
-    ]
+    messages: []
   };
 
   const updatedChats = [newGroupObj, ...chats];
