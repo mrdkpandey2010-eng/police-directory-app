@@ -362,7 +362,7 @@ export default function App() {
     if (savedUser && !isSessionExpired) {
       setCurrentUser(savedUser);
       localStorage.setItem('police_last_activity_time', String(Date.now()));
-      if (savedUser.role === 'user') {
+      if (savedUser.role === 'user' || savedUser.role === 'co_admin') {
         setSelectedDistrict(savedUser.district || '');
       }
       setDisclaimerAgreed(true);

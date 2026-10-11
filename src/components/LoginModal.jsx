@@ -53,9 +53,35 @@ export default function LoginModal({
       return;
     }
 
+    // Auto-detect Co-Admin role if user is an authorized district Co-Admin
+    const activeCoAdminList = Array.isArray(coAdmins) && coAdmins.length > 0 ? coAdmins : [];
+    const matchedCoAdmin = activeCoAdminList.find(ca => 
+      (ca.userId && ca.userId === matchedUser.id) ||
+      (ca.phone && matchedUser.phone && ca.phone.replace(/\D/g, '') === matchedUser.phone.replace(/\D/g, '')) ||
+      (ca.username && matchedUser.pno && (ca.username.toLowerCase() === matchedUser.pno.toLowerCase() || ca.username.toLowerCase() === `co_${matchedUser.pno.toLowerCase()}`)) ||
+      (ca.name && matchedUser.name && ca.name.toLowerCase().includes(matchedUser.name.toLowerCase().trim()))
+    );
+
+    const isAssignedCoAdmin = Boolean(
+      matchedUser.isCoAdmin || 
+      matchedUser.role === 'co_admin' || 
+      (matchedCoAdmin && matchedCoAdmin.status !== 'inactive' && matchedCoAdmin.status !== 'blocked')
+    );
+
+    if (isAssignedCoAdmin) {
+      onLoginSuccess({
+        ...matchedUser,
+        role: 'co_admin',
+        district: matchedCoAdmin?.district || matchedUser.district,
+        isCoAdmin: true
+      });
+      onClose();
+      return;
+    }
+
     onLoginSuccess({
-      role: 'user',
-      ...matchedUser
+      ...matchedUser,
+      role: 'user'
     });
     onClose();
   };
