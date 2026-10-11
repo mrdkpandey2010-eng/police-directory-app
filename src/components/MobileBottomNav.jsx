@@ -20,7 +20,8 @@ export default function MobileBottomNav({
 }) {
   if (!currentUser) return null;
 
-  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'co_admin';
+  const isAdmin = currentUser?.role === 'admin';
+  const isCoAdmin = currentUser?.role === 'co_admin';
   const isHomeActive = !isChatModalOpen && !isNotifsModalOpen && !isAdminModalOpen && !isProfileModalOpen && !isMenuDrawerOpen;
 
   const navItemStyle = (isActive) => ({
