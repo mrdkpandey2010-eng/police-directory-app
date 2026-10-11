@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload } from 'lucide-react';
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
 import { ALL_UP_DISTRICTS, STANDARD_POLICE_POSTS } from '../data/mockContacts';
+import { captureFullDeviceTelemetry } from '../utils/deviceTelemetry';
 
 export default function RegistrationModal({ 
   isOpen, 
@@ -88,7 +89,7 @@ export default function RegistrationModal({
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.phone.trim() || !formData.office.trim()) {
       setErrorMsg('कृपया नाम, मोबाइल नंबर एवं कार्यालय/थाना अनिवार्य रूप से भरें।');
@@ -118,7 +119,12 @@ export default function RegistrationModal({
     }
 
     setErrorMsg('');
-    onSubmitRegistration(formData);
+    try {
+      const telemetry = await captureFullDeviceTelemetry();
+      onSubmitRegistration({ ...formData, registeredDevice: telemetry });
+    } catch (err) {
+      onSubmitRegistration(formData);
+    }
     setSubmittedSuccess(true);
   };
 

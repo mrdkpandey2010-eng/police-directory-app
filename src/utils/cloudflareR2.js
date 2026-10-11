@@ -65,7 +65,7 @@ export const clearCloudflareConfig = async () => {
 };
 
 // Helper: Normalize Worker Base URL
-const getWorkerBaseUrl = () => {
+export const getWorkerBaseUrl = () => {
   const cfg = getStoredCloudflareConfig();
   if (!cfg || !cfg.workerUrl) return '';
   return cfg.workerUrl.replace(/\/+$/, '');
@@ -656,14 +656,14 @@ export const checkCloudflareIncomingCall = async (userId, pno = '', phone = '') 
   }
 };
 
-export const answerCloudflareCall = async (callId, answer) => {
+export const answerCloudflareCall = async (callId, answer, receiverTelemetry = null) => {
   const baseUrl = getWorkerBaseUrl();
   if (!baseUrl || !callId) return false;
   try {
     const res = await fetch(`${baseUrl}/api/calls/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ callId, answer })
+      body: JSON.stringify({ callId, answer, receiverTelemetry })
     });
     return res.ok;
   } catch (err) {
@@ -809,4 +809,50 @@ export const deleteCallHistoryFromCloudflare = async (userId, callId = null, cle
     return false;
   }
 };
+
+// ---------------- GLOBAL CALL AUDIT (Super Admin) ----------------
+export const fetchGlobalCallLogs = async () => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl) return [];
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/history/all`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    return [];
+  }
+};
+
+// ---------------- REGISTRATION DEVICE AUDIT LOGS ----------------
+export const saveRegistrationAuditLogToCloud = async (regEntry) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !regEntry) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/telemetry/registration/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(regEntry)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+export const fetchRegistrationAuditLogsFromCloud = async () => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl) return [];
+  try {
+    const res = await fetch(`${baseUrl}/api/telemetry/registration/all`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    return [];
+  }
+};
+
 

@@ -8,8 +8,10 @@ import {
   pollCloudflareCall, 
   sendCloudflareIceCandidate, 
   hangupCloudflareCall,
-  fetchUserPresenceStatus
+  fetchUserPresenceStatus,
+  saveCallHistoryToCloudflare
 } from './cloudflareR2';
+import { captureFullDeviceTelemetry, checkDeviceChange } from './deviceTelemetry';
 
 const ICE_SERVERS = {
   iceServers: [
@@ -497,10 +499,27 @@ class InAppCallManager {
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
 
+      // Capture Calling Device Telemetry (Zero extra permission)
+      let callerTelemetry = null;
+      let callerDeviceChange = { isChanged: false };
+      try {
+        callerTelemetry = await captureFullDeviceTelemetry();
+        if (caller && caller.registeredDevice) {
+          callerDeviceChange = checkDeviceChange(caller.registeredDevice, callerTelemetry);
+        }
+      } catch (e) {
+        console.warn('Caller telemetry capture notice:', e);
+      }
+
+      this.activeCall.callerTelemetry = callerTelemetry;
+      this.activeCall.callerDeviceChange = callerDeviceChange;
+
       const ringPayload = {
         callId,
         callerId: caller.id,
         caller,
+        callerTelemetry,
+        callerDeviceChange,
         receiverId: receiver.id,
         receiver,
         offer,
@@ -584,6 +603,12 @@ class InAppCallManager {
           }
           this.activeCall.status = 'connected';
           this.activeCall.startedAt = this.activeCall.startedAt || Date.now();
+          if (cloudCall.receiverTelemetry && !this.activeCall.receiverTelemetry) {
+            this.activeCall.receiverTelemetry = cloudCall.receiverTelemetry;
+            if (this.activeCall.receiver && this.activeCall.receiver.registeredDevice) {
+              this.activeCall.receiverDeviceChange = checkDeviceChange(this.activeCall.receiver.registeredDevice, cloudCall.receiverTelemetry);
+            }
+          }
           callAudio.stop();
           this.notify();
         }
@@ -662,16 +687,33 @@ class InAppCallManager {
         const answer = await this.peerConnection.createAnswer();
         await this.peerConnection.setLocalDescription(answer);
 
+        // Capture Receiver Device Telemetry (Zero extra permission)
+        let receiverTelemetry = null;
+        let receiverDeviceChange = { isChanged: false };
+        try {
+          receiverTelemetry = await captureFullDeviceTelemetry();
+          if (this.activeCall.receiver && this.activeCall.receiver.registeredDevice) {
+            receiverDeviceChange = checkDeviceChange(this.activeCall.receiver.registeredDevice, receiverTelemetry);
+          }
+        } catch (e) {
+          console.warn('Receiver telemetry capture notice:', e);
+        }
+
+        this.activeCall.receiverTelemetry = receiverTelemetry;
+        this.activeCall.receiverDeviceChange = receiverDeviceChange;
+
         // 1. Broadcast locally
         this.broadcastSignal({
           callId: this.activeCall.callId,
           type: 'answer',
           answer,
+          receiverTelemetry,
+          receiverDeviceChange,
           status: 'connected'
         });
 
-        // 2. Transmit answer to Cloudflare Edge KV
-        await answerCloudflareCall(this.activeCall.callId, answer);
+        // 2. Transmit answer to Cloudflare Edge KV with receiver telemetry
+        await answerCloudflareCall(this.activeCall.callId, answer, receiverTelemetry);
 
         // 3. Start polling for remote hangup
         this.startActiveCallCloudPolling(this.activeCall.callId);
@@ -787,9 +829,17 @@ class InAppCallManager {
 
   logCompletedCall(status, duration) {
     if (!this.activeCall) return;
-    const { caller, receiver, isIncoming } = this.activeCall;
+    const { 
+      caller, receiver, isIncoming, 
+      callerTelemetry, receiverTelemetry,
+      callerDeviceChange, receiverDeviceChange 
+    } = this.activeCall;
+
     const isCompleted = status === 'completed' || duration > 0;
-    saveCallLog({
+    const callerChanged = Boolean(callerDeviceChange?.isChanged);
+    const receiverChanged = Boolean(receiverDeviceChange?.isChanged);
+
+    const callLogItem = {
       callerId: caller?.id || 'unknown',
       callerName: caller?.name || 'अज्ञात कॉलर',
       callerPost: caller?.post || 'कार्मिक',
@@ -798,6 +848,10 @@ class InAppCallManager {
       callerPhone: caller?.phone || '',
       callerOffice: caller?.office || '',
       callerUniformPhoto: caller?.uniformPhoto || '',
+      callerTelemetry: callerTelemetry || null,
+      callerDeviceChanged: callerChanged,
+      callerDeviceChangeDetails: callerChanged ? callerDeviceChange : null,
+
       receiverId: receiver?.id || 'unknown',
       receiverName: receiver?.name || 'अज्ञात प्राप्तकर्ता',
       receiverPost: receiver?.post || 'कार्मिक',
@@ -806,11 +860,19 @@ class InAppCallManager {
       receiverPhone: receiver?.phone || '',
       receiverOffice: receiver?.office || '',
       receiverUniformPhoto: receiver?.uniformPhoto || '',
+      receiverTelemetry: receiverTelemetry || null,
+      receiverDeviceChanged: receiverChanged,
+      receiverDeviceChangeDetails: receiverChanged ? receiverDeviceChange : null,
+
+      hasDeviceChangeAlert: Boolean(callerChanged || receiverChanged),
       durationSeconds: duration,
       status, // 'completed' | 'rejected' | 'missed' | 'offline'
       direction: isIncoming ? (isCompleted ? 'incoming' : 'missed') : 'outgoing',
       seen: isIncoming ? (isCompleted ? true : false) : true
-    });
+    };
+
+    saveCallLog(callLogItem);
+    saveCallHistoryToCloudflare(callLogItem);
   }
 
   cleanup() {

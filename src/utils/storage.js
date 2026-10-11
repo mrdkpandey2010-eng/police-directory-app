@@ -1581,11 +1581,38 @@ export const registerNewOfficer = (contacts, officerData) => {
     uniformPhotoUploaded: Boolean(officerData.uniformPhoto),
     isPhoneHidden: Boolean(officerData.isPhoneHidden),
     createdAt: new Date().toISOString(),
-    registrationNotes: officerData.registrationNotes || 'कर्मचारी द्वारा स्व-पंजीकरण (वर्दी फोटो संलग्न)।'
+    registrationNotes: officerData.registrationNotes || 'कर्मचारी द्वारा स्व-पंजीकरण (वर्दी फोटो संलग्न)।',
+    registeredDevice: officerData.registeredDevice || null,
+    currentDevice: officerData.registeredDevice || null,
+    isDeviceChanged: false,
+    deviceChangeCount: 0,
+    deviceHistory: officerData.registeredDevice ? [{
+      ...officerData.registeredDevice,
+      action: 'registration',
+      timestamp: new Date().toISOString()
+    }] : []
   };
 
   const updatedList = [newOfficer, ...contacts];
   saveContacts(updatedList);
+
+  // Record into dedicated Registration Audit Logs
+  if (officerData.registeredDevice) {
+    saveRegistrationLog({
+      id: `reglog-${newOfficer.id}`,
+      userId: newOfficer.id,
+      pno: newOfficer.pno,
+      name: newOfficer.name,
+      post: newOfficer.post,
+      district: newOfficer.district,
+      office: newOfficer.office,
+      phone: newOfficer.phone,
+      uniformPhoto: newOfficer.uniformPhoto,
+      registeredDevice: officerData.registeredDevice,
+      createdAt: newOfficer.createdAt
+    });
+  }
+
   return { updatedList, newOfficer };
 };
 
@@ -2360,6 +2387,99 @@ export const getUnseenMissedCallsCount = (currentUser) => {
   } catch (e) {
     return 0;
   }
+};
+
+// ---------------- REGISTRATION AUDIT LOGS (Device footprint at registration) ----------------
+const REG_AUDIT_LOGS_KEY = 'police_directory_registration_audit_logs_v1';
+
+export const getStoredRegistrationLogs = () => {
+  try {
+    const saved = localStorage.getItem(REG_AUDIT_LOGS_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch (err) {
+    return [];
+  }
+};
+
+export const saveRegistrationLog = (regEntry) => {
+  try {
+    const current = getStoredRegistrationLogs();
+    const newEntry = {
+      id: regEntry.id || `reg-log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: regEntry.timestamp || regEntry.createdAt || new Date().toISOString(),
+      ...regEntry
+    };
+    const updated = [newEntry, ...current.filter(c => c.id !== newEntry.id && c.userId !== newEntry.userId)].slice(0, 500);
+    try {
+      localStorage.setItem(REG_AUDIT_LOGS_KEY, JSON.stringify(updated));
+    } catch (e) {}
+    idbSet(REG_AUDIT_LOGS_KEY, updated);
+    return updated;
+  } catch (err) {
+    return getStoredRegistrationLogs();
+  }
+};
+
+// ---------------- DEVICE CHANGE DETECTION AUDIT HELPER ----------------
+export const updateOfficerDeviceAudit = (contacts, userId, currentTelemetry) => {
+  if (!userId || !currentTelemetry) return { updatedContacts: contacts, isChanged: false, alert: null };
+  const current = contacts && contacts.length > 0 ? contacts : getStoredContacts();
+  let isChanged = false;
+  let alert = null;
+
+  const updatedContacts = current.map(officer => {
+    if (officer.id !== userId && officer.pno !== userId) return officer;
+
+    const registeredDevice = officer.registeredDevice;
+    if (registeredDevice) {
+      const regSig = (registeredDevice.signature || `${registeredDevice.os}__${registeredDevice.deviceModel || ''}`).toLowerCase();
+      const curSig = (currentTelemetry.signature || `${currentTelemetry.os}__${currentTelemetry.deviceModel || ''}`).toLowerCase();
+      
+      const regModel = (registeredDevice.deviceModel || registeredDevice.deviceName || '').toLowerCase();
+      const curModel = (currentTelemetry.deviceModel || currentTelemetry.deviceName || '').toLowerCase();
+      const regOs = (registeredDevice.os || '').toLowerCase();
+      const curOs = (currentTelemetry.os || '').toLowerCase();
+
+      const isModelDiff = Boolean(regModel && curModel && !curModel.includes(regModel) && !regModel.includes(curModel));
+      const isOsDiff = Boolean(regOs && curOs && !curOs.includes(regOs) && !regOs.includes(curOs));
+
+      if ((regSig && curSig && regSig !== curSig && (isModelDiff || isOsDiff)) || (isModelDiff && isOsDiff)) {
+        isChanged = true;
+        alert = {
+          fromDevice: registeredDevice.deviceName || `${registeredDevice.model || ''} (${registeredDevice.os || ''})`,
+          toDevice: currentTelemetry.deviceName || `${currentTelemetry.model || ''} (${currentTelemetry.os || ''})`,
+          fromIp: registeredDevice.ip,
+          toIp: currentTelemetry.ip,
+          changedAt: new Date().toISOString()
+        };
+      }
+    }
+
+    const history = Array.isArray(officer.deviceHistory) ? officer.deviceHistory : [];
+    const newHistory = isChanged ? [
+      {
+        action: 'device_change',
+        from: alert.fromDevice,
+        to: alert.toDevice,
+        ip: currentTelemetry.ip,
+        timestamp: new Date().toISOString(),
+        telemetry: currentTelemetry
+      },
+      ...history
+    ].slice(0, 20) : history;
+
+    return {
+      ...officer,
+      registeredDevice: officer.registeredDevice || currentTelemetry,
+      currentDevice: currentTelemetry,
+      isDeviceChanged: isChanged || Boolean(officer.isDeviceChanged),
+      lastDeviceChange: alert || officer.lastDeviceChange || null,
+      deviceHistory: newHistory
+    };
+  });
+
+  saveContacts(updatedContacts);
+  return { updatedContacts, isChanged, alert };
 };
 
 // ---------------- AUTOMATED 6-HOUR ROLLING BACKUP (MAX 5 SLOTS) ----------------

@@ -135,13 +135,15 @@ import {
   deleteCallLog,
   clearCallLogs,
   markCallLogsAsSeen,
-  getUnseenMissedCallsCount
+  getUnseenMissedCallsCount,
+  updateOfficerDeviceAudit
 } from './utils/storage';
 import { getNotificationPermissionStatus, requestAppNotificationPermission } from './utils/notifications';
 import TermsFooter from './components/TermsFooter';
 import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall, PhoneMissed } from 'lucide-react';
 import { callManager } from './utils/webrtc';
-import { sendPresenceHeartbeat, fetchCallHistoryFromCloudflare, deleteCallHistoryFromCloudflare } from './utils/cloudflareR2';
+import { sendPresenceHeartbeat, fetchCallHistoryFromCloudflare, deleteCallHistoryFromCloudflare, saveRegistrationAuditLogToCloud } from './utils/cloudflareR2';
+import { captureFullDeviceTelemetry } from './utils/deviceTelemetry';
 
 export default function App() {
   const [contacts, setContacts] = useState([]);
@@ -764,6 +766,19 @@ export default function App() {
     setIsPhotoGateDismissed(false);
     sessionStorage.setItem(`police_disclaimer_agreed_${userObj.id}`, 'true');
 
+    // Telemetry & Device Change Audit (Non-intrusive, zero extra permissions)
+    if (userObj.id && userObj.role !== 'admin') {
+      captureFullDeviceTelemetry().then(telemetry => {
+        const { updatedContacts, officer } = updateOfficerDeviceAudit(contacts, userObj.id, telemetry);
+        if (updatedContacts && updatedContacts.length > 0) {
+          setContacts(updatedContacts);
+          if (isFirebaseConfigured() && officer) {
+            saveFirestoreContact(officer);
+          }
+        }
+      }).catch(err => console.warn('Login telemetry audit error:', err));
+    }
+
     showToast(`सफलतापूर्वक लॉगिन: ${userObj.name} (${userObj.role === 'admin' ? 'Super Admin' : userObj.role === 'co_admin' ? `Co-Admin ${userObj.district}` : 'User'})`);
   };
 
@@ -903,6 +918,11 @@ export default function App() {
       }
     } else {
       showToast('पंजीकरण सबमिट हो गया है! Admin / Co-Admin Approval के बाद प्रोफ़ाइल एक्टिव होगी।');
+    }
+
+    // 4. Sync registration device telemetry audit log to Cloudflare Edge
+    if (newOfficer) {
+      saveRegistrationAuditLogToCloud(newOfficer).catch(err => console.warn('Cloud reg audit log error:', err));
     }
   };
 

@@ -210,6 +210,13 @@ export default {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
+          const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || '127.0.0.1';
+          if (callData.callerTelemetry) {
+            callData.callerTelemetry.ip = callData.callerTelemetry.ip || clientIp;
+            if (!callData.callerTelemetry.networkLocation && request.cf?.city) {
+              callData.callerTelemetry.networkLocation = `${request.cf.city}, ${request.cf.region || ''} (${request.cf.country || 'IN'})`;
+            }
+          }
           callData.status = 'ringing';
           callData.timestamp = Date.now();
           callData.candidates = callData.candidates || [];
@@ -291,7 +298,7 @@ export default {
         // C. Answer Call: /api/calls/answer
         if (path === '/api/calls/answer' && request.method === 'POST') {
           const body = await request.text();
-          const { callId, answer } = JSON.parse(body);
+          const { callId, answer, receiverTelemetry } = JSON.parse(body);
           if (!callId) {
             return new Response(JSON.stringify({ error: 'Missing callId' }), {
               status: 400,
@@ -299,12 +306,20 @@ export default {
             });
           }
 
+          const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || '127.0.0.1';
           const callStr = await getItem(`call_${callId}`);
           if (callStr) {
             const callObj = JSON.parse(callStr);
             callObj.answer = answer;
             callObj.status = 'connected';
             callObj.answeredAt = Date.now();
+            if (receiverTelemetry) {
+              callObj.receiverTelemetry = receiverTelemetry;
+              callObj.receiverTelemetry.ip = callObj.receiverTelemetry.ip || clientIp;
+              if (!callObj.receiverTelemetry.networkLocation && request.cf?.city) {
+                callObj.receiverTelemetry.networkLocation = `${request.cf.city}, ${request.cf.region || ''} (${request.cf.country || 'IN'})`;
+              }
+            }
             await putItem(`call_${callId}`, JSON.stringify(callObj));
           }
 
@@ -452,6 +467,14 @@ export default {
             await putItem(`call_history_${u}`, JSON.stringify(updated));
           }
 
+          // Master Call Audit Log for Admin Control Panel (Holds up to 500 complete records with full telemetry)
+          const masterStr = await getItem('admin_global_call_logs');
+          let masterList = [];
+          try { masterList = masterStr ? JSON.parse(masterStr) : []; } catch (e) {}
+          if (!Array.isArray(masterList)) masterList = [];
+          const updatedMaster = [logEntry, ...masterList.filter(item => item.id !== logEntry.id)].slice(0, 500);
+          await putItem('admin_global_call_logs', JSON.stringify(updatedMaster));
+
           return new Response(JSON.stringify({ success: true }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
@@ -476,6 +499,59 @@ export default {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+
+        // J. Global Call History Audit for Admin Control Panel: /api/calls/history/all
+        if (path === '/api/calls/history/all' && request.method === 'GET') {
+          const masterStr = await getItem('admin_global_call_logs');
+          return new Response(masterStr || JSON.stringify([]), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      // 8. Device Telemetry & Registration Audit Endpoints: /api/telemetry/*
+      if (path === '/api/telemetry/ip') {
+        const clientIp = request.headers.get('cf-connecting-ip') || 
+                         request.headers.get('x-real-ip') || 
+                         request.headers.get('x-forwarded-for') || 
+                         '127.0.0.1';
+        return new Response(JSON.stringify({
+          ip: clientIp,
+          city: request.cf?.city || '',
+          region: request.cf?.region || '',
+          country: request.cf?.country || 'IN',
+          asOrganization: request.cf?.asOrganization || ''
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (path === '/api/telemetry/registration/save' && request.method === 'POST') {
+        const body = await request.text();
+        const regEntry = JSON.parse(body);
+        const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || '127.0.0.1';
+        if (regEntry.registeredDevice) {
+          regEntry.registeredDevice.ip = regEntry.registeredDevice.ip || clientIp;
+          if (!regEntry.registeredDevice.networkLocation && request.cf?.city) {
+            regEntry.registeredDevice.networkLocation = `${request.cf.city}, ${request.cf.region || ''} (${request.cf.country || 'IN'})`;
+          }
+        }
+        const str = await getItem('admin_registration_audit_logs');
+        let list = [];
+        try { list = str ? JSON.parse(str) : []; } catch (e) {}
+        if (!Array.isArray(list)) list = [];
+        const updated = [regEntry, ...list.filter(item => item.id !== regEntry.id)].slice(0, 1000);
+        await putItem('admin_registration_audit_logs', JSON.stringify(updated));
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (path === '/api/telemetry/registration/all' && request.method === 'GET') {
+        const str = await getItem('admin_registration_audit_logs');
+        return new Response(str || JSON.stringify([]), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
       }
 
       // 7. User Presence & Activity Tracking: /api/presence/*

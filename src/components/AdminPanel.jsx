@@ -4,7 +4,7 @@ import {
   XCircle, Edit3, Trash2, Clock, Users, Shield, KeyRound, Plus, 
   ShieldCheck, Settings, Power, UserCheck, Award, Building2, MapPin,
   FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe, Cloud, Database, AlertTriangle, Home,
-  Activity, Smartphone, Laptop, ExternalLink
+  Activity, Smartphone, Laptop, ExternalLink, Battery, Wifi, ShieldAlert, Cpu
 } from 'lucide-react';
 import { 
   downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS,
@@ -13,11 +13,13 @@ import {
   getStoredPhonePermissions, respondPhonePermission,
   getStoredAdminMasterPin, saveAdminMasterPin,
   getStoredPolicies, DEFAULT_POLICIES, addCustomPolicy,
-  editPolicyItem, deleteCustomPolicyItem
+  editPolicyItem, deleteCustomPolicyItem,
+  getStoredRegistrationLogs, updateOfficerDeviceAudit
 } from '../utils/storage';
 import { syncAllContactsToFirestore } from '../utils/firebase';
 import { validateFileSize } from '../utils/imageCompressor';
-import { fetchAllUsersPresence } from '../utils/cloudflareR2';
+import { fetchAllUsersPresence, fetchGlobalCallLogs, fetchRegistrationAuditLogsFromCloud } from '../utils/cloudflareR2';
+import { checkDeviceChange } from '../utils/deviceTelemetry';
 
 export default function AdminPanel({ 
   isOpen, 
@@ -76,7 +78,7 @@ export default function AdminPanel({
   
   // Guard Co-Admin from accessing super admin only tabs
   useEffect(() => {
-    if (isCoAdmin && ['terms', 'call_logs', 'backups', 'coadmins', 'master', '2fa_settings', 'cloud_chat'].includes(activeTab)) {
+    if (isCoAdmin && ['terms', 'call_logs', 'backups', 'coadmins', 'master', '2fa_settings', 'cloud_chat', 'reg_device_logs'].includes(activeTab)) {
       setActiveTab('pending');
     }
   }, [isCoAdmin, activeTab]);
@@ -94,6 +96,13 @@ export default function AdminPanel({
   // Call Logs state
   const [callLogs, setCallLogs] = useState([]);
   const [callLogSearch, setCallLogSearch] = useState('');
+  const [selectedCallTelemetry, setSelectedCallTelemetry] = useState(null);
+
+  // Registration Device Logs state
+  const [registrationLogs, setRegistrationLogs] = useState([]);
+  const [regLogSearch, setRegLogSearch] = useState('');
+  const [regDeviceChangeFilter, setRegDeviceChangeFilter] = useState('all'); // 'all' | 'changed_only'
+  const [selectedOfficerDeviceAudit, setSelectedOfficerDeviceAudit] = useState(null);
 
   // Backups state
   const [backups, setBackups] = useState([]);
@@ -192,7 +201,47 @@ export default function AdminPanel({
 
   useEffect(() => {
     if (isOpen) {
-      setCallLogs(getStoredCallLogs());
+      // 1. Load Local Call Logs & Fetch Cloud Global Logs
+      const localCalls = getStoredCallLogs();
+      setCallLogs(localCalls);
+      if (isAdmin) {
+        fetchGlobalCallLogs().then(cloudLogs => {
+          if (Array.isArray(cloudLogs) && cloudLogs.length > 0) {
+            const existingIds = new Set(localCalls.map(c => c.id));
+            const merged = [...localCalls];
+            cloudLogs.forEach(cl => {
+              if (cl.id && !existingIds.has(cl.id)) {
+                existingIds.add(cl.id);
+                merged.push(cl);
+              }
+            });
+            merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            setCallLogs(merged);
+          }
+        }).catch(err => console.warn('Global call logs fetch err:', err));
+      }
+
+      // 2. Load Registration Device Telemetry Logs & Fetch Cloud Logs
+      const localRegs = getStoredRegistrationLogs();
+      setRegistrationLogs(localRegs);
+      if (isAdmin) {
+        fetchRegistrationAuditLogsFromCloud().then(cloudRegs => {
+          if (Array.isArray(cloudRegs) && cloudRegs.length > 0) {
+            const existingIds = new Set(localRegs.map(r => r.id || r.officerId || (r.pno + '_' + r.timestamp)));
+            const merged = [...localRegs];
+            cloudRegs.forEach(cr => {
+              const crId = cr.id || cr.officerId || (cr.pno + '_' + cr.timestamp);
+              if (!existingIds.has(crId)) {
+                existingIds.add(crId);
+                merged.push(cr);
+              }
+            });
+            merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            setRegistrationLogs(merged);
+          }
+        }).catch(err => console.warn('Cloud registration logs fetch err:', err));
+      }
+
       setBackups(getStoredBackups());
       const cfg = getStored2FAConfig();
       setTwoFactorConfig(cfg);
@@ -205,7 +254,7 @@ export default function AdminPanel({
         setPoliciesList(getStoredPolicies());
       }
     }
-  }, [isOpen, policies]);
+  }, [isOpen, policies, isAdmin]);
 
   const handleAddNewPolicySubmit = (e) => {
     e.preventDefault();
@@ -593,7 +642,11 @@ export default function AdminPanel({
         isInactive7,
         lastSeen,
         platform,
-        location
+        location,
+        registeredDevice: c.registeredDevice || null,
+        currentDevice: c.currentDevice || null,
+        isDeviceChanged: Boolean(c.isDeviceChanged),
+        deviceChangeDetails: c.deviceChangeDetails || null
       });
     });
 
@@ -821,6 +874,24 @@ export default function AdminPanel({
                 >
                   <PhoneCall size={16} />
                   कॉल लॉग्स ({Array.isArray(callLogs) ? callLogs.length : 0})
+                  {callLogs.some(l => l.hasDeviceChangeAlert || l.callerDeviceChanged || l.receiverDeviceChanged) && (
+                    <span className="tab-badge" style={{ background: '#ef4444', color: '#fff', fontSize: '0.68rem', fontWeight: 800 }} title="डिवाइस परिवर्तन चेतावनी">
+                      ⚠️
+                    </span>
+                  )}
+                </button>
+
+                <button 
+                  className={`admin-tab ${activeTab === 'reg_device_logs' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('reg_device_logs')}
+                >
+                  <Cpu size={16} />
+                  पंजीकरण डिवाइस लॉग्स ({Array.isArray(registrationLogs) ? registrationLogs.length : 0})
+                  {registrationLogs.some(r => r.isDeviceChanged) && (
+                    <span className="tab-badge" style={{ background: '#ef4444', color: '#fff', fontSize: '0.68rem', fontWeight: 800 }} title="डिवाइस परिवर्तन चेतावनी">
+                      ⚠️
+                    </span>
+                  )}
                 </button>
 
                 <button 
@@ -1064,6 +1135,28 @@ export default function AdminPanel({
                               <span style={{ marginLeft: '4px', fontSize: '0.72rem', background: 'rgba(59,130,246,0.2)', color: '#93c5fd', border: '1px solid rgba(59,130,246,0.3)', padding: '1px 5px', borderRadius: '4px' }}>
                                 Co-Admin
                               </span>
+                            )}
+                            {c.isDeviceChanged && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedOfficerDeviceAudit(c)}
+                                style={{
+                                  marginLeft: '6px',
+                                  fontSize: '0.68rem',
+                                  background: 'rgba(239, 68, 68, 0.2)',
+                                  color: '#f87171',
+                                  border: '1px solid #ef4444',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px'
+                                }}
+                                title="डिवाइस परिवर्तन चेतावनी - विवरण देखने के लिए क्लिक करें"
+                              >
+                                <ShieldAlert size={11} /> ⚠️ डिवाइस बदला
+                              </button>
                             )}
                           </td>
                           <td>{c.post}</td>
@@ -2679,11 +2772,12 @@ export default function AdminPanel({
                 <table className="admin-table" style={{ width: '100%', fontSize: '0.82rem' }}>
                   <thead>
                     <tr>
-                      <th>समय (Timestamp)</th>
-                      <th>कॉलर (Caller)</th>
-                      <th>रिसीवर (Receiver)</th>
-                      <th>अवधि (Duration)</th>
-                      <th>स्थिति (Status)</th>
+                      <th style={{ width: '15%' }}>समय (Timestamp)</th>
+                      <th style={{ width: '18%' }}>कॉलर (Caller)</th>
+                      <th style={{ width: '18%' }}>रिसीवर (Receiver)</th>
+                      <th style={{ width: '12%' }}>अवधि (Duration)</th>
+                      <th style={{ width: '12%' }}>स्थिति (Status)</th>
+                      <th style={{ width: '25%' }}>डिवाइस टेलीमेट्री व सुरक्षा रिपोर्ट</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2700,7 +2794,7 @@ export default function AdminPanel({
                         (log.receiverPno || '').toLowerCase().includes(q);
                     }).length === 0 ? (
                       <tr>
-                        <td colSpan={5} style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8' }}>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8' }}>
                           कोई कॉल लॉग दर्ज नहीं है।
                         </td>
                       </tr>
@@ -2723,6 +2817,7 @@ export default function AdminPanel({
                           const s = secs % 60;
                           return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
                         };
+                        const hasDeviceChange = Boolean(log.hasDeviceChangeAlert || log.callerDeviceChanged || log.receiverDeviceChanged);
                         return (
                           <tr key={log.id || idx}>
                             <td style={{ color: '#cbd5e1', fontSize: '0.76rem' }}>
@@ -2731,10 +2826,12 @@ export default function AdminPanel({
                             <td>
                               <div style={{ fontWeight: 700, color: '#f8fafc' }}>{log.callerName || 'अज्ञात'}</div>
                               <div style={{ fontSize: '0.72rem', color: 'var(--khaki-light)' }}>{log.callerPost || ''} • {log.callerDistrict || ''}</div>
+                              {log.callerPno && <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>PNO: {log.callerPno}</div>}
                             </td>
                             <td>
                               <div style={{ fontWeight: 700, color: '#f8fafc' }}>{log.receiverName || 'अज्ञात'}</div>
                               <div style={{ fontSize: '0.72rem', color: 'var(--khaki-light)' }}>{log.receiverPost || ''} • {log.receiverDistrict || ''}</div>
+                              {log.receiverPno && <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>PNO: {log.receiverPno}</div>}
                             </td>
                             <td style={{ fontWeight: 800, color: log.durationSeconds >= 300 ? '#f59e0b' : '#34d399', fontFamily: 'monospace' }}>
                               {formatDur(log.durationSeconds)}
@@ -2749,8 +2846,290 @@ export default function AdminPanel({
                                 background: log.status === 'completed' ? 'rgba(16,185,129,0.2)' : log.status === 'missed' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
                                 color: log.status === 'completed' ? '#34d399' : log.status === 'missed' ? '#fca5a5' : '#fcd34d'
                               }}>
-                                {log.status === 'completed' ? 'सम्पन्न (Completed)' : log.status === 'missed' ? 'मिस्ड (Missed)' : log.status === 'declined' ? 'अस्वीकृत' : log.status}
+                                {log.status === 'completed' ? 'सम्पन्न' : log.status === 'missed' ? 'मिस्ड' : log.status === 'declined' ? 'अस्वीकृत' : log.status}
                               </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                {hasDeviceChange && (
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    background: 'rgba(239, 68, 68, 0.25)',
+                                    color: '#fca5a5',
+                                    border: '1px solid #ef4444',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.68rem',
+                                    fontWeight: 800,
+                                    width: 'fit-content'
+                                  }}>
+                                    <ShieldAlert size={12} /> ⚠️ डिवाइस परिवर्तित
+                                  </span>
+                                )}
+
+                                <div style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                  {log.callerTelemetry?.deviceModel && (
+                                    <span>📱 {log.callerTelemetry.deviceModel}</span>
+                                  )}
+                                  {log.callerTelemetry?.ip && (
+                                    <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>🌐 {log.callerTelemetry.ip}</span>
+                                  )}
+                                  {log.callerTelemetry?.batteryLevel != null && (
+                                    <span style={{ color: '#34d399' }}>🔋 {log.callerTelemetry.batteryLevel}%</span>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCallTelemetry(log)}
+                                  style={{
+                                    background: 'rgba(59, 130, 246, 0.2)',
+                                    border: '1px solid rgba(59, 130, 246, 0.5)',
+                                    color: '#93c5fd',
+                                    padding: '3px 8px',
+                                    borderRadius: '5px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    width: 'fit-content'
+                                  }}
+                                  title="इस कॉल की संपूर्ण डिवाइस टेलीमेट्री रिपोर्ट देखें"
+                                >
+                                  <Cpu size={12} />
+                                  <span>🔍 टेलीमेट्री रिपोर्ट</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: REGISTRATION DEVICE LOGS (Super Admin Only) */}
+          {isAdmin && activeTab === 'reg_device_logs' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.75)',
+                border: '1px solid rgba(196, 151, 86, 0.35)',
+                padding: '0.9rem 1.1rem',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div>
+                  <h4 style={{ margin: 0, color: 'var(--khaki-light, #dfb97e)', fontSize: '0.98rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Cpu size={18} color="var(--khaki-primary)" />
+                    <span>पंजीकरण डिवाइस फुटप्रिंट व ऑडिट लॉग्स (Registration Device Audit)</span>
+                  </h4>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '0.76rem', color: '#94a3b8' }}>
+                    अधिकारियों द्वारा पंजीकरण के समय प्रयुक्त डिवाइस (IP एड्रेस, मॉडल, बैटरी %, लोकेशन) का स्थाई रिकॉर्ड एवं सुरक्षा ऑडिट
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.78rem', color: '#cbd5e1' }}>
+                    कुल पंजीकृत डिवाइस: <strong style={{ color: 'var(--gold-primary)' }}>{registrationLogs.length}</strong>
+                  </span>
+                  {registrationLogs.filter(r => r.isDeviceChanged).length > 0 && (
+                    <span style={{
+                      background: 'rgba(239,68,68,0.2)',
+                      border: '1px solid #ef4444',
+                      color: '#fca5a5',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '0.74rem',
+                      fontWeight: 800
+                    }}>
+                      ⚠️ {registrationLogs.filter(r => r.isDeviceChanged).length} डिवाइस परिवर्तन अलर्ट
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Filters & Search */}
+              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="अधिकारी नाम, PNO, मोबाइल, ज़िला या डिवाइस मॉडल द्वारा खोजें..."
+                  value={regLogSearch}
+                  onChange={e => setRegLogSearch(e.target.value)}
+                  style={{ flex: 1, minWidth: '220px' }}
+                />
+                <select
+                  className="form-select"
+                  value={regDeviceChangeFilter}
+                  onChange={e => setRegDeviceChangeFilter(e.target.value)}
+                  style={{ width: 'auto', minWidth: '160px' }}
+                >
+                  <option value="all">समस्त डिवाइस रिकॉर्ड ({registrationLogs.length})</option>
+                  <option value="changed_only">⚠️ केवल परिवर्तित डिवाइस ({registrationLogs.filter(r => r.isDeviceChanged).length})</option>
+                </select>
+              </div>
+
+              {/* Registration Logs Table */}
+              <div style={{ overflowX: 'auto', background: 'rgba(0,0,0,0.25)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <table className="admin-table" style={{ width: '100%', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '15%' }}>पंजीकरण समय</th>
+                      <th style={{ width: '22%' }}>अधिकारी विवरण</th>
+                      <th style={{ width: '22%' }}>रजिस्टर्ड डिवाइस व OS</th>
+                      <th style={{ width: '16%' }}>नेटवर्क व IP एड्रेस</th>
+                      <th style={{ width: '13%' }}>बैटरी व लोकेशन</th>
+                      <th style={{ width: '12%' }}>सुरक्षा स्थिति</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {registrationLogs.filter(entry => {
+                      if (regDeviceChangeFilter === 'changed_only' && !entry.isDeviceChanged) return false;
+                      if (!regLogSearch.trim()) return true;
+                      const q = regLogSearch.toLowerCase();
+                      const d = entry.device || entry.registeredDevice || {};
+                      return (entry.name || '').toLowerCase().includes(q) ||
+                        (entry.pno || '').toLowerCase().includes(q) ||
+                        (entry.phone || '').includes(q) ||
+                        (entry.district || '').toLowerCase().includes(q) ||
+                        (d.deviceModel || '').toLowerCase().includes(q) ||
+                        (d.ip || '').toLowerCase().includes(q);
+                    }).length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+                          कोई पंजीकरण डिवाइस रिकॉर्ड उपलब्ध नहीं है।
+                        </td>
+                      </tr>
+                    ) : (
+                      registrationLogs.filter(entry => {
+                        if (regDeviceChangeFilter === 'changed_only' && !entry.isDeviceChanged) return false;
+                        if (!regLogSearch.trim()) return true;
+                        const q = regLogSearch.toLowerCase();
+                        const d = entry.device || entry.registeredDevice || {};
+                        return (entry.name || '').toLowerCase().includes(q) ||
+                          (entry.pno || '').toLowerCase().includes(q) ||
+                          (entry.phone || '').includes(q) ||
+                          (entry.district || '').toLowerCase().includes(q) ||
+                          (d.deviceModel || '').toLowerCase().includes(q) ||
+                          (d.ip || '').toLowerCase().includes(q);
+                      }).map((entry, idx) => {
+                        const d = entry.device || entry.registeredDevice || {};
+                        return (
+                          <tr key={entry.id || entry.officerId || idx}>
+                            <td style={{ color: '#cbd5e1', fontSize: '0.76rem' }}>
+                              {entry.timestamp ? new Date(entry.timestamp).toLocaleString('hi-IN') : 'पंजीकरण समय'}
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 700, color: '#f8fafc' }}>{entry.name || 'अज्ञात'}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--khaki-light)' }}>
+                                {entry.post || 'कार्मिक'} {entry.pno ? `• PNO: ${entry.pno}` : ''}
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                                {entry.district || ''} {entry.office ? `(${entry.office})` : ''}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600, color: '#e2e8f0' }}>
+                                <Smartphone size={14} color="var(--khaki-primary)" />
+                                <span>{d.deviceModel || d.platform || 'सामान्य डिवाइस'}</span>
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                                {d.os || ''} {d.browser ? `• ${d.browser}` : ''}
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                {d.screenResolution ? `रिज़ॉल्यूशन: ${d.screenResolution}` : ''}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ fontFamily: 'monospace', color: '#38bdf8', fontWeight: 600 }}>
+                                🌐 {d.ip || 'उपलब्ध नहीं'}
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                                {d.networkEffectiveType ? `नेटवर्क: ${d.networkEffectiveType.toUpperCase()}` : 'नेटवर्क: N/A'}
+                              </div>
+                              {d.isp && (
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  ISP: {d.isp}
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: d.batteryLevel != null ? '#34d399' : '#94a3b8' }}>
+                                <Battery size={13} />
+                                <span>{d.batteryLevel != null ? `${d.batteryLevel}% ${d.batteryCharging ? '(⚡)' : ''}` : 'N/A'}</span>
+                              </div>
+                              {d.location && d.location.latitude ? (
+                                <a
+                                  href={`https://www.google.com/maps?q=${d.location.latitude},${d.location.longitude}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ fontSize: '0.7rem', color: '#60a5fa', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: '2px', marginTop: '2px' }}
+                                >
+                                  <MapPin size={11} /> <span>मैप लोकेशन</span>
+                                </a>
+                              ) : (
+                                <span style={{ fontSize: '0.68rem', color: '#64748b' }}>लोकेशन अनुमति नहीं</span>
+                              )}
+                            </td>
+                            <td>
+                              {entry.isDeviceChanged ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    background: 'rgba(239,68,68,0.2)',
+                                    color: '#f87171',
+                                    border: '1px solid #ef4444',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 800
+                                  }}>
+                                    <ShieldAlert size={12} /> डिवाइस बदला
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedOfficerDeviceAudit(entry)}
+                                    style={{
+                                      background: 'rgba(255,255,255,0.06)',
+                                      border: '1px solid rgba(255,255,255,0.15)',
+                                      color: '#f1f5f9',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '0.7rem',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    तुलना देखें
+                                  </button>
+                                </div>
+                              ) : (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  background: 'rgba(16,185,129,0.15)',
+                                  color: '#34d399',
+                                  border: '1px solid rgba(16,185,129,0.3)',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700
+                                }}>
+                                  <CheckCircle size={11} /> मूल डिवाइस
+                                </span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -3575,6 +3954,28 @@ export default function AdminPanel({
                                 <div style={{ fontSize: '0.72rem', color: 'var(--khaki-light)' }}>
                                   {item.post} {item.pno ? `• PNO: ${item.pno}` : ''}
                                 </div>
+                                {item.isDeviceChanged && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedOfficerDeviceAudit(item)}
+                                    style={{
+                                      marginTop: '2px',
+                                      fontSize: '0.67rem',
+                                      background: 'rgba(239, 68, 68, 0.2)',
+                                      color: '#f87171',
+                                      border: '1px solid #ef4444',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px'
+                                    }}
+                                    title="डिवाइस परिवर्तन चेतावनी - विवरण देखें"
+                                  >
+                                    <ShieldAlert size={10} /> ⚠️ डिवाइस बदला
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -3853,6 +4254,423 @@ export default function AdminPanel({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Detailed Call Telemetry Report */}
+        {selectedCallTelemetry && (
+          <div className="modal-overlay" style={{ zIndex: 1200 }} onClick={() => setSelectedCallTelemetry(null)}>
+            <div className="modal-content" style={{ maxWidth: '840px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--gold-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Cpu size={20} />
+                    <span>📞 कॉल डिवाइस टेलीमेट्री एवं सुरक्षा रिपोर्ट</span>
+                  </h3>
+                  <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginTop: '2px' }}>
+                    कॉल समय: {new Date(selectedCallTelemetry.timestamp).toLocaleString('hi-IN')} • स्थिति: {selectedCallTelemetry.status} • अवधि: {selectedCallTelemetry.durationSeconds || 0}s
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCallTelemetry(null)}
+                  style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Device Change Alert Banner if either side changed */}
+              {(selectedCallTelemetry.hasDeviceChangeAlert || selectedCallTelemetry.callerDeviceChanged || selectedCallTelemetry.receiverDeviceChanged) && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid #ef4444',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  marginBottom: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}>
+                  <AlertTriangle size={24} color="#f87171" />
+                  <div>
+                    <strong style={{ color: '#fca5a5', fontSize: '0.85rem' }}>⚠️ सुरक्षा चेतावनी: डिवाइस परिवर्तन अलर्ट!</strong>
+                    <div style={{ fontSize: '0.76rem', color: '#fecaca', marginTop: '2px' }}>
+                      कॉल के दौरान कॉलर अथवा रिसीवर अधिकारी के पंजीकृत डिवाइस से भिन्न डिवाइस की पहचान हुई है। नीचे दोनों पक्षों की टेलीमेट्री तुलना देखें।
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Side-by-side / Grid for Caller & Receiver Telemetry */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1rem' }}>
+                {/* CALLER CARD */}
+                <div style={{
+                  background: 'rgba(30, 58, 138, 0.2)',
+                  border: selectedCallTelemetry.callerDeviceChanged ? '2px solid #ef4444' : '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '10px',
+                  padding: '1rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
+                    <div>
+                      <span style={{ fontSize: '0.72rem', background: 'rgba(59,130,246,0.3)', color: '#93c5fd', padding: '2px 8px', borderRadius: '4px', fontWeight: 800 }}>
+                        कॉलर (कॉल करने वाला)
+                      </span>
+                      <h4 style={{ margin: '4px 0 0 0', color: '#f8fafc', fontSize: '1rem' }}>
+                        {selectedCallTelemetry.callerName || 'अज्ञात'}
+                      </h4>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--khaki-light)' }}>
+                        {selectedCallTelemetry.callerPost || ''} • {selectedCallTelemetry.callerDistrict || ''} {selectedCallTelemetry.callerPno ? `(PNO: ${selectedCallTelemetry.callerPno})` : ''}
+                      </div>
+                    </div>
+                    {selectedCallTelemetry.callerDeviceChanged && (
+                      <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                        ⚠️ डिवाइस बदला
+                      </span>
+                    )}
+                  </div>
+
+                  {(() => {
+                    const ct = selectedCallTelemetry.callerTelemetry || {};
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.78rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>🌐 आईपी एड्रेस (IP):</span>
+                          <span style={{ color: '#38bdf8', fontFamily: 'monospace', fontWeight: 700 }}>{ct.ip || 'उपलब्ध नहीं'}</span>
+                        </div>
+                        {ct.isp && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                            <span style={{ color: '#94a3b8' }}>🏢 ISP / प्रदाता:</span>
+                            <span style={{ color: '#e2e8f0' }}>{ct.isp} {ct.city ? `(${ct.city}, ${ct.region || ''})` : ''}</span>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>📱 डिवाइस मॉडल:</span>
+                          <span style={{ color: '#f8fafc', fontWeight: 700 }}>{ct.deviceModel || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>💻 ऑपरेटिंग सिस्टम:</span>
+                          <span style={{ color: '#e2e8f0' }}>{ct.os || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>🌐 ब्राउज़र / ऐप:</span>
+                          <span style={{ color: '#e2e8f0' }}>{ct.browser || 'N/A'} ({ct.platform === 'android' ? 'Android Native App' : 'वेब ब्राउज़र'})</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>🔋 बैटरी स्तर:</span>
+                          <span style={{ color: ct.batteryLevel != null ? '#34d399' : '#94a3b8', fontWeight: 700 }}>
+                            {ct.batteryLevel != null ? `${ct.batteryLevel}% ${ct.batteryCharging ? '(⚡ चार्जिंग जारी)' : ''}` : 'जानकारी उपलब्ध नहीं'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>📶 नेटवर्क प्रकार:</span>
+                          <span style={{ color: '#e2e8f0' }}>{ct.networkEffectiveType ? ct.networkEffectiveType.toUpperCase() : '4G/WiFi'} {ct.networkDownlink ? `(${ct.networkDownlink} Mbps)` : ''}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>🖥️ स्क्रीन रिज़ॉल्यूशन:</span>
+                          <span style={{ color: '#e2e8f0' }}>{ct.screenResolution || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '2px' }}>
+                          <span style={{ color: '#94a3b8' }}>📍 भौगोलिक लोकेशन:</span>
+                          {ct.location && ct.location.latitude ? (
+                            <a
+                              href={`https://www.google.com/maps?q=${ct.location.latitude},${ct.location.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: '#60a5fa', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 700 }}
+                            >
+                              <MapPin size={12} /> मैप पर देखें ({ct.location.latitude.toFixed(4)}, {ct.location.longitude.toFixed(4)})
+                            </a>
+                          ) : (
+                            <span style={{ color: '#64748b', fontSize: '0.72rem' }}>स्वीकृत नहीं (शून्य अनुमति)</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* RECEIVER CARD */}
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: selectedCallTelemetry.receiverDeviceChanged ? '2px solid #ef4444' : '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: '10px',
+                  padding: '1rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
+                    <div>
+                      <span style={{ fontSize: '0.72rem', background: 'rgba(16,185,129,0.25)', color: '#34d399', padding: '2px 8px', borderRadius: '4px', fontWeight: 800 }}>
+                        रिसीवर (कॉल उठाने वाला)
+                      </span>
+                      <h4 style={{ margin: '4px 0 0 0', color: '#f8fafc', fontSize: '1rem' }}>
+                        {selectedCallTelemetry.receiverName || 'अज्ञात'}
+                      </h4>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--khaki-light)' }}>
+                        {selectedCallTelemetry.receiverPost || ''} • {selectedCallTelemetry.receiverDistrict || ''} {selectedCallTelemetry.receiverPno ? `(PNO: ${selectedCallTelemetry.receiverPno})` : ''}
+                      </div>
+                    </div>
+                    {selectedCallTelemetry.receiverDeviceChanged && (
+                      <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                        ⚠️ डिवाइस बदला
+                      </span>
+                    )}
+                  </div>
+
+                  {(() => {
+                    const rt = selectedCallTelemetry.receiverTelemetry || {};
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.78rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>🌐 आईपी एड्रेस (IP):</span>
+                          <span style={{ color: '#38bdf8', fontFamily: 'monospace', fontWeight: 700 }}>{rt.ip || 'उपलब्ध नहीं'}</span>
+                        </div>
+                        {rt.isp && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                            <span style={{ color: '#94a3b8' }}>🏢 ISP / प्रदाता:</span>
+                            <span style={{ color: '#e2e8f0' }}>{rt.isp} {rt.city ? `(${rt.city}, ${rt.region || ''})` : ''}</span>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>📱 डिवाइस मॉडल:</span>
+                          <span style={{ color: '#f8fafc', fontWeight: 700 }}>{rt.deviceModel || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>💻 ऑपरेटिंग सिस्टम:</span>
+                          <span style={{ color: '#e2e8f0' }}>{rt.os || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>🌐 ब्राउज़र / ऐप:</span>
+                          <span style={{ color: '#e2e8f0' }}>{rt.browser || 'N/A'} ({rt.platform === 'android' ? 'Android Native App' : 'वेब ब्राउज़र'})</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>🔋 बैटरी स्तर:</span>
+                          <span style={{ color: rt.batteryLevel != null ? '#34d399' : '#94a3b8', fontWeight: 700 }}>
+                            {rt.batteryLevel != null ? `${rt.batteryLevel}% ${rt.batteryCharging ? '(⚡ चार्जिंग जारी)' : ''}` : 'जानकारी उपलब्ध नहीं'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>📶 नेटवर्क प्रकार:</span>
+                          <span style={{ color: '#e2e8f0' }}>{rt.networkEffectiveType ? rt.networkEffectiveType.toUpperCase() : '4G/WiFi'} {rt.networkDownlink ? `(${rt.networkDownlink} Mbps)` : ''}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
+                          <span style={{ color: '#94a3b8' }}>🖥️ स्क्रीन रिज़ॉल्यूशन:</span>
+                          <span style={{ color: '#e2e8f0' }}>{rt.screenResolution || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '2px' }}>
+                          <span style={{ color: '#94a3b8' }}>📍 भौगोलिक लोकेशन:</span>
+                          {rt.location && rt.location.latitude ? (
+                            <a
+                              href={`https://www.google.com/maps?q=${rt.location.latitude},${rt.location.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: '#60a5fa', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 700 }}
+                            >
+                              <MapPin size={12} /> मैप पर देखें ({rt.location.latitude.toFixed(4)}, {rt.location.longitude.toFixed(4)})
+                            </a>
+                          ) : (
+                            <span style={{ color: '#64748b', fontSize: '0.72rem' }}>स्वीकृत नहीं (शून्य अनुमति)</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setSelectedCallTelemetry(null)}
+                >
+                  बंद करें
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Officer Device Change Audit Comparison */}
+        {selectedOfficerDeviceAudit && (
+          <div className="modal-overlay" style={{ zIndex: 1200 }} onClick={() => setSelectedOfficerDeviceAudit(null)}>
+            <div className="modal-content" style={{ maxWidth: '780px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--gold-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldAlert size={20} color="var(--gold-primary)" />
+                    <span>🛡️ डिवाइस सुरक्षा एवं परिवर्तन ऑडिट (Device Audit)</span>
+                  </h3>
+                  <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginTop: '2px' }}>
+                    अधिकारी: <strong style={{ color: '#fff' }}>{selectedOfficerDeviceAudit.name}</strong> • {selectedOfficerDeviceAudit.post} ({selectedOfficerDeviceAudit.district}) {selectedOfficerDeviceAudit.pno ? `• PNO: ${selectedOfficerDeviceAudit.pno}` : ''}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOfficerDeviceAudit(null)}
+                  style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {selectedOfficerDeviceAudit.isDeviceChanged ? (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid #ef4444',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  marginBottom: '1rem'
+                }}>
+                  <strong style={{ color: '#fca5a5', fontSize: '0.86rem' }}>⚠️ सुरक्षा चेतावनी: डिवाइस परिवर्तित पाया गया!</strong>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.76rem', color: '#fecaca', lineHeight: 1.45 }}>
+                    इस पुलिस अधिकारी ने मूल रूप से जिस फ़ोन/डिवाइस से अपना खाता पंजीकृत किया था, यह उससे भिन्न डिवाइस से लॉगिन अथवा इन-ऐप कॉल कर रहा है। सुरक्षा ऑडिट के लिए नीचे दोनों डिवाइसों की तुलना करें।
+                  </p>
+                </div>
+              ) : (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid #10b981',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  marginBottom: '1rem'
+                }}>
+                  <strong style={{ color: '#34d399', fontSize: '0.86rem' }}>✅ सुरक्षित स्थिति: मूल पंजीकृत डिवाइस सत्यापित</strong>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.76rem', color: '#a7f3d0' }}>
+                    यह अधिकारी अपने अधिकृत पंजीकृत डिवाइस से ही सक्रिय है।
+                  </p>
+                </div>
+              )}
+
+              {/* Comparison Grid */}
+              {(() => {
+                const reg = selectedOfficerDeviceAudit.registeredDevice || selectedOfficerDeviceAudit.device || {};
+                const cur = selectedOfficerDeviceAudit.currentDevice || {};
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
+                    {/* Registered Device Footprint */}
+                    <div style={{
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      border: '1px solid rgba(196, 151, 86, 0.3)',
+                      borderRadius: '8px',
+                      padding: '1rem'
+                    }}>
+                      <div style={{ fontWeight: 800, color: 'var(--khaki-light)', fontSize: '0.9rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Smartphone size={16} /> <span>मूल पंजीकृत डिवाइस (Registered Device)</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.76rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>डिवाइस मॉडल:</span>
+                          <span style={{ color: '#f8fafc', fontWeight: 700 }}>{reg.deviceModel || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>ऑपरेटिंग सिस्टम:</span>
+                          <span style={{ color: '#e2e8f0' }}>{reg.os || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>ब्राउज़र / ऐप:</span>
+                          <span style={{ color: '#e2e8f0' }}>{reg.browser || 'N/A'} ({reg.platform || 'browser'})</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>रजिस्टर्ड IP:</span>
+                          <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{reg.ip || 'उपलब्ध नहीं'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>पंजीकरण बैटरी %:</span>
+                          <span style={{ color: '#34d399' }}>{reg.batteryLevel != null ? `${reg.batteryLevel}%` : 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>नेटवर्क:</span>
+                          <span style={{ color: '#e2e8f0' }}>{reg.networkEffectiveType || '4G/WiFi'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '2px' }}>
+                          <span style={{ color: '#94a3b8' }}>पंजीकरण तारीख:</span>
+                          <span style={{ color: '#cbd5e1' }}>
+                            {selectedOfficerDeviceAudit.timestamp ? new Date(selectedOfficerDeviceAudit.timestamp).toLocaleString('hi-IN') : 'पंजीकरण रिकॉर्ड'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Current Active Device Footprint */}
+                    <div style={{
+                      background: selectedOfficerDeviceAudit.isDeviceChanged ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.08)',
+                      border: selectedOfficerDeviceAudit.isDeviceChanged ? '1px solid #ef4444' : '1px solid rgba(16, 185, 129, 0.3)',
+                      borderRadius: '8px',
+                      padding: '1rem'
+                    }}>
+                      <div style={{ fontWeight: 800, color: selectedOfficerDeviceAudit.isDeviceChanged ? '#fca5a5' : '#a7f3d0', fontSize: '0.9rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Smartphone size={16} /> <span>वर्तमान सक्रिय डिवाइस (Current Device)</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.76rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>डिवाइस मॉडल:</span>
+                          <span style={{ color: '#f8fafc', fontWeight: 700 }}>{cur.deviceModel || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>ऑपरेटिंग सिस्टम:</span>
+                          <span style={{ color: '#e2e8f0' }}>{cur.os || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>ब्राउज़र / ऐप:</span>
+                          <span style={{ color: '#e2e8f0' }}>{cur.browser || 'N/A'} ({cur.platform || 'browser'})</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>वर्तमान IP:</span>
+                          <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{cur.ip || 'उपलब्ध नहीं'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>वर्तमान बैटरी %:</span>
+                          <span style={{ color: '#34d399' }}>{cur.batteryLevel != null ? `${cur.batteryLevel}%` : 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '3px' }}>
+                          <span style={{ color: '#94a3b8' }}>नेटवर्क:</span>
+                          <span style={{ color: '#e2e8f0' }}>{cur.networkEffectiveType || '4G/WiFi'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '2px' }}>
+                          <span style={{ color: '#94a3b8' }}>अंतिम गतिविधि:</span>
+                          <span style={{ color: '#cbd5e1' }}>
+                            {selectedOfficerDeviceAudit.lastDeviceAuditTime ? new Date(selectedOfficerDeviceAudit.lastDeviceAuditTime).toLocaleString('hi-IN') : 'हाल ही में'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '1.25rem' }}>
+                {selectedOfficerDeviceAudit.isDeviceChanged && isAdmin && (
+                  <button
+                    type="button"
+                    className="btn btn-success"
+                    onClick={() => {
+                      if (window.confirm('क्या आप इस नए डिवाइस को इस अधिकारी के लिए अधिकृत (Re-verify) करना चाहते हैं?')) {
+                        const targetId = selectedOfficerDeviceAudit.id || selectedOfficerDeviceAudit.officerId;
+                        const cur = selectedOfficerDeviceAudit.currentDevice || selectedOfficerDeviceAudit.registeredDevice;
+                        if (onEditContact && targetId) {
+                          onEditContact(targetId, {
+                            ...selectedOfficerDeviceAudit,
+                            isDeviceChanged: false,
+                            registeredDevice: cur
+                          });
+                        }
+                        setRegistrationLogs(prev => prev.map(r => (r.id === targetId || r.officerId === targetId) ? { ...r, isDeviceChanged: false, registeredDevice: cur } : r));
+                        setSelectedOfficerDeviceAudit(null);
+                      }
+                    }}
+                  >
+                    <CheckCircle size={15} /> <span>✅ इस नए डिवाइस को अधिकृत करें (Re-verify)</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setSelectedOfficerDeviceAudit(null)}
+                >
+                  बंद करें
+                </button>
+              </div>
             </div>
           </div>
         )}
