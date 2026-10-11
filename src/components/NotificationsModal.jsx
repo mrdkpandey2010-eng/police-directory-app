@@ -51,8 +51,13 @@ export default function NotificationsModal({
   // Filter notifications visible to current user
   const userVisibleNotifs = notifications.filter(n => {
     // 0. Personal targeted notifications (missed calls, phone permissions)
-    if (n.targetUserId) {
-      if (currentUser?.id === n.targetUserId) return true;
+    if (n.targetUserId || n.targetPno || n.targetPhone) {
+      const match = (
+        (n.targetUserId && (n.targetUserId === currentUser?.id || n.targetUserId === currentUser?.pno)) ||
+        (n.targetPno && (n.targetPno === currentUser?.pno || n.targetPno === currentUser?.id)) ||
+        (n.targetPhone && (n.targetPhone === currentUser?.phone))
+      );
+      if (match) return true;
       if (isAdmin) return true;
       return false;
     }

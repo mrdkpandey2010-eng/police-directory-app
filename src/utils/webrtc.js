@@ -7,7 +7,8 @@ import {
   answerCloudflareCall, 
   pollCloudflareCall, 
   sendCloudflareIceCandidate, 
-  hangupCloudflareCall 
+  hangupCloudflareCall,
+  fetchUserPresenceStatus
 } from './cloudflareR2';
 
 const ICE_SERVERS = {
@@ -35,7 +36,7 @@ class CallAudioSynthesizer {
       if (AudioCtx) this.ctx = new AudioCtx();
     }
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {});
     }
   }
 
@@ -125,6 +126,32 @@ class CallAudioSynthesizer {
       gain.connect(this.ctx.destination);
       osc.start();
       osc.stop(this.ctx.currentTime + 0.4);
+    } catch (e) {}
+  }
+
+  // Play offline / unreachable network tone (3 distinctive quick beeps)
+  playOfflineTone() {
+    this.init();
+    if (!this.ctx) return;
+    this.stop();
+
+    try {
+      const playPip = (delaySec) => {
+        const t = this.ctx.currentTime + delaySec;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300, t);
+        gain.gain.setValueAtTime(0.2, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.22);
+      };
+      playPip(0);
+      playPip(0.32);
+      playPip(0.64);
     } catch (e) {}
   }
 
@@ -244,11 +271,15 @@ class InAppCallManager {
 
     if (!currentUser || !currentUser.id) return;
 
-    // Check Cloudflare Edge KV for incoming call every 2.2 seconds
+    // Check Cloudflare Edge KV for incoming call every 2.0 seconds
     this.pollIncomingInterval = setInterval(async () => {
       if (this.activeCall) return; // Already on a call or ringing
       try {
-        const res = await checkCloudflareIncomingCall(this.currentUser.id);
+        const res = await checkCloudflareIncomingCall(
+          this.currentUser.id,
+          this.currentUser.pno || '',
+          this.currentUser.phone || ''
+        );
         if (res && res.active && res.call && (!this.activeCall || this.activeCall.callId !== res.call.callId)) {
           const callData = res.call;
           if (callData.status === 'calling') {
@@ -266,27 +297,129 @@ class InAppCallManager {
               viaCloudflare: true
             };
             callAudio.startIncomingRingtone();
-            if (navigator.vibrate) navigator.vibrate([600, 300, 600, 300, 600]);
+            if (navigator.vibrate) {
+              try { navigator.vibrate([1000, 400, 1000, 400, 1000]); } catch (e) {}
+            }
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              try {
+                new Notification(`🚨 इनकमिंग पुलिस कॉल: ${callData.caller?.name || 'अधिकारी'}`, {
+                  body: `${callData.caller?.post || 'कार्मिक'} (${callData.caller?.district || ''}) से इन-ऐप कॉल आ रही है`,
+                  icon: '/favicon.ico',
+                  tag: 'incoming_police_call',
+                  requireInteraction: true
+                });
+              } catch (e) {}
+            }
             this.notify();
           }
         }
       } catch (e) {}
-    }, 2200);
+    }, 2000);
+  }
+
+  // Helper to generate and dispatch missed call notifications
+  generateMissedCallNotification(caller, receiver, reason = 'unanswered') {
+    if (!caller || !receiver) return;
+    try {
+      const notifId = `notif-missed-${Date.now()}`;
+      const reasonLabel = reason === 'offline' 
+        ? 'अधिकारी ऑफ़लाइन / नेटवर्क से बाहर होने के कारण संपर्क नहीं हो सका' 
+        : 'कॉल अनुत्तरित (Unanswered) रही';
+      const missedNotif = {
+        id: notifId,
+        title: '🚨 मिस्ड कॉल अलर्ट (Missed Call Alert)',
+        content: `अधिकारी ${caller.name} (${caller.post}, जनपद: ${caller.district}) द्वारा आपको इन-ऐप सुरक्षित वॉइस कॉल किया गया था (${reasonLabel})। समय: ${new Date().toLocaleTimeString('hi-IN')}`,
+        district: receiver.district || 'सभी ज़िले (All Districts)',
+        postedBy: `${caller.name} (${caller.post})`,
+        postedAt: new Date().toISOString(),
+        type: 'missed_call',
+        targetUserId: receiver.id,
+        targetPno: receiver.pno || receiver.PNO || '',
+        targetPhone: receiver.phone || receiver.mobile || '',
+        senderId: caller.id,
+        callerData: {
+          id: caller.id,
+          name: caller.name,
+          post: caller.post,
+          district: caller.district,
+          phone: caller.phone
+        }
+      };
+      addNotification(missedNotif);
+      addFirestoreNotification(missedNotif);
+      hangupCloudflareCall(
+        `call_${caller.id}_${receiver.id}_${Date.now()}`,
+        'missed',
+        caller,
+        receiver,
+        reasonLabel
+      );
+    } catch (e) {
+      console.error('Error creating missed call notification', e);
+    }
   }
 
   // Start outgoing call
   async startCall(caller, receiver) {
     const callId = `call_${caller.id}_${receiver.id}_${Date.now()}`;
+    
+    // Initial State: Checking network and online presence
     this.activeCall = {
       callId,
       isIncoming: false,
-      status: 'calling',
+      status: 'checking_presence',
       caller,
       receiver,
       startedAt: null,
       duration: 0,
       isMuted: false,
-      isSpeaker: true
+      isSpeaker: true,
+      presence: null
+    };
+    this.notify();
+
+    // Query recipient's real-time presence from Cloudflare Edge
+    let presence = null;
+    try {
+      presence = await fetchUserPresenceStatus(
+        receiver.id,
+        receiver.pno || receiver.PNO || '',
+        receiver.phone || receiver.mobile || ''
+      );
+    } catch (e) {
+      console.warn('Presence status fetch error:', e);
+    }
+
+    // If recipient is OFFLINE:
+    if (!presence || !presence.isOnline) {
+      console.log('[WebRTC Calling] Recipient is OFFLINE:', receiver);
+      callAudio.playOfflineTone();
+      this.activeCall = {
+        callId,
+        isIncoming: false,
+        status: 'offline',
+        caller,
+        receiver,
+        startedAt: null,
+        duration: 0,
+        isMuted: false,
+        isSpeaker: true,
+        presence: presence || { isOnline: false, status: 'offline' },
+        offlineMessage: 'अधिकारी अभी ऑफ़लाइन हैं / नेटवर्क क्षेत्र से बाहर हैं'
+      };
+      this.notify();
+
+      // Immediately log Missed Call Alert so recipient receives it as soon as they open the app
+      this.generateMissedCallNotification(caller, receiver, 'offline');
+      this.logCompletedCall('missed', 0);
+      return;
+    }
+
+    // If recipient IS ONLINE: Proceed with ringing
+    this.activeCall = {
+      ...this.activeCall,
+      status: 'calling',
+      presence
     };
     this.notify();
     callAudio.startOutgoingRingback();
@@ -557,35 +690,8 @@ class InAppCallManager {
     }
 
     // Generate Missed Call Alert for receiver if call went unanswered or disconnected
-    if (isMissed && currentCall) {
-      const { caller, receiver } = currentCall;
-      if (caller && receiver) {
-        try {
-          const notifId = `notif-missed-${Date.now()}`;
-          const missedNotif = {
-            id: notifId,
-            title: '🚨 मिस्ड कॉल अलर्ट (Missed Call Alert)',
-            content: `अधिकारी ${caller.name} (${caller.post}, जनपद: ${caller.district}) द्वारा आपको इन-ऐप सुरक्षित वॉइस कॉल किया गया था जो अनुत्तरित (Missed Call) रहा। समय: ${new Date().toLocaleTimeString('hi-IN')}`,
-            district: receiver.district || 'सभी ज़िले (All Districts)',
-            postedBy: `${caller.name} (${caller.post})`,
-            postedAt: new Date().toISOString(),
-            type: 'missed_call',
-            targetUserId: receiver.id,
-            senderId: caller.id,
-            callerData: {
-              id: caller.id,
-              name: caller.name,
-              post: caller.post,
-              district: caller.district,
-              phone: caller.phone
-            }
-          };
-          addNotification(missedNotif);
-          addFirestoreNotification(missedNotif);
-        } catch (e) {
-          console.error('Error creating missed call notification', e);
-        }
-      }
+    if (isMissed && currentCall && currentCall.caller && currentCall.receiver) {
+      this.generateMissedCallNotification(currentCall.caller, currentCall.receiver, 'unanswered');
     }
 
     this.logCompletedCall(recordedStatus, duration);

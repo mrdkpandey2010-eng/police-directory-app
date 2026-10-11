@@ -23,50 +23,63 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Helper: read data from R2, KV, or in-memory fallback
+    // Helper: read data from D1 Database (100k writes/day), KV, or in-memory fallback
     const getItem = async (key) => {
-      if (env.BUCKET) {
+      // 1. D1 Database (Primary persistent storage)
+      if (env.DB) {
         try {
-          const obj = await env.BUCKET.get(key);
-          if (obj) return await obj.text();
-        } catch (e) {}
+          const row = await env.DB.prepare('SELECT value FROM kv_store WHERE key = ?').bind(key).first();
+          if (row && row.value !== null && row.value !== undefined) {
+            memoryStore.set(key, row.value);
+            return row.value;
+          }
+        } catch (e) {
+          console.warn(`[D1 Read Error] ${e.message}`);
+        }
       }
+      // 2. Cloudflare KV fallback
       if (env.POLICE_KV) {
         try {
           const val = await env.POLICE_KV.get(key);
-          if (val !== null && val !== undefined) return val;
+          if (val !== null && val !== undefined && val !== '') {
+            memoryStore.set(key, val);
+            return val;
+          }
         } catch (e) {}
       }
       return memoryStore.get(key) || null;
     };
 
-    // Helper: write data to R2, KV, or in-memory fallback
+    // Helper: write data to D1 Database (100k writes/day), KV, and in-memory fallback
     const putItem = async (key, value) => {
       memoryStore.set(key, value);
-      if (env.BUCKET) {
+      let success = false;
+      // 1. D1 Database (Primary persistent storage - 100k writes / day)
+      if (env.DB) {
         try {
-          await env.BUCKET.put(key, value, {
-            httpMetadata: { contentType: 'application/json' }
-          });
-          return true;
-        } catch (e) {}
+          await env.DB.prepare('INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)')
+            .bind(key, value, Date.now())
+            .run();
+          success = true;
+        } catch (e) {
+          console.warn(`[D1 Write Error] ${e.message}`);
+        }
       }
+      // 2. Cloudflare KV best-effort sync
       if (env.POLICE_KV) {
         try {
           await env.POLICE_KV.put(key, value);
-          return true;
-        } catch (e) {
-          console.warn(`[KV Notice] ${e.message}. Using edge memory store.`);
-        }
+          success = true;
+        } catch (e) {}
       }
-      return true;
+      return success;
     };
 
     // Admin API Key validation
     const adminKey = env.ADMIN_API_KEY || 'police_admin_2026';
     const reqKey = request.headers.get('x-api-key') || url.searchParams.get('key');
     const isWriteMethod = request.method === 'POST' || request.method === 'PUT' || request.method === 'DELETE';
-    const isPublicWritePath = path === '/api/register' || path === '/api/feedback' || path.startsWith('/api/calls');
+    const isPublicWritePath = path === '/api/register' || path === '/api/feedback' || path.startsWith('/api/calls') || path.startsWith('/api/presence');
 
     if (isWriteMethod && !isPublicWritePath && reqKey !== adminKey) {
       return new Response(JSON.stringify({ 
@@ -202,23 +215,52 @@ export default {
           callData.candidates = callData.candidates || [];
           
           await putItem(`call_${callData.callId}`, JSON.stringify(callData));
-          await putItem(`active_call_user_${callData.receiverId}`, callData.callId);
+
+          // Multi-key indexing for 100% matching across id, pno, and phone
+          const targetKeys = new Set();
+          if (callData.receiverId) targetKeys.add(String(callData.receiverId));
+          if (callData.receiver?.id) targetKeys.add(String(callData.receiver.id));
+          if (callData.receiver?.pno) targetKeys.add(String(callData.receiver.pno));
+          if (callData.receiver?.phone) {
+            const clean = String(callData.receiver.phone).replace(/\D/g, '');
+            if (clean) targetKeys.add(clean);
+          }
+
+          for (const k of targetKeys) {
+            await putItem(`active_call_user_${k}`, callData.callId);
+          }
 
           return new Response(JSON.stringify({ success: true, callId: callData.callId }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        // B. Check Incoming Calls: /api/calls/check?userId=...
+        // B. Check Incoming Calls: /api/calls/check?userId=...&pno=...&phone=...
         if (path === '/api/calls/check' && request.method === 'GET') {
           const userId = url.searchParams.get('userId');
-          if (!userId) {
+          const pno = url.searchParams.get('pno');
+          const phone = url.searchParams.get('phone');
+
+          const checkKeys = [];
+          if (userId) checkKeys.push(userId);
+          if (pno) checkKeys.push(pno);
+          if (phone) {
+            const clean = phone.replace(/\D/g, '');
+            if (clean) checkKeys.push(clean);
+          }
+
+          if (checkKeys.length === 0) {
             return new Response(JSON.stringify({ active: false }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
 
-          const activeCallId = await getItem(`active_call_user_${userId}`);
+          let activeCallId = null;
+          for (const k of checkKeys) {
+            activeCallId = await getItem(`active_call_user_${k}`);
+            if (activeCallId) break;
+          }
+
           if (!activeCallId) {
             return new Response(JSON.stringify({ active: false }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -235,7 +277,7 @@ export default {
           const callObj = JSON.parse(callStr);
           const age = Date.now() - (callObj.timestamp || 0);
 
-          if (callObj.status === 'ringing' && age < 40000) {
+          if (callObj.status === 'ringing' && age < 45000) {
             return new Response(JSON.stringify({ active: true, call: callObj }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
@@ -320,9 +362,18 @@ export default {
             if (callObj) {
               callObj.status = status || 'ended';
               await putItem(`call_${callId}`, JSON.stringify(callObj));
-              if (callObj.receiverId) {
-                await putItem(`active_call_user_${callObj.receiverId}`, '');
-              }
+            }
+
+            // Clear all indexed keys for receiver
+            const clearKeys = new Set();
+            if (callObj?.receiverId) clearKeys.add(String(callObj.receiverId));
+            if (callObj?.receiver?.id) clearKeys.add(String(callObj.receiver.id));
+            if (callObj?.receiver?.pno) clearKeys.add(String(callObj.receiver.pno));
+            if (receiver?.id) clearKeys.add(String(receiver.id));
+            if (receiver?.pno) clearKeys.add(String(receiver.pno));
+            if (receiver?.phone) clearKeys.add(String(receiver.phone).replace(/\D/g, ''));
+            for (const k of clearKeys) {
+              if (k) await putItem(`active_call_user_${k}`, '');
             }
 
             // If call was missed or rejected without being connected, create Missed Call Alert
@@ -355,6 +406,175 @@ export default {
           }
 
           return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      // 7. User Presence & Activity Tracking: /api/presence/*
+      if (path.startsWith('/api/presence')) {
+        // A. Heartbeat Ping: /api/presence/heartbeat (POST)
+        if (path === '/api/presence/heartbeat' && request.method === 'POST') {
+          const body = await request.text();
+          const presenceData = JSON.parse(body);
+          const idKey = presenceData.userId || presenceData.pno;
+          if (!idKey) {
+            return new Response(JSON.stringify({ error: 'Missing userId or pno' }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          presenceData.lastSeen = Date.now();
+          presenceData.isOnline = true;
+
+          // Save individual user presence
+          await putItem(`presence_${idKey}`, JSON.stringify(presenceData));
+          if (presenceData.pno && presenceData.pno !== idKey) {
+            await putItem(`presence_${presenceData.pno}`, JSON.stringify(presenceData));
+          }
+          if (presenceData.phone) {
+            const cleanPhone = String(presenceData.phone).replace(/\D/g, '');
+            if (cleanPhone) await putItem(`presence_${cleanPhone}`, JSON.stringify(presenceData));
+          }
+
+          // Update master presence registry
+          let registry = [];
+          const regStr = await getItem('police_presence_registry.json');
+          if (regStr) {
+            try { registry = JSON.parse(regStr); } catch (e) {}
+          }
+          if (!Array.isArray(registry)) registry = [];
+
+          const existingIndex = registry.findIndex(r => 
+            (r.userId && r.userId === presenceData.userId) || 
+            (r.pno && presenceData.pno && r.pno === presenceData.pno)
+          );
+
+          if (existingIndex >= 0) {
+            registry[existingIndex] = { ...registry[existingIndex], ...presenceData };
+          } else {
+            registry.push(presenceData);
+          }
+
+          const regPutResult = await putItem('police_presence_registry.json', JSON.stringify(registry));
+
+          return new Response(JSON.stringify({ 
+            success: true, 
+            timestamp: presenceData.lastSeen,
+            regPutResult 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // B. Single User Status Check: /api/presence/status?userId=...&pno=...
+        if (path === '/api/presence/status' && request.method === 'GET') {
+          const userId = url.searchParams.get('userId');
+          const pno = url.searchParams.get('pno');
+          const phone = url.searchParams.get('phone');
+
+          const checkKeys = [];
+          if (userId) checkKeys.push(userId);
+          if (pno) checkKeys.push(pno);
+          if (phone) {
+            const clean = phone.replace(/\D/g, '');
+            if (clean) checkKeys.push(clean);
+          }
+
+          let presenceObj = null;
+          for (const k of checkKeys) {
+            if (!k) continue;
+            const str = await getItem(`presence_${k}`);
+            if (str) {
+              try { presenceObj = JSON.parse(str); break; } catch (e) {}
+            }
+          }
+
+          if (!presenceObj) {
+            const regStr = await getItem('police_presence_registry.json');
+            if (regStr) {
+              try {
+                const reg = JSON.parse(regStr);
+                if (Array.isArray(reg)) {
+                  presenceObj = reg.find(r => 
+                    (userId && String(r.userId) === String(userId)) ||
+                    (pno && String(r.pno) === String(pno)) ||
+                    (phone && r.phone && String(r.phone).replace(/\D/g, '') === String(phone).replace(/\D/g, ''))
+                  );
+                }
+              } catch (e) {}
+            }
+          }
+
+          if (!presenceObj) {
+            return new Response(JSON.stringify({ isOnline: false, lastSeen: 0, status: 'offline' }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          const age = Date.now() - (presenceObj.lastSeen || 0);
+          const isOnline = age < 60000 && presenceObj.isOnline !== false;
+
+          return new Response(JSON.stringify({
+            isOnline,
+            lastSeen: presenceObj.lastSeen,
+            platform: presenceObj.platform || 'browser',
+            status: isOnline ? 'online' : 'offline',
+            location: presenceObj.location || null,
+            ageSeconds: Math.floor(age / 1000)
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // C. All Users Activity Report for Admin: /api/presence/all
+        if (path === '/api/presence/all' && request.method === 'GET') {
+          const regStr = await getItem('police_presence_registry.json');
+          let registry = [];
+          if (regStr) {
+            try { registry = JSON.parse(regStr); } catch (e) {}
+          }
+
+          const now = Date.now();
+          const annotated = registry.map(u => {
+            const age = now - (u.lastSeen || 0);
+            const isOnline = age < 60000 && u.isOnline !== false;
+            const isRecent = age < 3600000;
+            const isInactiveWeek = age > 7 * 24 * 3600000;
+
+            return {
+              ...u,
+              isOnline,
+              isRecent,
+              isInactiveWeek,
+              ageSeconds: Math.floor(age / 1000)
+            };
+          });
+
+          const totalRecorded = annotated.length;
+          const online = annotated.filter(u => u.isOnline).length;
+          const offline = totalRecorded - online;
+          const androidApp = annotated.filter(u => u.platform === 'android').length;
+          const browser = annotated.filter(u => u.platform === 'browser').length;
+          const inactive7Days = annotated.filter(u => u.isInactiveWeek).length;
+
+          return new Response(JSON.stringify({
+            total: totalRecorded,
+            onlineCount: online,
+            androidCount: androidApp,
+            browserCount: browser,
+            inactiveWeekCount: inactive7Days,
+            stats: {
+              totalRecorded,
+              online,
+              offline,
+              androidApp,
+              browser,
+              inactive7Days
+            },
+            users: annotated
+          }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }

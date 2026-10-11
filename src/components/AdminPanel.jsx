@@ -3,7 +3,8 @@ import {
   X, Lock, Unlock, FileSpreadsheet, Download, Upload, CheckCircle, 
   XCircle, Edit3, Trash2, Clock, Users, Shield, KeyRound, Plus, 
   ShieldCheck, Settings, Power, UserCheck, Award, Building2, MapPin,
-  FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe, Cloud, Database, AlertTriangle, Home
+  FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe, Cloud, Database, AlertTriangle, Home,
+  Activity, Smartphone, Laptop, ExternalLink
 } from 'lucide-react';
 import { 
   downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS,
@@ -16,6 +17,7 @@ import {
 } from '../utils/storage';
 import { syncAllContactsToFirestore } from '../utils/firebase';
 import { validateFileSize } from '../utils/imageCompressor';
+import { fetchAllUsersPresence } from '../utils/cloudflareR2';
 
 export default function AdminPanel({ 
   isOpen, 
@@ -123,6 +125,34 @@ export default function AdminPanel({
 
   // Search inside admin table
   const [adminSearch, setAdminSearch] = useState('');
+
+  // Live User Presence & Activity state
+  const [presenceData, setPresenceData] = useState(null);
+  const [isPresenceLoading, setIsPresenceLoading] = useState(false);
+  const [presenceSearch, setPresenceSearch] = useState('');
+  const [presenceDistrictFilter, setPresenceDistrictFilter] = useState(isCoAdmin ? (myDistrict || 'all') : 'all');
+  const [presencePlatformFilter, setPresencePlatformFilter] = useState('all'); // 'all' | 'android' | 'browser'
+  const [presenceStatusFilter, setPresenceStatusFilter] = useState('all'); // 'all' | 'online' | 'offline' | 'inactive7'
+
+  const loadPresenceData = async () => {
+    setIsPresenceLoading(true);
+    try {
+      const data = await fetchAllUsersPresence();
+      if (data) setPresenceData(data);
+    } catch (err) {
+      console.warn('Failed to load user presence records:', err);
+    } finally {
+      setIsPresenceLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'activity_report') {
+      loadPresenceData();
+      const interval = setInterval(loadPresenceData, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [isOpen, activeTab]);
 
   // Password reset prompt state
   const [resetPromptUser, setResetPromptUser] = useState(null);
@@ -516,6 +546,146 @@ export default function AdminPanel({
     );
   });
 
+  // Combine contacts with live presence for the Activity Report
+  const activityList = useMemo(() => {
+    const rawUsers = presenceData?.users || [];
+    const presenceMap = new Map();
+
+    rawUsers.forEach(u => {
+      if (u.userId) presenceMap.set(String(u.userId), u);
+      if (u.pno) presenceMap.set(String(u.pno), u);
+      if (u.phone) {
+        const clean = String(u.phone).replace(/\D/g, '').slice(-10);
+        if (clean) presenceMap.set(clean, u);
+      }
+    });
+
+    const list = [];
+    const seenKeys = new Set();
+
+    (scopedContacts || []).forEach(c => {
+      if (!c || !c.id) return;
+      const cleanPhone = (c.phone || '').replace(/\D/g, '').slice(-10);
+      const p = presenceMap.get(String(c.id)) || 
+                (c.pno && presenceMap.get(String(c.pno))) || 
+                (cleanPhone && presenceMap.get(cleanPhone));
+
+      const now = Date.now();
+      const lastSeen = p?.lastSeen ? Number(p.lastSeen) : null;
+      const diffMs = lastSeen ? now - lastSeen : Infinity;
+      const isOnline = lastSeen ? (diffMs < 60000 && p?.isOnline !== false) : false;
+      const isInactive7 = lastSeen ? (diffMs > 7 * 24 * 3600000) : true;
+      const platform = p?.platform || 'none';
+      const location = p?.location || null;
+
+      seenKeys.add(String(c.id));
+      if (c.pno) seenKeys.add(String(c.pno));
+      if (cleanPhone) seenKeys.add(cleanPhone);
+
+      list.push({
+        id: c.id,
+        name: c.name,
+        post: c.post || 'कार्मिक',
+        district: c.district || 'उत्तर प्रदेश पुलिस',
+        office: c.office || '',
+        pno: c.pno || '',
+        phone: c.phone || '',
+        uniformPhoto: c.uniformPhoto,
+        isOnline,
+        isInactive7,
+        lastSeen,
+        platform,
+        location
+      });
+    });
+
+    rawUsers.forEach(u => {
+      const cleanPhone = (u.phone || '').replace(/\D/g, '').slice(-10);
+      if (
+        (u.userId && seenKeys.has(String(u.userId))) ||
+        (u.pno && seenKeys.has(String(u.pno))) ||
+        (cleanPhone && seenKeys.has(cleanPhone))
+      ) {
+        return;
+      }
+
+      if (isCoAdmin && u.district !== myDistrict) return;
+
+      const now = Date.now();
+      const lastSeen = u.lastSeen ? Number(u.lastSeen) : null;
+      const diffMs = lastSeen ? now - lastSeen : Infinity;
+      const isOnline = lastSeen ? (diffMs < 60000 && u.isOnline !== false) : false;
+      const isInactive7 = lastSeen ? (diffMs > 7 * 24 * 3600000) : false;
+
+      list.push({
+        id: u.userId || `presence-${Date.now()}-${Math.random()}`,
+        name: u.name || 'पुलिस अधिकारी',
+        post: u.post || 'कार्मिक',
+        district: u.district || 'उत्तर प्रदेश पुलिस',
+        office: u.office || '',
+        pno: u.pno || '',
+        phone: u.phone || '',
+        uniformPhoto: null,
+        isOnline,
+        isInactive7,
+        lastSeen,
+        platform: u.platform || 'browser',
+        location: u.location || null
+      });
+    });
+
+    return list;
+  }, [scopedContacts, presenceData, isCoAdmin, myDistrict]);
+
+  const filteredActivityList = useMemo(() => {
+    return activityList.filter(item => {
+      if (presenceDistrictFilter !== 'all' && item.district !== presenceDistrictFilter) {
+        return false;
+      }
+      if (presencePlatformFilter !== 'all') {
+        if (presencePlatformFilter === 'android' && item.platform !== 'android') return false;
+        if (presencePlatformFilter === 'browser' && item.platform !== 'browser') return false;
+      }
+      if (presenceStatusFilter !== 'all') {
+        if (presenceStatusFilter === 'online' && !item.isOnline) return false;
+        if (presenceStatusFilter === 'offline' && item.isOnline) return false;
+        if (presenceStatusFilter === 'inactive7' && !item.isInactive7) return false;
+      }
+      if (presenceSearch) {
+        const q = presenceSearch.toLowerCase();
+        const match = 
+          (item.name || '').toLowerCase().includes(q) ||
+          (item.pno || '').toLowerCase().includes(q) ||
+          (item.phone || '').includes(q) ||
+          (item.district || '').toLowerCase().includes(q) ||
+          (item.office || '').toLowerCase().includes(q) ||
+          (item.post || '').toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [activityList, presenceDistrictFilter, presencePlatformFilter, presenceStatusFilter, presenceSearch]);
+
+  const activityStats = useMemo(() => {
+    const total = activityList.length;
+    const online = activityList.filter(u => u.isOnline).length;
+    const offline = total - online;
+    const androidApp = activityList.filter(u => u.platform === 'android').length;
+    const browser = activityList.filter(u => u.platform === 'browser').length;
+    const inactive7 = activityList.filter(u => u.isInactive7).length;
+    return { total, online, offline, androidApp, browser, inactive7 };
+  }, [activityList]);
+
+  const formatLastSeen = (ts) => {
+    if (!ts) return 'कोई गतिविधि दर्ज नहीं';
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 60) return 'अभी सक्रिय (Just now)';
+    if (diff < 3600) return `${Math.floor(diff / 60)} मिनट पहले`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} घंटे पहले`;
+    const days = Math.floor(diff / 86400);
+    return `${days} दिन पहले (${new Date(ts).toLocaleDateString('hi-IN')})`;
+  };
+
   return (
     <div className="modal-overlay" style={{ zIndex: 100000 }} onClick={onClose}>
       <div className="modal-content" style={{ maxWidth: '980px', zIndex: 100001 }} onClick={e => e.stopPropagation()}>
@@ -669,6 +839,19 @@ export default function AdminPanel({
             >
               <Eye size={16} />
               नंबर अनुमति ({Array.isArray(phonePermissions) ? phonePermissions.filter(p => p && p.status === 'pending').length : 0})
+            </button>
+
+            <button 
+              className={`admin-tab ${activeTab === 'activity_report' ? 'active' : ''}`}
+              onClick={() => setActiveTab('activity_report')}
+            >
+              <Activity size={16} />
+              📊 यूज़र्स गतिविधि रिपोर्ट
+              {activityStats.online > 0 && (
+                <span className="tab-badge" style={{ background: '#10b981', color: '#fff', fontWeight: 800 }}>
+                  {activityStats.online}
+                </span>
+              )}
             </button>
 
             {isAdmin && (
@@ -3133,6 +3316,424 @@ export default function AdminPanel({
                     <span>क्लाउड पर तुरंत सिंक करें</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: ACTIVITY REPORT */}
+          {activeTab === 'activity_report' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Header banner */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(14, 30, 60, 0.9), rgba(6, 14, 31, 0.95))',
+                border: '1px solid rgba(196, 151, 86, 0.4)',
+                padding: '1rem 1.25rem',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div>
+                  <h3 style={{ margin: 0, color: 'var(--khaki-light, #dfb97e)', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Activity size={20} color="var(--khaki-primary)" />
+                    <span>यूज़र्स रियल-टाइम गतिविधि एवं उपस्थिति रिपोर्ट (Live Activity Report)</span>
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: '#cbd5e1' }}>
+                    पोर्टल एवं Android ऐप पर समस्त पुलिस कार्मिकों की लाइव स्थिति, प्लेटफ़ॉर्म तथा अनुमत लोकेशन रिपोर्ट।
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadPresenceData}
+                  disabled={isPresenceLoading}
+                  style={{
+                    background: 'linear-gradient(135deg, #c49756, #8e6833)',
+                    color: '#0a1020',
+                    border: 'none',
+                    fontWeight: 800,
+                    padding: '0.55rem 1.15rem',
+                    borderRadius: '8px',
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <RefreshCw size={14} className={isPresenceLoading ? 'spin-icon' : ''} />
+                  <span>{isPresenceLoading ? 'लोड हो रहा है...' : '🔄 लाइव ताज़ा करें'}</span>
+                </button>
+              </div>
+
+              {/* 5 KPI Metric Cards */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                gap: '0.75rem'
+              }}>
+                {/* 1. Online Users */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(6, 78, 59, 0.6), rgba(6, 95, 70, 0.3))',
+                  border: '1px solid #10b981',
+                  borderRadius: '10px',
+                  padding: '0.85rem 1rem'
+                }}>
+                  <div style={{ fontSize: '0.74rem', color: '#a7f3d0', fontWeight: 600 }}>🟢 कुल ऑनलाइन यूज़र्स</div>
+                  <div style={{ fontSize: '1.65rem', fontWeight: 900, color: '#34d399', marginTop: '2px' }}>
+                    {activityStats.online}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#6ee7b7' }}>वर्तमान में सक्रिय</div>
+                </div>
+
+                {/* 2. Offline Users */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(127, 29, 29, 0.4), rgba(69, 10, 10, 0.3))',
+                  border: '1px solid rgba(239, 68, 68, 0.5)',
+                  borderRadius: '10px',
+                  padding: '0.85rem 1rem'
+                }}>
+                  <div style={{ fontSize: '0.74rem', color: '#fecaca', fontWeight: 600 }}>🔴 ऑफ़लाइन यूज़र्स</div>
+                  <div style={{ fontSize: '1.65rem', fontWeight: 900, color: '#f87171', marginTop: '2px' }}>
+                    {activityStats.offline}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#fca5a5' }}>नेटवर्क/सत्र से बाहर</div>
+                </div>
+
+                {/* 3. Android Mobile App Users */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.5), rgba(23, 37, 84, 0.3))',
+                  border: '1px solid #3b82f6',
+                  borderRadius: '10px',
+                  padding: '0.85rem 1rem'
+                }}>
+                  <div style={{ fontSize: '0.74rem', color: '#bfdbfe', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Smartphone size={13} />
+                    <span>Android ऐप यूज़र्स</span>
+                  </div>
+                  <div style={{ fontSize: '1.65rem', fontWeight: 900, color: '#60a5fa', marginTop: '2px' }}>
+                    {activityStats.androidApp}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#93c5fd' }}>मोबाइल APK इंस्टॉल</div>
+                </div>
+
+                {/* 4. Web Browser Users */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(88, 28, 135, 0.5), rgba(59, 7, 100, 0.3))',
+                  border: '1px solid #a855f7',
+                  borderRadius: '10px',
+                  padding: '0.85rem 1rem'
+                }}>
+                  <div style={{ fontSize: '0.74rem', color: '#e9d5ff', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Laptop size={13} />
+                    <span>वेब ब्राउज़र यूज़र्स</span>
+                  </div>
+                  <div style={{ fontSize: '1.65rem', fontWeight: 900, color: '#c084fc', marginTop: '2px' }}>
+                    {activityStats.browser}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#d8b4fe' }}>डेस्कटॉप / वेब पोर्टल</div>
+                </div>
+
+                {/* 5. App Removed / Inactive > 7 Days */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(120, 53, 15, 0.5), rgba(69, 26, 3, 0.3))',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '10px',
+                  padding: '0.85rem 1rem'
+                }}>
+                  <div style={{ fontSize: '0.74rem', color: '#fde68a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertTriangle size={13} />
+                    <span>ऐप हटाई / 7+ दिन निष्क्रिय</span>
+                  </div>
+                  <div style={{ fontSize: '1.65rem', fontWeight: 900, color: '#fbbf24', marginTop: '2px' }}>
+                    {activityStats.inactive7}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#fcd34d' }}>अनइंस्टॉल / कोई गतिविधि नहीं</div>
+                </div>
+              </div>
+
+              {/* Filters Bar */}
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.65)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                padding: '0.75rem 1rem',
+                borderRadius: '10px',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0.65rem',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', flex: 1, minWidth: '240px' }}>
+                  {/* Search Input */}
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="🔍 नाम, PNO, मोबाइल, ज़िला खोजें..."
+                    value={presenceSearch}
+                    onChange={e => setPresenceSearch(e.target.value)}
+                    style={{ minWidth: '180px', flex: 1, padding: '6px 10px', fontSize: '0.8rem' }}
+                  />
+
+                  {/* District Dropdown */}
+                  {!isCoAdmin && (
+                    <select
+                      className="form-select"
+                      value={presenceDistrictFilter}
+                      onChange={e => setPresenceDistrictFilter(e.target.value)}
+                      style={{ width: 'auto', minWidth: '140px', padding: '6px 10px', fontSize: '0.8rem' }}
+                    >
+                      <option value="all">समस्त ज़िले (All Districts)</option>
+                      {safeDistricts.filter((_, i) => i > 0).map((d, i) => (
+                        <option key={i} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Platform Dropdown */}
+                  <select
+                    className="form-select"
+                    value={presencePlatformFilter}
+                    onChange={e => setPresencePlatformFilter(e.target.value)}
+                    style={{ width: 'auto', minWidth: '130px', padding: '6px 10px', fontSize: '0.8rem' }}
+                  >
+                    <option value="all">सभी प्लेटफ़ॉर्म</option>
+                    <option value="android">📱 केवल Android App</option>
+                    <option value="browser">💻 केवल वेब ब्राउज़र</option>
+                  </select>
+
+                  {/* Status Dropdown */}
+                  <select
+                    className="form-select"
+                    value={presenceStatusFilter}
+                    onChange={e => setPresenceStatusFilter(e.target.value)}
+                    style={{ width: 'auto', minWidth: '130px', padding: '6px 10px', fontSize: '0.8rem' }}
+                  >
+                    <option value="all">सभी स्थितियां</option>
+                    <option value="online">🟢 ऑनलाइन (Online)</option>
+                    <option value="offline">🔴 ऑफ़लाइन (Offline)</option>
+                    <option value="inactive7">⚠️ 7+ दिन निष्क्रिय / ऐप हटाई</option>
+                  </select>
+                </div>
+
+                <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600 }}>
+                  कुल प्रदर्शित: <strong style={{ color: '#fff' }}>{filteredActivityList.length}</strong> कार्मिक
+                </div>
+              </div>
+
+              {/* Activity Table */}
+              <div className="table-responsive" style={{ maxHeight: '550px', overflowY: 'auto' }}>
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '28%' }}>अधिकारी विवरण</th>
+                      <th style={{ width: '22%' }}>जनपद व कार्यालय</th>
+                      <th style={{ width: '13%' }}>प्लेटफ़ॉर्म</th>
+                      <th style={{ width: '14%' }}>लाइव स्थिति</th>
+                      <th style={{ width: '13%' }}>अंतिम सक्रियता</th>
+                      <th style={{ width: '10%' }}>लाइव लोकेशन</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredActivityList.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+                          कोई कार्मिक रिकॉर्ड नहीं मिला।
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredActivityList.map(item => (
+                        <tr key={item.id}>
+                          {/* Officer Info */}
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: '8px',
+                                overflow: 'hidden',
+                                background: '#1e293b',
+                                flexShrink: 0,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: item.isOnline ? '2px solid #10b981' : '1px solid rgba(255,255,255,0.1)'
+                              }}>
+                                {item.uniformPhoto ? (
+                                  <img src={item.uniformPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--khaki-primary)' }}>
+                                    {(item.name || 'POL').charAt(0)}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 700, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {item.name}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--khaki-light)' }}>
+                                  {item.post} {item.pno ? `• PNO: ${item.pno}` : ''}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* District & Office */}
+                          <td>
+                            <div style={{ fontSize: '0.8rem', color: '#e2e8f0', fontWeight: 600 }}>
+                              {item.district}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                              {item.office || '—'}
+                            </div>
+                          </td>
+
+                          {/* Platform Badge */}
+                          <td>
+                            {item.platform === 'android' ? (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: 'rgba(59, 130, 246, 0.18)',
+                                border: '1px solid rgba(59, 130, 246, 0.4)',
+                                color: '#93c5fd',
+                                padding: '2px 7px',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700
+                              }}>
+                                <Smartphone size={12} />
+                                <span>Android App</span>
+                              </span>
+                            ) : item.platform === 'browser' ? (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: 'rgba(168, 85, 247, 0.18)',
+                                border: '1px solid rgba(168, 85, 247, 0.4)',
+                                color: '#d8b4fe',
+                                padding: '2px 7px',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700
+                              }}>
+                                <Laptop size={12} />
+                                <span>वेब ब्राउज़र</span>
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                अप्रयुक्त
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Live Status Badge */}
+                          <td>
+                            {item.isOnline ? (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                background: 'rgba(16, 185, 129, 0.2)',
+                                border: '1px solid #10b981',
+                                color: '#34d399',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800
+                              }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#34d399' }} />
+                                ऑनलाइन
+                              </span>
+                            ) : item.isInactive7 ? (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: 'rgba(245, 158, 11, 0.18)',
+                                border: '1px solid rgba(245, 158, 11, 0.4)',
+                                color: '#fbbf24',
+                                padding: '2px 7px',
+                                borderRadius: '12px',
+                                fontSize: '0.7rem',
+                                fontWeight: 700
+                              }}>
+                                ⚠️ 7+ दिन निष्क्रिय
+                              </span>
+                            ) : (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                color: '#fca5a5',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700
+                              }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f87171' }} />
+                                ऑफ़लाइन
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Last Seen */}
+                          <td>
+                            <div style={{ fontSize: '0.74rem', color: '#cbd5e1' }}>
+                              {formatLastSeen(item.lastSeen)}
+                            </div>
+                          </td>
+
+                          {/* Live Location Coordinates & Google Maps Link */}
+                          <td>
+                            {item.location && item.location.latitude && item.location.longitude ? (
+                              <a
+                                href={`https://www.google.com/maps?q=${item.location.latitude},${item.location.longitude}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: 'rgba(59, 130, 246, 0.2)',
+                                  border: '1px solid rgba(59, 130, 246, 0.45)',
+                                  color: '#93c5fd',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  textDecoration: 'none',
+                                  whiteSpace: 'nowrap'
+                                }}
+                                title={`अक्षांश: ${item.location.latitude}, देशांतर: ${item.location.longitude}`}
+                              >
+                                <MapPin size={11} color="#60a5fa" />
+                                <span>मैप्स देखें</span>
+                                <ExternalLink size={10} />
+                              </a>
+                            ) : (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.72rem',
+                                color: '#64748b'
+                              }}>
+                                <Lock size={11} />
+                                <span>अनुमति नहीं</span>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

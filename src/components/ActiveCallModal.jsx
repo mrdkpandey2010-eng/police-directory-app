@@ -44,6 +44,8 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
   const isIncoming = callState.isIncoming && callState.status === 'ringing';
   const otherParty = callState.isIncoming ? callState.caller : callState.receiver;
   const isConnected = callState.status === 'connected';
+  const isOffline = callState.status === 'offline';
+  const isChecking = callState.status === 'checking_presence';
 
   const formatTimer = (secs) => {
     const m = Math.floor(secs / 60);
@@ -208,12 +210,18 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
             width: '140px',
             height: '140px',
             borderRadius: '50%',
-            border: isConnected ? '4px solid #10b981' : '4px solid var(--khaki-primary, #c49756)',
+            border: isConnected 
+              ? '4px solid #10b981' 
+              : isOffline 
+                ? '4px solid #ef4444' 
+                : '4px solid var(--khaki-primary, #c49756)',
             overflow: 'hidden',
             background: '#070e1c',
             boxShadow: isConnected 
               ? '0 0 35px rgba(16, 185, 129, 0.6)' 
-              : '0 0 30px rgba(196, 151, 86, 0.5)',
+              : isOffline 
+                ? '0 0 35px rgba(239, 68, 68, 0.6)' 
+                : '0 0 30px rgba(196, 151, 86, 0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -226,7 +234,7 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
               />
             ) : (
-              <User size={72} color="var(--khaki-light, #dfb97e)" />
+              <User size={72} color={isOffline ? "#fca5a5" : "var(--khaki-light, #dfb97e)"} />
             )}
           </div>
         </div>
@@ -319,6 +327,67 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
               </span>
             </div>
           </div>
+        ) : isOffline ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px',
+            maxWidth: '420px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              fontSize: '1.05rem',
+              fontWeight: 800,
+              color: '#f87171',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'rgba(239, 68, 68, 0.15)',
+              padding: '6px 14px',
+              borderRadius: '20px',
+              border: '1px solid rgba(239, 68, 68, 0.3)'
+            }}>
+              <span>🔴 अधिकारी अभी ऑफ़लाइन हैं / नेटवर्क क्षेत्र से बाहर हैं</span>
+            </div>
+            <div style={{ fontSize: '0.84rem', color: '#fca5a5', fontWeight: 600 }}>
+              डिवाइस से संपर्क नहीं हो पा रहा है • मिस्ड कॉल अलर्ट प्रेषित कर दिया गया है
+            </div>
+            <div style={{
+              background: 'rgba(15, 23, 42, 0.85)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: '10px',
+              padding: '8px 12px',
+              fontSize: '0.78rem',
+              color: 'rgba(255, 255, 255, 0.8)',
+              marginTop: '4px',
+              lineHeight: 1.5
+            }}>
+              ⚠️ प्राप्तकर्ता अधिकारी की डिवाइस इंटरनेट या ऐप से कनेक्ट नहीं है। उनके ऑनलाइन आते ही मिस्ड कॉल का अलर्ट प्रदर्शित हो जाएगा।
+            </div>
+          </div>
+        ) : isChecking ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <div style={{
+              fontSize: '1.15rem',
+              fontWeight: 700,
+              color: '#38bdf8',
+              animation: 'callIncomingBlink 1.4s ease-in-out infinite',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span>🔄 नेटवर्क एवं उपस्थिति जांच जारी है...</span>
+            </div>
+            <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.65)' }}>
+              सुरक्षित विभागीय कनेक्शन स्थापित किया जा रहा है...
+            </div>
+          </div>
         ) : (
           <div style={{
             display: 'flex',
@@ -329,18 +398,18 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
             <div style={{
               fontSize: '1.15rem',
               fontWeight: 700,
-              color: isIncoming ? '#38bdf8' : '#fde047',
+              color: isIncoming ? '#38bdf8' : '#34d399',
               animation: 'callIncomingBlink 1.4s ease-in-out infinite',
               display: 'flex',
               alignItems: 'center',
               gap: '8px'
             }}>
               <span>
-                {isIncoming ? '🔔 इनकमिंग विभागीय कॉल आ रही है...' : '📞 कॉलिंग... (Ringing)'}
+                {isIncoming ? '🔔 इनकमिंग विभागीय कॉल आ रही है...' : '🟢 अधिकारी ऑनलाइन हैं • रिंग जा रही है...'}
               </span>
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.55)' }}>
-              {isIncoming ? 'कृपया कॉल रिसीव करने के लिए हरा बटन दबाएं' : 'अधिकारी के फोन पर रिंग जा रही है...'}
+            <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.65)' }}>
+              {isIncoming ? 'कृपया कॉल रिसीव करने के लिए हरा बटन दबाएं' : 'अधिकारी के फोन पर सुरक्षित रिंग जा रही है...'}
             </div>
           </div>
         )}
@@ -515,11 +584,11 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
               </div>
             )}
 
-            {/* Hangup Button */}
+            {/* Hangup / Dismiss Button */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
               <button
                 type="button"
-                onClick={() => callManager.endCall(true, 'completed')}
+                onClick={() => isOffline ? callManager.cleanup() : callManager.endCall(true, 'completed')}
                 style={{
                   width: '74px',
                   height: '74px',
@@ -537,12 +606,12 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
                 }}
                 onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
                 onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-                title="कॉल समाप्त करें (End Call)"
+                title={isOffline ? "कॉल बंद करें" : "कॉल समाप्त करें (End Call)"}
               >
                 <PhoneOff size={32} />
               </button>
               <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fca5a5' }}>
-                कॉल समाप्त करें
+                {isOffline ? 'कॉल बंद करें' : 'कॉल समाप्त करें'}
               </span>
             </div>
           </div>

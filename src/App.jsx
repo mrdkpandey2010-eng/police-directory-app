@@ -133,6 +133,7 @@ import {
 import TermsFooter from './components/TermsFooter';
 import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall, PhoneMissed } from 'lucide-react';
 import { callManager } from './utils/webrtc';
+import { sendPresenceHeartbeat } from './utils/cloudflareR2';
 
 export default function App() {
   const [contacts, setContacts] = useState([]);
@@ -644,6 +645,80 @@ export default function App() {
       callManager.listenForUserCalls(null);
     }
   }, [currentUser]);
+
+  // ---------------- USER REAL-TIME PRESENCE & HEARTBEAT ENGINE ----------------
+  const [userLocationCoords, setUserLocationCoords] = useState(null);
+
+  // Check and read location silently if permission was granted
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+          if (result.state === 'granted') {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                setUserLocationCoords({
+                  latitude: Number(pos.coords.latitude.toFixed(6)),
+                  longitude: Number(pos.coords.longitude.toFixed(6)),
+                  accuracy: Math.round(pos.coords.accuracy),
+                  updatedAt: Date.now()
+                });
+              },
+              () => {},
+              { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+            );
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {}
+  }, []);
+
+  // Send periodic presence heartbeat to Cloudflare Edge KV
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const doSendHeartbeat = () => {
+      const isNative = !!(window.Capacitor?.isNativePlatform?.());
+      const platform = isNative ? 'android' : 'browser';
+
+      sendPresenceHeartbeat({
+        userId: currentUser.id,
+        name: currentUser.name,
+        post: currentUser.post,
+        district: currentUser.district,
+        office: currentUser.office || '',
+        pno: currentUser.pno || '',
+        phone: currentUser.phone || '',
+        platform, // 'android' | 'browser'
+        isOnline: navigator.onLine,
+        location: userLocationCoords,
+        lastSeen: Date.now()
+      });
+    };
+
+    // Send immediately upon mount / user login
+    doSendHeartbeat();
+
+    // Regular pulse every 25 seconds
+    const heartbeatInterval = setInterval(doSendHeartbeat, 25000);
+
+    const onOnline = () => doSendHeartbeat();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        doSendHeartbeat();
+      }
+    };
+
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [currentUser, userLocationCoords]);
 
   // Update current user session on login
   const handleLoginSuccess = (userObj) => {

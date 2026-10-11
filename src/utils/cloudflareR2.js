@@ -637,11 +637,16 @@ export const sendCloudflareCallRing = async (callData) => {
   }
 };
 
-export const checkCloudflareIncomingCall = async (userId) => {
+export const checkCloudflareIncomingCall = async (userId, pno = '', phone = '') => {
   const baseUrl = getWorkerBaseUrl();
-  if (!baseUrl || !userId) return { active: false };
+  if (!baseUrl || (!userId && !pno && !phone)) return { active: false };
   try {
-    const res = await fetch(`${baseUrl}/api/calls/check?userId=${encodeURIComponent(userId)}`, {
+    const params = new URLSearchParams();
+    if (userId) params.set('userId', userId);
+    if (pno) params.set('pno', pno);
+    if (phone) params.set('phone', phone);
+
+    const res = await fetch(`${baseUrl}/api/calls/check?${params.toString()}`, {
       headers: { 'Accept': 'application/json' }
     });
     if (!res.ok) return { active: false };
@@ -707,5 +712,55 @@ export const hangupCloudflareCall = async (callId, status, caller, receiver, rea
     return res.ok;
   } catch (err) {
     return false;
+  }
+};
+
+// ---------------- USER PRESENCE & LIVE ACTIVITY TRACKING ----------------
+
+export const sendPresenceHeartbeat = async (userData) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !userData) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/presence/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData)
+    });
+    return res.ok;
+  } catch (err) {
+    return false;
+  }
+};
+
+export const fetchUserPresenceStatus = async (userId, pno = '', phone = '') => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || (!userId && !pno && !phone)) return { isOnline: false, status: 'offline' };
+  try {
+    const params = new URLSearchParams();
+    if (userId) params.set('userId', userId);
+    if (pno) params.set('pno', pno);
+    if (phone) params.set('phone', phone);
+
+    const res = await fetch(`${baseUrl}/api/presence/status?${params.toString()}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return { isOnline: false, status: 'offline' };
+    return await res.json();
+  } catch (err) {
+    return { isOnline: false, status: 'offline' };
+  }
+};
+
+export const fetchAllUsersPresence = async () => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl) return null;
+  try {
+    const res = await fetch(`${baseUrl}/api/presence/all`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
   }
 };

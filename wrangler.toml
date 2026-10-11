@@ -6,5 +6,10 @@ compatibility_date = "2024-04-01"
 binding = "POLICE_KV"
 id = "a0a531a02cc04d62a4f0bc375138a354"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "police-directory-db"
+database_id = "edcd7109-746b-46c1-bf1e-c46e8b62be5e"
+
 [vars]
 ADMIN_API_KEY = "police_admin_2026"
