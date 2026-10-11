@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Shield, Lock, MessageSquare, User, LogOut, ChevronDown 
+  Lock, MessageSquare, User, LogOut, ChevronDown 
 } from 'lucide-react';
 
 export default function Header({ 
@@ -47,44 +47,8 @@ export default function Header({
   }, [isProfileMenuOpen]);
 
   return (
-    <header className="header-card" style={{ padding: '0.75rem 1rem' }}>
-      {/* Main Brand Section */}
-      <div className="header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-        <div className="brand-section" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="police-badge-icon" style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)',
-            border: '2px solid var(--khaki-primary, #c49756)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            flexShrink: 0
-          }}>
-            <Shield size={24} color="var(--khaki-primary, #c49756)" />
-          </div>
-          <div className="brand-titles">
-            <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              उत्तर प्रदेश पुलिस निर्देशिका
-              <span className="dept-tag" style={{
-                fontSize: '0.68rem',
-                padding: '2px 8px',
-                borderRadius: '4px',
-                background: 'rgba(196,151,86,0.2)',
-                color: 'var(--khaki-light, #dfb97e)',
-                border: '1px solid var(--khaki-primary, #c49756)',
-                fontWeight: 700
-              }}>
-                आधिकारिक पोर्टल
-              </span>
-            </h1>
-            <p className="brand-subtitle" style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>
-              उत्तर प्रदेश शासन • अधिकृत विभागीय सुरक्षित दूरभाष निर्देशिका
-            </p>
-          </div>
-        </div>
+    <header className="header-card" style={{ padding: '0.6rem 1rem', position: 'relative', zIndex: 100 }}>
+      <div className="header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%' }}>
 
         {/* Header Right Action Area: ONLY Profile (Point 1 & 2) */}
         <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', position: 'relative' }}>
