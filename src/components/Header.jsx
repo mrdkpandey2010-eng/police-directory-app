@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Lock, MessageSquare, User, LogOut, ChevronDown 
+  Lock, MessageSquare, User, LogOut, ChevronDown, Search 
 } from 'lucide-react';
 
 export default function Header({ 
   currentUser, 
+  userDistrictScope = 'my_district',
+  onSelectMyDistrict,
+  onOpenFilterSidebar,
   totalApprovedCount, 
   pendingCount = 0, 
   notifCount = 0, 
@@ -29,14 +32,20 @@ export default function Header({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
 
-  // Close profile dropdown on clicking outside
+  const [isSearchMenuOpen, setIsSearchMenuOpen] = useState(false);
+  const searchMenuRef = useRef(null);
+
+  // Close dropdowns on clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
         setIsProfileMenuOpen(false);
       }
+      if (searchMenuRef.current && !searchMenuRef.current.contains(event.target)) {
+        setIsSearchMenuOpen(false);
+      }
     };
-    if (isProfileMenuOpen) {
+    if (isProfileMenuOpen || isSearchMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('touchstart', handleClickOutside);
     }
@@ -44,11 +53,132 @@ export default function Header({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
     };
-  }, [isProfileMenuOpen]);
+  }, [isProfileMenuOpen, isSearchMenuOpen]);
 
   return (
     <header className="header-card" style={{ padding: '0.6rem 1rem', position: 'relative', zIndex: 100 }}>
-      <div className="header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%' }}>
+      <div className="header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '0.5rem' }}>
+
+        {/* Compact Popup Selection Tab: "कर्मचारी खोजें" (Requirement 1) */}
+        <div style={{ position: 'relative' }} ref={searchMenuRef}>
+          <button
+            type="button"
+            onClick={() => setIsSearchMenuOpen(prev => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(196, 151, 86, 0.12)',
+              border: '1.5px solid var(--khaki-primary, #c49756)',
+              padding: '5px 11px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: '#f8fafc',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              transition: 'all 0.2s ease'
+            }}
+            title="कर्मचारी खोजें (जनपद / अधिकारी फ़िल्टर)"
+          >
+            <Search size={14} color="var(--khaki-light, #dfb97e)" />
+            <span>कर्मचारी खोजें</span>
+            <ChevronDown size={13} color="var(--khaki-primary, #c49756)" style={{ transition: 'transform 0.2s', transform: isSearchMenuOpen ? 'rotate(180deg)' : 'none' }} />
+          </button>
+
+          {/* Popup Selection Menu */}
+          {isSearchMenuOpen && (
+            <div style={{
+              position: 'absolute',
+              top: 'calc(100% + 8px)',
+              left: 0,
+              width: '270px',
+              background: 'rgba(15, 23, 42, 0.98)',
+              border: '1.5px solid var(--khaki-border, rgba(196, 151, 86, 0.4))',
+              borderRadius: '10px',
+              boxShadow: '0 12px 30px rgba(0,0,0,0.65)',
+              backdropFilter: 'blur(16px)',
+              zIndex: 1000,
+              overflow: 'hidden',
+              padding: '6px'
+            }}>
+              {/* Option 1: केवल मेरा जनपद */}
+              {currentUser?.district ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSearchMenuOpen(false);
+                    if (onSelectMyDistrict) onSelectMyDistrict();
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    background: userDistrictScope === 'my_district' ? 'rgba(196,151,86,0.2)' : 'transparent',
+                    border: userDistrictScope === 'my_district' ? '1px solid var(--khaki-primary, #c49756)' : 'none',
+                    borderRadius: '6px',
+                    color: '#f8fafc',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    marginBottom: '4px'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                  onMouseLeave={e => e.currentTarget.style.background = userDistrictScope === 'my_district' ? 'rgba(196,151,86,0.2)' : 'transparent'}
+                >
+                  <span style={{ fontSize: '1.05rem', lineHeight: 1 }}>📌</span>
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#f8fafc' }}>
+                      केवल मेरा जनपद ({currentUser.district})
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                      गृह जनपद के कार्मिक देखें
+                    </div>
+                  </div>
+                </button>
+              ) : null}
+
+              {/* Option 2: विशिष्ट अधिकारी / अन्य जनपद खोजें */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSearchMenuOpen(false);
+                  if (onOpenFilterSidebar) onOpenFilterSidebar();
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 10px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#f8fafc',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <Search size={16} color="var(--khaki-primary, #c49756)" />
+                <div>
+                  <div style={{ fontWeight: 700, color: '#f8fafc' }}>
+                    विशिष्ट अधिकारी / अन्य जनपद खोजें
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                    बाएं साइडबार फ़िल्टर खोलें
+                  </div>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Header Right Action Area: ONLY Profile (Point 1 & 2) */}
         <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', position: 'relative' }}>

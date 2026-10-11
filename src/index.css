@@ -817,6 +817,11 @@ body {
   to { opacity: 1; transform: scale(1); }
 }
 
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
 /* Toast alert notification */
 .toast-notice {
   position: fixed;

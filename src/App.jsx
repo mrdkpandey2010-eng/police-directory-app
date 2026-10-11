@@ -154,6 +154,7 @@ export default function App() {
 
   // User District Scoping ('my_district' = only their posted district, 'all' = search across all)
   const [userDistrictScope, setUserDistrictScope] = useState('my_district');
+  const [isFilterSidebarOpen, setIsFilterSidebarOpen] = useState(false);
 
   // Modals
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -1396,6 +1397,20 @@ export default function App() {
     setSelectedOffice('');
   };
 
+  const handleSelectMyDistrict = () => {
+    setUserDistrictScope('my_district');
+    setSelectedDistrict(currentUser?.district || '');
+    setSelectedPost('');
+    setSelectedOffice('');
+    setSearchQuery('');
+    setIsFilterSidebarOpen(false);
+  };
+
+  const handleOpenFilterSidebar = () => {
+    setUserDistrictScope('all');
+    setIsFilterSidebarOpen(true);
+  };
+
   const handleNavigateHome = () => {
     setIsChatModalOpen(false);
     setActiveChatId(null);
@@ -1487,6 +1502,9 @@ export default function App() {
       {/* Official Uttar Pradesh Police Top Header Bar */}
       <Header
         currentUser={currentUser}
+        userDistrictScope={userDistrictScope}
+        onSelectMyDistrict={handleSelectMyDistrict}
+        onOpenFilterSidebar={handleOpenFilterSidebar}
         totalApprovedCount={approvedCount}
         pendingCount={pendingCount}
         notifCount={notifications.length}
@@ -1547,109 +1565,6 @@ export default function App() {
       </div>
 
 
-      {/* District Scoping Banner for Regular Employee User */}
-      {currentUser.role === 'user' && (
-        <div style={{
-          background: 'rgba(15, 23, 42, 0.75)',
-          border: '1px solid var(--glass-border)',
-          borderRadius: 'var(--radius-md)',
-          padding: '0.75rem 1rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '0.75rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <MapPin size={18} color="var(--gold-primary)" />
-            <span style={{ fontSize: '0.88rem', color: 'var(--text-bright)' }}>
-              आपका पदस्थापित जनपद: <strong>{currentUser.district}</strong>
-            </span>
-            <span className="status-tag status-approved" style={{ fontSize: '0.72rem' }}>
-              सक्रिय जनपद
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button 
-              className={`btn ${userDistrictScope === 'my_district' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-              onClick={() => {
-                setUserDistrictScope('my_district');
-                setSelectedDistrict(currentUser.district);
-              }}
-              title={`केवल ${currentUser.district} जनपद के कार्मिक देखें`}
-            >
-              📌 केवल मेरा जनपद ({currentUser.district})
-            </button>
-
-            <button 
-              className={`btn ${userDistrictScope === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-              onClick={() => {
-                setUserDistrictScope('all');
-                setSelectedDistrict('');
-              }}
-              title="पूरे राज्य या किसी विशिष्ट अधिकारी को खोजें"
-            >
-              <Search size={13} />
-              विशिष्ट अधिकारी / अन्य जनपद खोजें
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* District Banner for Co-Admin */}
-      {currentUser.role === 'co_admin' && (
-        <div style={{
-          background: 'rgba(30, 58, 138, 0.35)',
-          border: '1px solid var(--glass-border)',
-          borderRadius: 'var(--radius-md)',
-          padding: '0.75rem 1rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '0.75rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Shield size={18} color="var(--gold-primary)" />
-            <span style={{ fontSize: '0.88rem', color: 'var(--text-bright)' }}>
-              पदस्थापित जनपद: <strong>{currentUser.district}</strong> (ज़िला Co-Admin)
-            </span>
-            <span className="status-tag status-approved" style={{ fontSize: '0.72rem' }}>
-              सक्रिय जनपद
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button 
-              className={`btn ${userDistrictScope === 'my_district' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-              onClick={() => {
-                setUserDistrictScope('my_district');
-                setSelectedDistrict(currentUser.district);
-              }}
-              title={`केवल ${currentUser.district} जनपद के कार्मिक देखें`}
-            >
-              📌 केवल मेरा जनपद ({currentUser.district})
-            </button>
-
-            <button 
-              className={`btn ${userDistrictScope === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-              onClick={() => {
-                setUserDistrictScope('all');
-                setSelectedDistrict('');
-              }}
-              title="पूरे राज्य या किसी विशिष्ट अधिकारी को खोजें"
-            >
-              <Search size={13} />
-              विशिष्ट अधिकारी / अन्य जनपद खोजें
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Real-time In-App Missed Call Alert Banner */}
       {missedCallAlerts.length > 0 && (
@@ -1751,8 +1666,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Multi-Criteria Search & Filter Controls */}
+      {/* Multi-Criteria Search & Filter Left Sidebar Drawer (Requirement 2 & 3) */}
       <SearchFilters
+        isOpen={isFilterSidebarOpen}
+        onClose={() => setIsFilterSidebarOpen(false)}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         selectedDistrict={selectedDistrict}
@@ -1767,6 +1684,64 @@ export default function App() {
         onResetFilters={handleResetFilters}
         hasActiveFilters={hasActiveFilters}
       />
+
+      {/* Active Filter Strip on Main Screen */}
+      {hasActiveFilters && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'rgba(196, 151, 86, 0.08)',
+          border: '1px solid var(--khaki-border, rgba(196,151,86,0.3))',
+          borderRadius: '8px',
+          padding: '6px 12px',
+          margin: '0.4rem 0 0.8rem 0',
+          fontSize: '0.8rem',
+          color: '#e2e8f0',
+          flexWrap: 'wrap',
+          gap: '6px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{ color: 'var(--khaki-light, #dfb97e)', fontWeight: 700 }}>सक्रिय फ़िल्टर:</span>
+            {selectedDistrict && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>ज़िला: {selectedDistrict}</span>}
+            {selectedPost && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>पद: {selectedPost}</span>}
+            {selectedOffice && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>थाना: {selectedOffice}</span>}
+            {searchQuery && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>सर्च: "{searchQuery}"</span>}
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button 
+              type="button" 
+              onClick={() => setIsFilterSidebarOpen(true)}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--khaki-primary, #c49756)',
+                color: 'var(--khaki-light, #dfb97e)',
+                borderRadius: '4px',
+                padding: '2px 8px',
+                fontSize: '0.72rem',
+                cursor: 'pointer'
+              }}
+            >
+              फ़िल्टर बदलें
+            </button>
+            <button 
+              type="button" 
+              onClick={handleResetFilters}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(248,113,113,0.5)',
+                color: '#f87171',
+                borderRadius: '4px',
+                padding: '2px 8px',
+                fontSize: '0.72rem',
+                cursor: 'pointer'
+              }}
+            >
+              ✕ साफ़ करें
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Contact Cards Grid (Scoped by authenticated district - Max 10 cards displayed for load reduction) */}
       <ContactList
