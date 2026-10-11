@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, Volume2, Shield, Clock, AlertTriangle, User } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, Shield, Clock, AlertTriangle, User } from 'lucide-react';
 import { callManager, MAX_CALL_DURATION_SECONDS } from '../utils/webrtc';
 
 export default function ActiveCallModal({ currentUser, onCallEnded }) {
@@ -555,30 +555,33 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
                   </span>
                 </div>
 
-                {/* Speaker Indicator */}
+                {/* Speaker Toggle Button */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
                   <button
                     type="button"
+                    onClick={() => callManager.toggleSpeaker()}
                     style={{
                       width: '56px',
                       height: '56px',
                       borderRadius: '50%',
-                      border: '1.5px solid rgba(255,255,255,0.25)',
-                      background: 'rgba(255, 255, 255, 0.12)',
-                      color: '#fff',
+                      border: callState.isSpeaker ? '1.5px solid #10b981' : '1.5px solid rgba(255,255,255,0.25)',
+                      background: callState.isSpeaker ? 'rgba(16, 185, 129, 0.28)' : 'rgba(255, 255, 255, 0.12)',
+                      color: callState.isSpeaker ? '#6ee7b7' : '#94a3b8',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       cursor: 'pointer',
                       backdropFilter: 'blur(8px)',
-                      WebkitTapHighlightColor: 'transparent'
+                      WebkitTapHighlightColor: 'transparent',
+                      transition: 'all 0.2s ease',
+                      boxShadow: callState.isSpeaker ? '0 0 15px rgba(16, 185, 129, 0.4)' : 'none'
                     }}
-                    title="स्पीकर सक्रिय"
+                    title={callState.isSpeaker ? "स्पीकर लाउड सक्रिय (धीमा करने हेतु दबाएं)" : "ईयरपीस / कम आवाज (लाउडस्पीकर हेतु दबाएं)"}
                   >
-                    <Volume2 size={24} />
+                    {callState.isSpeaker ? <Volume2 size={24} /> : <VolumeX size={24} />}
                   </button>
-                  <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.7)' }}>
-                    स्पीकर
+                  <span style={{ fontSize: '0.74rem', color: callState.isSpeaker ? '#6ee7b7' : 'rgba(255,255,255,0.7)', fontWeight: callState.isSpeaker ? 700 : 500 }}>
+                    {callState.isSpeaker ? 'स्पीकर ऑन' : 'ईयरपीस'}
                   </span>
                 </div>
               </div>

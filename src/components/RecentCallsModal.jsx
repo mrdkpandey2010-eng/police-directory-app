@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   X, Phone, PhoneCall, PhoneMissed, PhoneIncoming, PhoneOutgoing, 
-  Trash2, Clock, MapPin, User, MessageSquare, AlertCircle, Shield, CheckCircle 
+  Trash2, Clock, MapPin, User, AlertCircle, Shield, CheckCircle,
+  UserCheck, ShieldCheck, Building2, Mail
 } from 'lucide-react';
 import { callManager } from '../utils/webrtc';
+import { getStoredContacts } from '../utils/storage';
 
 export default function RecentCallsModal({
   isOpen,
   onClose,
   currentUser,
   callLogs = [],
+  contacts = [],
   onDeleteCall,
   onClearAllCalls,
   onStartCall,
@@ -17,6 +20,7 @@ export default function RecentCallsModal({
 }) {
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'missed'
   const [confirmClear, setConfirmClear] = useState(false);
+  const [selectedOfficerCard, setSelectedOfficerCard] = useState(null);
 
   if (!isOpen) return null;
 
@@ -67,6 +71,32 @@ export default function RecentCallsModal({
     const s = secs % 60;
     if (m === 0) return `${s} सेकंड`;
     return `${m} मि ${s} से`;
+  };
+
+  const handleOpenProfileCard = (otherParty, item) => {
+    const allContactsList = Array.isArray(contacts) && contacts.length > 0 ? contacts : getStoredContacts();
+    const match = allContactsList.find(c => {
+      if (!c) return false;
+      if (otherParty.id && c.id === otherParty.id) return true;
+      if (otherParty.pno && c.pno && c.pno.toString().trim() === otherParty.pno.toString().trim()) return true;
+      if (otherParty.phone && c.phone && c.phone.replace(/\D/g, '') === otherParty.phone.replace(/\D/g, '')) return true;
+      return false;
+    });
+
+    const resolved = {
+      id: match?.id || otherParty.id,
+      name: match?.name || otherParty.name || 'अधिकारी',
+      post: match?.post || otherParty.post || 'कार्मिक',
+      district: match?.district || otherParty.district || 'उत्तर प्रदेश',
+      pno: match?.pno || match?.PNO || otherParty.pno || '',
+      phone: match?.phone || otherParty.phone || '',
+      office: match?.office || otherParty.office || '',
+      uniformPhoto: match?.uniformPhoto || otherParty.uniformPhoto || '',
+      email: match?.email || '',
+      status: match?.status || 'approved'
+    };
+
+    setSelectedOfficerCard(resolved);
   };
 
   return (
@@ -310,8 +340,26 @@ export default function RecentCallsModal({
               );
               
               const otherParty = isOutgoing 
-                ? { id: item.receiverId, name: item.receiverName, post: item.receiverPost, district: item.receiverDistrict, phone: item.receiverPhone, pno: item.receiverPno }
-                : { id: item.callerId, name: item.callerName, post: item.callerPost, district: item.callerDistrict, phone: item.callerPhone, pno: item.callerPno };
+                ? { 
+                    id: item.receiverId, 
+                    name: item.receiverName, 
+                    post: item.receiverPost, 
+                    district: item.receiverDistrict, 
+                    phone: item.receiverPhone, 
+                    pno: item.receiverPno,
+                    office: item.receiverOffice,
+                    uniformPhoto: item.receiverUniformPhoto
+                  }
+                : { 
+                    id: item.callerId, 
+                    name: item.callerName, 
+                    post: item.callerPost, 
+                    district: item.callerDistrict, 
+                    phone: item.callerPhone, 
+                    pno: item.callerPno,
+                    office: item.callerOffice,
+                    uniformPhoto: item.callerUniformPhoto
+                  };
 
               const isMissed = !isOutgoing && (item.status === 'missed' || item.status === 'rejected' || item.status === 'offline');
               const isOffline = item.status === 'offline';
@@ -332,8 +380,19 @@ export default function RecentCallsModal({
                     transition: 'all 0.2s ease'
                   }}
                 >
-                  {/* Left: Direction Icon & Officer Info */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                  {/* Left: Direction Icon & Officer Info (Clickable for Profile Card) */}
+                  <div 
+                    onClick={() => handleOpenProfileCard(otherParty, item)}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '12px', 
+                      flex: 1, 
+                      minWidth: 0,
+                      cursor: 'pointer' 
+                    }}
+                    title="कार्मिक प्रोफाइल कार्ड देखें"
+                  >
                     {/* Status badge avatar icon */}
                     <div style={{
                       width: '42px',
@@ -463,30 +522,29 @@ export default function RecentCallsModal({
                       <PhoneCall size={16} />
                     </button>
 
-                    {/* 2. Message / Chat button */}
-                    {onOpenChatWithContact && otherParty.id && (
-                      <button
-                        onClick={() => {
-                          onClose();
-                          onOpenChatWithContact(otherParty);
-                        }}
-                        style={{
-                          background: 'rgba(59, 130, 246, 0.18)',
-                          border: '1px solid rgba(59, 130, 246, 0.4)',
-                          color: '#93c5fd',
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '10px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer'
-                        }}
-                        title="संदेश भेजें"
-                      >
-                        <MessageSquare size={16} />
-                      </button>
-                    )}
+                    {/* 2. Officer Profile Card Link Button (Replaces Message button) */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenProfileCard(otherParty, item);
+                      }}
+                      style={{
+                        background: 'rgba(196, 151, 86, 0.18)',
+                        border: '1px solid rgba(196, 151, 86, 0.45)',
+                        color: 'var(--khaki-primary, #c49756)',
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="कार्मिक प्रोफाइल कार्ड देखें (पहचान पुष्टि)"
+                    >
+                      <UserCheck size={18} />
+                    </button>
 
                     {/* 3. Delete this single call from list */}
                     <button
@@ -546,6 +604,312 @@ export default function RecentCallsModal({
           </button>
         </div>
       </div>
+
+      {/* Officer Identity Profile Card Modal Overlay (UP Police Identity Verification) */}
+      {selectedOfficerCard && (
+        <div 
+          className="officer-profile-card-backdrop"
+          onClick={() => setSelectedOfficerCard(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10060,
+            background: 'rgba(2, 6, 23, 0.88)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+        >
+          <div 
+            className="officer-profile-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '450px',
+              background: 'linear-gradient(180deg, #0e1e3b 0%, #060d1a 100%)',
+              border: '2px solid var(--khaki-primary, #c49756)',
+              borderRadius: '20px',
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.9), 0 0 35px rgba(196, 151, 86, 0.2)',
+              overflow: 'hidden',
+              color: '#f8fafc',
+              position: 'relative'
+            }}
+          >
+            {/* Header: UP Police Crest & Title */}
+            <div style={{
+              background: 'linear-gradient(90deg, #1e3a8a 0%, #0f172a 100%)',
+              padding: '14px 16px',
+              borderBottom: '1px solid rgba(196, 151, 86, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'rgba(196, 151, 86, 0.2)',
+                  border: '1.5px solid var(--khaki-primary, #c49756)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <ShieldCheck size={24} color="var(--khaki-primary, #c49756)" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--khaki-light, #fef08a)', letterSpacing: '0.5px' }}>
+                    उत्तर प्रदेश पुलिस (UP POLICE)
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>
+                    विभागीय कार्मिक प्रोफाइल कार्ड • Official ID
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedOfficerCard(null)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#cbd5e1',
+                  borderRadius: '8px',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* National Tricolor bar */}
+            <div style={{ height: '3px', background: 'linear-gradient(90deg, #ff9933 0%, #ffffff 50%, #138808 100%)' }} />
+
+            {/* Card Content */}
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Officer Uniform Photo & Verified Badge */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                <div style={{
+                  width: '92px',
+                  height: '92px',
+                  borderRadius: '16px',
+                  border: '3px solid var(--khaki-primary, #c49756)',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.65)',
+                  overflow: 'hidden',
+                  background: 'linear-gradient(135deg, #1e293b, #0f172a)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  marginBottom: '10px'
+                }}>
+                  {selectedOfficerCard.uniformPhoto ? (
+                    <img 
+                      src={selectedOfficerCard.uniformPhoto} 
+                      alt={selectedOfficerCard.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <div style={{ 
+                      fontSize: '2.2rem', 
+                      fontWeight: 900, 
+                      color: 'var(--khaki-light, #fef08a)' 
+                    }}>
+                      {(selectedOfficerCard.name || 'POL').replace(/\(.*\)/, '').trim().charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                  <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#f8fafc' }}>
+                    {selectedOfficerCard.name || 'अधिकारी'}
+                  </h4>
+                  <span title="सत्यापित पुलिस कार्मिक" style={{ display: 'inline-flex' }}>
+                    <CheckCircle size={18} color="#10b981" />
+                  </span>
+                </div>
+
+                {selectedOfficerCard.post && (
+                  <div style={{
+                    marginTop: '5px',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    color: 'var(--khaki-light, #fef08a)',
+                    background: 'rgba(196, 151, 86, 0.2)',
+                    border: '1px solid rgba(196, 151, 86, 0.4)',
+                    padding: '3px 12px',
+                    borderRadius: '20px'
+                  }}>
+                    {selectedOfficerCard.post}
+                  </div>
+                )}
+              </div>
+
+              {/* Verified Details Sheet */}
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.75)',
+                border: '1px solid rgba(196, 151, 86, 0.25)',
+                borderRadius: '14px',
+                padding: '0.85rem 1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '9px'
+              }}>
+                {/* PNO */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Shield size={14} color="var(--khaki-primary, #c49756)" /> पीएनओ संख्या (PNO):
+                  </span>
+                  <span style={{ fontWeight: 800, color: '#fef08a', letterSpacing: '0.5px' }}>
+                    {selectedOfficerCard.pno || selectedOfficerCard.PNO || 'उपलब्ध नहीं'}
+                  </span>
+                </div>
+
+                {/* District */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <MapPin size={14} color="#60a5fa" /> तैनात जनपद (District):
+                  </span>
+                  <span style={{ fontWeight: 700, color: '#f1f5f9' }}>
+                    {selectedOfficerCard.district || 'उत्तर प्रदेश'}
+                  </span>
+                </div>
+
+                {/* Office / Thana */}
+                {selectedOfficerCard.office && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Building2 size={14} color="#34d399" /> थाना / कार्यालय:
+                    </span>
+                    <span style={{ fontWeight: 700, color: '#f1f5f9' }}>
+                      {selectedOfficerCard.office}
+                    </span>
+                  </div>
+                )}
+
+                {/* CUG Mobile */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Phone size={14} color="#10b981" /> सीयूजी मोबाइल नंबर:
+                  </span>
+                  <span style={{ fontWeight: 800, color: '#6ee7b7' }}>
+                    {selectedOfficerCard.phone || 'उपलब्ध नहीं'}
+                  </span>
+                </div>
+
+                {/* Email */}
+                {selectedOfficerCard.email && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Mail size={14} color="#a78bfa" /> ईमेल:
+                    </span>
+                    <span style={{ fontWeight: 600, color: '#cbd5e1', fontSize: '0.8rem' }}>
+                      {selectedOfficerCard.email}
+                    </span>
+                  </div>
+                )}
+
+                {/* Status Badge */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  marginTop: '4px',
+                  paddingTop: '6px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                  fontSize: '0.76rem',
+                  color: '#34d399'
+                }}>
+                  <ShieldCheck size={14} color="#34d399" />
+                  <span>उत्तर प्रदेश पुलिस निर्देशिका सत्यापित कार्मिक</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => {
+                    const target = selectedOfficerCard;
+                    setSelectedOfficerCard(null);
+                    onClose();
+                    if (onStartCall) {
+                      onStartCall(target);
+                    } else {
+                      callManager.startCall(currentUser, target);
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    background: 'linear-gradient(135deg, #059669, #10b981)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '11px',
+                    color: '#fff',
+                    fontWeight: 800,
+                    fontSize: '0.88rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+                  }}
+                >
+                  <PhoneCall size={16} />
+                  <span>इन-ऐप कॉल करें</span>
+                </button>
+
+                {selectedOfficerCard.phone && (
+                  <a
+                    href={`tel:${selectedOfficerCard.phone}`}
+                    style={{
+                      flex: 1,
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      border: '1px solid rgba(59, 130, 246, 0.45)',
+                      borderRadius: '10px',
+                      padding: '11px',
+                      color: '#93c5fd',
+                      fontWeight: 700,
+                      fontSize: '0.88rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      textDecoration: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Phone size={15} />
+                    <span>सीयूजी कॉल</span>
+                  </a>
+                )}
+
+                <button
+                  onClick={() => setSelectedOfficerCard(null)}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '10px',
+                    padding: '11px 16px',
+                    color: '#cbd5e1',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  बंद करें
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

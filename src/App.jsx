@@ -2179,6 +2179,7 @@ export default function App() {
         onClose={() => setIsCallHistoryModalOpen(false)}
         currentUser={currentUser}
         callLogs={callLogs}
+        contacts={contacts}
         onDeleteCall={(callId) => {
           const updated = deleteCallLog(callId);
           setCallLogs(updated);

@@ -325,12 +325,16 @@ class InAppCallManager {
         callerDistrict: caller.district || 'उत्तर प्रदेश',
         callerPno: caller.pno || caller.PNO || '',
         callerPhone: caller.phone || '',
+        callerOffice: caller.office || '',
+        callerUniformPhoto: caller.uniformPhoto || '',
         receiverId: receiver.id,
         receiverName: receiver.name,
         receiverPost: receiver.post || 'कार्मिक',
         receiverDistrict: receiver.district || 'उत्तर प्रदेश',
         receiverPno: receiver.pno || receiver.PNO || '',
         receiverPhone: receiver.phone || '',
+        receiverOffice: receiver.office || '',
+        receiverUniformPhoto: receiver.uniformPhoto || '',
         status: reason === 'offline' ? 'offline' : 'missed',
         direction: 'incoming',
         seen: false,
@@ -480,6 +484,16 @@ class InAppCallManager {
         this.playRemoteAudio(this.remoteStream);
       };
 
+      this.peerConnection.onconnectionstatechange = () => {
+        const state = this.peerConnection?.connectionState;
+        if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+          console.log('[WebRTC Caller] Peer connection state:', state);
+          if (this.activeCall && this.activeCall.status === 'connected') {
+            this.endCall(false, 'completed');
+          }
+        }
+      };
+
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
 
@@ -533,7 +547,10 @@ class InAppCallManager {
 
     this.pollActiveCallInterval = setInterval(async () => {
       if (!this.activeCall || this.activeCall.callId !== callId) {
-        if (this.pollActiveCallInterval) clearInterval(this.pollActiveCallInterval);
+        if (this.pollActiveCallInterval) {
+          clearInterval(this.pollActiveCallInterval);
+          this.pollActiveCallInterval = null;
+        }
         return;
       }
 
@@ -541,9 +558,18 @@ class InAppCallManager {
         const cloudCall = await pollCloudflareCall(callId);
         if (!cloudCall) return;
 
-        // If call was rejected or ended remotely
-        if (cloudCall.status === 'ended' || cloudCall.status === 'rejected' || cloudCall.status === 'missed') {
-          this.endCall(false, cloudCall.status);
+        // If call was rejected or ended remotely from either party
+        const isEndedRemotely = 
+          cloudCall.status === 'ended' || 
+          cloudCall.status === 'completed' || 
+          cloudCall.status === 'rejected' || 
+          cloudCall.status === 'missed' ||
+          cloudCall.status === 'hangup' ||
+          cloudCall.status === 'disconnected';
+
+        if (isEndedRemotely) {
+          console.log('[WebRTC] Remote call termination detected:', cloudCall.status);
+          this.endCall(false, cloudCall.status === 'rejected' ? 'rejected' : 'completed');
           return;
         }
 
@@ -573,7 +599,7 @@ class InAppCallManager {
           });
         }
       } catch (err) {}
-    }, 1800);
+    }, 1100);
   }
 
   // Accept incoming call
@@ -619,6 +645,16 @@ class InAppCallManager {
       this.peerConnection.ontrack = (event) => {
         this.remoteStream = event.streams[0];
         this.playRemoteAudio(this.remoteStream);
+      };
+
+      this.peerConnection.onconnectionstatechange = () => {
+        const state = this.peerConnection?.connectionState;
+        if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+          console.log('[WebRTC Receiver] Peer connection state:', state);
+          if (this.activeCall && this.activeCall.status === 'connected') {
+            this.endCall(false, 'completed');
+          }
+        }
       };
 
       if (this.activeCall.offer) {
@@ -725,6 +761,17 @@ class InAppCallManager {
     this.notify();
   }
 
+  // Toggle Loudspeaker / Earpiece Audio Output
+  toggleSpeaker() {
+    if (!this.activeCall) return;
+    this.activeCall.isSpeaker = !this.activeCall.isSpeaker;
+    const audioElem = document.getElementById('remote_police_call_audio');
+    if (audioElem) {
+      audioElem.volume = this.activeCall.isSpeaker ? 1.0 : 0.25;
+    }
+    this.notify();
+  }
+
   playRemoteAudio(stream) {
     let audioElem = document.getElementById('remote_police_call_audio');
     if (!audioElem) {
@@ -734,6 +781,8 @@ class InAppCallManager {
       document.body.appendChild(audioElem);
     }
     audioElem.srcObject = stream;
+    audioElem.volume = this.activeCall?.isSpeaker ? 1.0 : 0.25;
+    audioElem.play().catch(() => {});
   }
 
   logCompletedCall(status, duration) {
@@ -747,12 +796,16 @@ class InAppCallManager {
       callerDistrict: caller?.district || 'उत्तर प्रदेश',
       callerPno: caller?.pno || caller?.PNO || '',
       callerPhone: caller?.phone || '',
+      callerOffice: caller?.office || '',
+      callerUniformPhoto: caller?.uniformPhoto || '',
       receiverId: receiver?.id || 'unknown',
       receiverName: receiver?.name || 'अज्ञात प्राप्तकर्ता',
       receiverPost: receiver?.post || 'कार्मिक',
       receiverDistrict: receiver?.district || 'उत्तर प्रदेश',
       receiverPno: receiver?.pno || receiver?.PNO || '',
       receiverPhone: receiver?.phone || '',
+      receiverOffice: receiver?.office || '',
+      receiverUniformPhoto: receiver?.uniformPhoto || '',
       durationSeconds: duration,
       status, // 'completed' | 'rejected' | 'missed' | 'offline'
       direction: isIncoming ? (isCompleted ? 'incoming' : 'missed') : 'outgoing',

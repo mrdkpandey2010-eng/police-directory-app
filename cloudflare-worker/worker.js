@@ -359,19 +359,29 @@ export default {
           if (callId) {
             const callStr = await getItem(`call_${callId}`);
             let callObj = callStr ? JSON.parse(callStr) : null;
+            const finalStatus = status === 'completed' || status === 'ended' ? 'ended' : (status || 'ended');
             if (callObj) {
-              callObj.status = status || 'ended';
+              callObj.status = finalStatus;
+              callObj.endedAt = Date.now();
               await putItem(`call_${callId}`, JSON.stringify(callObj));
+            } else {
+              await putItem(`call_${callId}`, JSON.stringify({ callId, status: finalStatus, endedAt: Date.now() }));
             }
 
-            // Clear all indexed keys for receiver
+            // Clear all indexed keys for both receiver and caller
             const clearKeys = new Set();
             if (callObj?.receiverId) clearKeys.add(String(callObj.receiverId));
             if (callObj?.receiver?.id) clearKeys.add(String(callObj.receiver.id));
             if (callObj?.receiver?.pno) clearKeys.add(String(callObj.receiver.pno));
+            if (callObj?.callerId) clearKeys.add(String(callObj.callerId));
+            if (callObj?.caller?.id) clearKeys.add(String(callObj.caller.id));
+            if (callObj?.caller?.pno) clearKeys.add(String(callObj.caller.pno));
             if (receiver?.id) clearKeys.add(String(receiver.id));
             if (receiver?.pno) clearKeys.add(String(receiver.pno));
             if (receiver?.phone) clearKeys.add(String(receiver.phone).replace(/\D/g, ''));
+            if (caller?.id) clearKeys.add(String(caller.id));
+            if (caller?.pno) clearKeys.add(String(caller.pno));
+            if (caller?.phone) clearKeys.add(String(caller.phone).replace(/\D/g, ''));
             for (const k of clearKeys) {
               if (k) await putItem(`active_call_user_${k}`, '');
             }
