@@ -618,3 +618,94 @@ export const processOfflineSyncQueue = async () => {
     return false;
   }
 };
+
+// ---------------- IN-APP REAL-TIME CALL SIGNALING CLIENT ----------------
+
+export const sendCloudflareCallRing = async (callData) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !callData) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/ring`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(callData)
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[Call Signaling] Ring error:', err);
+    return false;
+  }
+};
+
+export const checkCloudflareIncomingCall = async (userId) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !userId) return { active: false };
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/check?userId=${encodeURIComponent(userId)}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return { active: false };
+    return await res.json();
+  } catch (err) {
+    return { active: false };
+  }
+};
+
+export const answerCloudflareCall = async (callId, answer) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !callId) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callId, answer })
+    });
+    return res.ok;
+  } catch (err) {
+    return false;
+  }
+};
+
+export const pollCloudflareCall = async (callId) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !callId) return null;
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/poll?callId=${encodeURIComponent(callId)}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+};
+
+export const sendCloudflareIceCandidate = async (callId, candidate, senderId) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !callId || !candidate) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/candidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callId, candidate, senderId })
+    });
+    return res.ok;
+  } catch (err) {
+    return false;
+  }
+};
+
+export const hangupCloudflareCall = async (callId, status, caller, receiver, reason = '') => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !callId) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/hangup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callId, status, caller, receiver, reason })
+    });
+    return res.ok;
+  } catch (err) {
+    return false;
+  }
+};

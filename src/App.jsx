@@ -106,6 +106,9 @@ import {
   removeGroupParticipant,
   leaveGroupChat,
   deleteGroupChat,
+  clearChatMessages,
+  getDeletedChatIds,
+  removeDeletedChatId,
   appendMessageToChat,
   markChatAsRead,
   getUnreadMessagesCountForUser,
@@ -576,13 +579,22 @@ export default function App() {
     const unsubscribe = subscribeToFirestoreChats((cloudChats) => {
       if (!Array.isArray(cloudChats) || cloudChats.length === 0) return;
 
+      const deletedIds = getDeletedChatIds();
+
       setChats((prevChats) => {
         const mergedMap = new Map();
-        (prevChats || []).forEach((c) => mergedMap.set(c.id, c));
+        (prevChats || []).forEach((c) => {
+          if (!deletedIds.includes(c.id)) {
+            mergedMap.set(c.id, c);
+          }
+        });
 
         let hasNewIncoming = false;
 
         cloudChats.forEach((cloudChat) => {
+          // If this chat is in user's deleted list, skip it! Do not resurrect!
+          if (deletedIds.includes(cloudChat.id)) return;
+
           const local = mergedMap.get(cloudChat.id);
           if (!local) {
             mergedMap.set(cloudChat.id, cloudChat);
@@ -623,6 +635,15 @@ export default function App() {
       if (unsubscribe) unsubscribe();
     };
   }, [isFirebaseConnected, currentUser]);
+
+  // Listen for incoming in-app voice calls across devices (Cloudflare KV + WebRTC)
+  useEffect(() => {
+    if (currentUser) {
+      callManager.listenForUserCalls(currentUser);
+    } else {
+      callManager.listenForUserCalls(null);
+    }
+  }, [currentUser]);
 
   // Update current user session on login
   const handleLoginSuccess = (userObj) => {
@@ -1153,10 +1174,12 @@ export default function App() {
     );
 
     if (existing) {
+      removeDeletedChatId(existing.id);
       setActiveChatId(existing.id);
     } else {
       // Initialize clean direct chat without auto-sending any message (Point 3)
       const targetChatId = `chat-p2p-${currentUser.id}-${targetContact.id}`;
+      removeDeletedChatId(targetChatId);
       const newChatObj = {
         id: targetChatId,
         type: "direct",
@@ -1223,6 +1246,7 @@ export default function App() {
 
   const handleCreateGroupChat = async (groupTitle, participantIds, description = '') => {
     const { updatedChats, newGroupId } = createGroupChat(chats, currentUser, groupTitle, participantIds, description);
+    removeDeletedChatId(newGroupId);
     setChats(updatedChats);
     setActiveChatId(newGroupId);
     showToast(`नया पुलिस समूह "${groupTitle}" सफलतापूर्वक बनाया गया!`);
@@ -1280,6 +1304,17 @@ export default function App() {
 
     if (isFirebaseConfigured()) {
       deleteFirestoreChat(groupId);
+    }
+  };
+
+  const handleClearChatMessages = async (chatId) => {
+    if (!chatId || !currentUser) return;
+    const { updatedChats, updatedChat } = clearChatMessages(chats, chatId, currentUser.id);
+    setChats(updatedChats);
+    showToast('चैट संदेश सफलतापूर्वक साफ़ कर दिए गए (Chat Cleared)।');
+
+    if (isFirebaseConfigured() && updatedChat) {
+      saveFirestoreChat(updatedChat);
     }
   };
 
@@ -1784,6 +1819,7 @@ export default function App() {
         onRemoveGroupParticipant={handleRemoveGroupParticipant}
         onLeaveGroupChat={handleLeaveGroupChat}
         onDeleteGroupChat={handleDeleteGroupChat}
+        onClearChatMessages={handleClearChatMessages}
         onAppendMessage={handleAppendMessage}
         onMarkChatAsRead={handleMarkChatAsRead}
         onStartEmptyDirectChat={handleOpenChatWithContact}

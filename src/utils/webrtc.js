@@ -1,11 +1,21 @@
-// In-App Peer-to-Peer Voice Calling Engine using native WebRTC & AudioContext
+// In-App Peer-to-Peer Voice Calling Engine using native WebRTC & AudioContext & Cloudflare KV Signaling
 import { saveCallLog, addNotification } from './storage';
 import { addFirestoreNotification } from './firebase';
+import { 
+  sendCloudflareCallRing, 
+  checkCloudflareIncomingCall, 
+  answerCloudflareCall, 
+  pollCloudflareCall, 
+  sendCloudflareIceCandidate, 
+  hangupCloudflareCall 
+} from './cloudflareR2';
 
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.services.mozilla.com' }
   ]
 };
 
@@ -46,7 +56,7 @@ class CallAudioSynthesizer {
         osc1.frequency.setValueAtTime(520, this.ctx.currentTime);
         osc2.frequency.setValueAtTime(660, this.ctx.currentTime);
 
-        gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.22, this.ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 1.2);
 
         osc1.connect(gain);
@@ -128,17 +138,19 @@ class CallAudioSynthesizer {
 
 export const callAudio = new CallAudioSynthesizer();
 
-// In-App Calling Manager (WebRTC P2P + Dual Firebase/BroadcastChannel Signaling)
+// In-App Calling Manager (Cloudflare Real-Time Signaling + WebRTC P2P + Local BroadcastChannel)
 class InAppCallManager {
   constructor() {
     this.peerConnection = null;
     this.localStream = null;
     this.remoteStream = null;
     this.activeCall = null;
+    this.currentUser = null;
     this.listeners = new Set();
-    this.firestoreUnsub = null;
     this.broadcastChannel = null;
     this.ringTimeout = null;
+    this.pollIncomingInterval = null;
+    this.pollActiveCallInterval = null;
 
     try {
       this.broadcastChannel = new BroadcastChannel('up_police_webrtc_calls');
@@ -165,7 +177,7 @@ class InAppCallManager {
     this.listeners.forEach(l => l(this.activeCall));
   }
 
-  // Broadcast signaling event
+  // Broadcast signaling event locally
   broadcastSignal(data) {
     if (this.broadcastChannel) {
       this.broadcastChannel.postMessage(data);
@@ -175,11 +187,13 @@ class InAppCallManager {
     } catch (e) {}
   }
 
-  // Handle incoming signaling message
+  // Handle local incoming signaling message
   handleSignalMessage(data) {
-    if (!data || !this.activeCall) {
+    if (!data) return;
+
+    if (!this.activeCall) {
       // Check if this is an incoming call targeting currentUser
-      if (data && data.type === 'offer' && this.currentUser && data.receiverId === this.currentUser.id) {
+      if (data.type === 'offer' && this.currentUser && data.receiverId === this.currentUser.id) {
         this.activeCall = {
           callId: data.callId,
           isIncoming: true,
@@ -188,9 +202,12 @@ class InAppCallManager {
           receiver: data.receiver,
           offer: data.offer,
           startedAt: null,
-          duration: 0
+          duration: 0,
+          isMuted: false,
+          isSpeaker: true
         };
         callAudio.startIncomingRingtone();
+        if (navigator.vibrate) navigator.vibrate([600, 300, 600, 300, 600]);
         this.notify();
       }
       return;
@@ -198,7 +215,7 @@ class InAppCallManager {
 
     if (data.callId !== this.activeCall.callId) return;
 
-    if (data.type === 'answer' && this.peerConnection) {
+    if (data.type === 'answer' && this.peerConnection && this.activeCall.status === 'calling') {
       this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
         .then(() => {
           this.activeCall.status = 'connected';
@@ -216,9 +233,45 @@ class InAppCallManager {
     }
   }
 
-  // Listen for calls targeted at logged-in user
+  // Listen for calls targeted at logged-in user (Cloudflare Polling + Local Sync)
   listenForUserCalls(currentUser) {
     this.currentUser = currentUser;
+
+    if (this.pollIncomingInterval) {
+      clearInterval(this.pollIncomingInterval);
+      this.pollIncomingInterval = null;
+    }
+
+    if (!currentUser || !currentUser.id) return;
+
+    // Check Cloudflare Edge KV for incoming call every 2.2 seconds
+    this.pollIncomingInterval = setInterval(async () => {
+      if (this.activeCall) return; // Already on a call or ringing
+      try {
+        const res = await checkCloudflareIncomingCall(this.currentUser.id);
+        if (res && res.active && res.call && (!this.activeCall || this.activeCall.callId !== res.call.callId)) {
+          const callData = res.call;
+          if (callData.status === 'calling') {
+            this.activeCall = {
+              callId: callData.callId,
+              isIncoming: true,
+              status: 'ringing',
+              caller: callData.caller,
+              receiver: callData.receiver || this.currentUser,
+              offer: callData.offer,
+              startedAt: null,
+              duration: 0,
+              isMuted: false,
+              isSpeaker: true,
+              viaCloudflare: true
+            };
+            callAudio.startIncomingRingtone();
+            if (navigator.vibrate) navigator.vibrate([600, 300, 600, 300, 600]);
+            this.notify();
+          }
+        }
+      } catch (e) {}
+    }, 2200);
   }
 
   // Start outgoing call
@@ -238,21 +291,19 @@ class InAppCallManager {
     this.notify();
     callAudio.startOutgoingRingback();
 
-    // Ringing timeout: 30 seconds cutoff for unanswered calls
+    // Ringing timeout: 35 seconds cutoff for unanswered calls
     if (this.ringTimeout) clearTimeout(this.ringTimeout);
     this.ringTimeout = setTimeout(() => {
       if (this.activeCall && this.activeCall.status === 'calling') {
-        console.warn('Outgoing call timed out after 30s of ringing. Marking as missed call.');
+        console.warn('Outgoing call timed out after 35s. Marking as missed call.');
         this.endCall(true, 'missed');
       }
-    }, 30000);
+    }, 35000);
 
     try {
-      // Get local microphone stream
       this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } catch (err) {
       console.warn('Microphone permission not granted or unavailable:', err);
-      // Fallback: Proceed without audio track for testing simulation
       this.localStream = null;
     }
 
@@ -272,6 +323,7 @@ class InAppCallManager {
             type: 'candidate',
             candidate: event.candidate
           });
+          sendCloudflareIceCandidate(callId, event.candidate, caller.id);
         }
       };
 
@@ -283,9 +335,8 @@ class InAppCallManager {
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
 
-      this.broadcastSignal({
+      const ringPayload = {
         callId,
-        type: 'offer',
         callerId: caller.id,
         caller,
         receiverId: receiver.id,
@@ -293,10 +344,23 @@ class InAppCallManager {
         offer,
         status: 'calling',
         createdAt: new Date().toISOString()
+      };
+
+      // 1. Broadcast locally
+      this.broadcastSignal({
+        ...ringPayload,
+        type: 'offer'
       });
+
+      // 2. Publish to Cloudflare Edge for cross-device mobile signaling
+      await sendCloudflareCallRing(ringPayload);
+
+      // 3. Start polling Cloudflare for Answer or Hangup from recipient
+      this.startActiveCallCloudPolling(callId);
+
     } catch (err) {
       console.error('WebRTC offer error:', err);
-      // If WebRTC setup fails, simulate ringing connection for evaluation
+      // Fallback ring simulation if WebRTC fails in restricted environment
       setTimeout(() => {
         if (this.activeCall && this.activeCall.status === 'calling') {
           if (this.ringTimeout) {
@@ -308,8 +372,60 @@ class InAppCallManager {
           callAudio.stop();
           this.notify();
         }
-      }, 3000);
+      }, 4000);
     }
+  }
+
+  // Poll Cloudflare Call status during call
+  startActiveCallCloudPolling(callId) {
+    if (this.pollActiveCallInterval) {
+      clearInterval(this.pollActiveCallInterval);
+      this.pollActiveCallInterval = null;
+    }
+
+    this.pollActiveCallInterval = setInterval(async () => {
+      if (!this.activeCall || this.activeCall.callId !== callId) {
+        if (this.pollActiveCallInterval) clearInterval(this.pollActiveCallInterval);
+        return;
+      }
+
+      try {
+        const cloudCall = await pollCloudflareCall(callId);
+        if (!cloudCall) return;
+
+        // If call was rejected or ended remotely
+        if (cloudCall.status === 'ended' || cloudCall.status === 'rejected' || cloudCall.status === 'missed') {
+          this.endCall(false, cloudCall.status);
+          return;
+        }
+
+        // If recipient answered call
+        if (this.activeCall.status === 'calling' && cloudCall.status === 'connected' && cloudCall.answer) {
+          if (this.ringTimeout) {
+            clearTimeout(this.ringTimeout);
+            this.ringTimeout = null;
+          }
+          if (this.peerConnection && !this.peerConnection.currentRemoteDescription) {
+            await this.peerConnection.setRemoteDescription(new RTCSessionDescription(cloudCall.answer));
+          }
+          this.activeCall.status = 'connected';
+          this.activeCall.startedAt = this.activeCall.startedAt || Date.now();
+          callAudio.stop();
+          this.notify();
+        }
+
+        // Process any remote ICE candidates
+        if (Array.isArray(cloudCall.candidates) && this.peerConnection) {
+          cloudCall.candidates.forEach(candObj => {
+            if (candObj.senderId !== this.currentUser?.id && candObj.candidate) {
+              try {
+                this.peerConnection.addIceCandidate(new RTCIceCandidate(candObj.candidate));
+              } catch (e) {}
+            }
+          });
+        }
+      } catch (err) {}
+    }, 1800);
   }
 
   // Accept incoming call
@@ -346,6 +462,9 @@ class InAppCallManager {
             type: 'candidate',
             candidate: event.candidate
           });
+          if (this.currentUser) {
+            sendCloudflareIceCandidate(this.activeCall.callId, event.candidate, this.currentUser.id);
+          }
         }
       };
 
@@ -359,12 +478,19 @@ class InAppCallManager {
         const answer = await this.peerConnection.createAnswer();
         await this.peerConnection.setLocalDescription(answer);
 
+        // 1. Broadcast locally
         this.broadcastSignal({
           callId: this.activeCall.callId,
           type: 'answer',
           answer,
           status: 'connected'
         });
+
+        // 2. Transmit answer to Cloudflare Edge KV
+        await answerCloudflareCall(this.activeCall.callId, answer);
+
+        // 3. Start polling for remote hangup
+        this.startActiveCallCloudPolling(this.activeCall.callId);
       }
     } catch (err) {
       console.error('Error accepting call:', err);
@@ -372,8 +498,12 @@ class InAppCallManager {
   }
 
   // Reject incoming call
-  rejectCall() {
+  async rejectCall() {
     if (!this.activeCall) return;
+    const callId = this.activeCall.callId;
+    const caller = this.activeCall.caller;
+    const receiver = this.activeCall.receiver;
+
     if (this.ringTimeout) {
       clearTimeout(this.ringTimeout);
       this.ringTimeout = null;
@@ -382,45 +512,53 @@ class InAppCallManager {
     callAudio.playDisconnect();
 
     this.broadcastSignal({
-      callId: this.activeCall.callId,
+      callId,
       type: 'reject',
       status: 'rejected'
     });
+
+    hangupCloudflareCall(callId, 'rejected', caller, receiver, 'User declined');
 
     this.endCall(false, 'missed');
   }
 
   // End active call (with missed call alert logging)
-  endCall(broadcast = true, finalStatus = 'completed') {
+  async endCall(broadcast = true, finalStatus = 'completed') {
     if (this.ringTimeout) {
       clearTimeout(this.ringTimeout);
       this.ringTimeout = null;
     }
+    if (this.pollActiveCallInterval) {
+      clearInterval(this.pollActiveCallInterval);
+      this.pollActiveCallInterval = null;
+    }
     callAudio.stop();
     callAudio.playDisconnect();
 
-    const duration = this.activeCall?.startedAt 
-      ? Math.floor((Date.now() - this.activeCall.startedAt) / 1000) 
+    const currentCall = this.activeCall;
+    const duration = currentCall?.startedAt 
+      ? Math.floor((Date.now() - currentCall.startedAt) / 1000) 
       : 0;
 
     const isMissed = finalStatus === 'missed' || 
-                     (finalStatus === 'rejected' && (!this.activeCall?.startedAt || duration === 0)) ||
-                     (!this.activeCall?.startedAt && duration === 0 && finalStatus !== 'completed');
+                     (finalStatus === 'rejected' && (!currentCall?.startedAt || duration === 0)) ||
+                     (!currentCall?.startedAt && duration === 0 && finalStatus !== 'completed');
 
     const recordedStatus = isMissed ? 'missed' : finalStatus;
 
-    if (broadcast && this.activeCall) {
+    if (broadcast && currentCall) {
       this.broadcastSignal({
-        callId: this.activeCall.callId,
+        callId: currentCall.callId,
         type: isMissed ? 'reject' : 'hangup',
         status: isMissed ? 'missed' : 'ended',
         duration
       });
+      hangupCloudflareCall(currentCall.callId, recordedStatus, currentCall.caller, currentCall.receiver, 'Call hung up');
     }
 
     // Generate Missed Call Alert for receiver if call went unanswered or disconnected
-    if (isMissed && this.activeCall) {
-      const { caller, receiver } = this.activeCall;
+    if (isMissed && currentCall) {
+      const { caller, receiver } = currentCall;
       if (caller && receiver) {
         try {
           const notifId = `notif-missed-${Date.now()}`;
@@ -498,6 +636,10 @@ class InAppCallManager {
     if (this.ringTimeout) {
       clearTimeout(this.ringTimeout);
       this.ringTimeout = null;
+    }
+    if (this.pollActiveCallInterval) {
+      clearInterval(this.pollActiveCallInterval);
+      this.pollActiveCallInterval = null;
     }
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => track.stop());

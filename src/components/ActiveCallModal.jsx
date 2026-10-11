@@ -54,263 +54,510 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
   const remainingSeconds = Math.max(0, MAX_CALL_DURATION_SECONDS - elapsedSeconds);
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: 'rgba(5, 10, 24, 0.94)',
-      backdropFilter: 'blur(16px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 10000,
-      padding: '1rem'
-    }}>
-      <div style={{
-        maxWidth: '420px',
-        width: '100%',
-        background: 'linear-gradient(180deg, #0e1d38, #070e1c)',
-        border: '2px solid var(--khaki-border, #c49756)',
-        borderRadius: '20px',
-        boxShadow: '0 25px 60px rgba(0,0,0,0.8), 0 0 30px rgba(196,151,86,0.3)',
-        padding: '1.75rem 1.5rem',
+    <div 
+      className="police-call-fullscreen-overlay"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100vw',
+        height: '100dvh',
+        zIndex: 999999, // Absolute top layer over all dialogs, headers and modals
+        background: 'radial-gradient(ellipse at 50% 20%, #0c1b38 0%, #060e1f 50%, #020611 100%)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 'max(env(safe-area-inset-top, 20px), 24px) 1.5rem max(env(safe-area-inset-bottom, 20px), 28px) 1.5rem',
         color: '#fff',
-        textAlign: 'center',
+        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        userSelect: 'none',
+        touchAction: 'manipulation'
+      }}
+    >
+      <style>{`
+        @keyframes callSonarRing {
+          0% {
+            transform: scale(0.95);
+            opacity: 0.8;
+          }
+          50% {
+            opacity: 0.35;
+          }
+          100% {
+            transform: scale(2.2);
+            opacity: 0;
+          }
+        }
+        @keyframes callAvatarPulse {
+          0%, 100% {
+            transform: scale(1);
+            box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
+          }
+          50% {
+            transform: scale(1.05);
+            box-shadow: 0 0 55px rgba(16, 185, 129, 0.7);
+          }
+        }
+        @keyframes callIncomingBlink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.45; }
+        }
+        @keyframes callSoundWave {
+          0%, 100% { height: 6px; }
+          50% { height: 24px; }
+        }
+      `}</style>
+
+      {/* TOP: Departmental Header & Security Chip */}
+      <div style={{
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '1.25rem'
+        gap: '8px',
+        width: '100%',
+        maxWidth: '450px'
       }}>
-        {/* Top Header Badge */}
         <div style={{
           background: 'rgba(196, 151, 86, 0.15)',
-          border: '1px solid var(--khaki-primary, #c49756)',
-          borderRadius: '20px',
-          padding: '4px 14px',
-          fontSize: '0.78rem',
-          color: 'var(--khaki-light, #dfb97e)',
+          border: '1px solid rgba(196, 151, 86, 0.5)',
+          borderRadius: '30px',
+          padding: '6px 18px',
+          fontSize: '0.82rem',
+          fontWeight: 700,
+          color: '#fde047',
           display: 'flex',
           alignItems: 'center',
-          gap: '6px'
+          gap: '8px',
+          boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
         }}>
-          <Shield size={14} color="var(--khaki-primary)" />
+          <Shield size={16} color="#eab308" />
           <span>उत्तर प्रदेश पुलिस • इन-ऐप सुरक्षित वॉइस कॉल</span>
         </div>
 
-        {/* Officer Uniform Avatar Frame */}
         <div style={{
-          width: '100px',
-          height: '100px',
-          borderRadius: '50%',
-          border: '3px solid var(--khaki-primary, #c49756)',
-          overflow: 'hidden',
+          fontSize: '0.78rem',
+          color: 'rgba(255, 255, 255, 0.65)',
+          letterSpacing: '0.04em'
+        }}>
+          UP POLICE OFFICIAL DIRECTORY CALL
+        </div>
+      </div>
+
+      {/* CENTER: Officer Avatar with Sonar Ripple Rings + Full Officer Bio */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        width: '100%',
+        maxWidth: '450px',
+        margin: 'auto 0'
+      }}>
+        {/* Pulsating Sonar Avatar Frame */}
+        <div style={{
+          position: 'relative',
+          width: '150px',
+          height: '150px',
+          marginBottom: '2rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          {/* Animated Sonar Ripple 1 */}
+          {isIncoming && (
+            <>
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: '3px solid #10b981',
+                animation: 'callSonarRing 2s cubic-bezier(0, 0.2, 0.8, 1) infinite'
+              }} />
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: '2px solid #38bdf8',
+                animation: 'callSonarRing 2s cubic-bezier(0, 0.2, 0.8, 1) 0.6s infinite'
+              }} />
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: '1.5px solid #c49756',
+                animation: 'callSonarRing 2s cubic-bezier(0, 0.2, 0.8, 1) 1.2s infinite'
+              }} />
+            </>
+          )}
+
+          {/* Connected Glow */}
+          {isConnected && (
+            <div style={{
+              position: 'absolute',
+              inset: '-10px',
+              borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, transparent 70%)',
+              animation: 'callAvatarPulse 3s infinite'
+            }} />
+          )}
+
+          {/* Actual Avatar Image */}
+          <div style={{
+            width: '140px',
+            height: '140px',
+            borderRadius: '50%',
+            border: isConnected ? '4px solid #10b981' : '4px solid var(--khaki-primary, #c49756)',
+            overflow: 'hidden',
+            background: '#070e1c',
+            boxShadow: isConnected 
+              ? '0 0 35px rgba(16, 185, 129, 0.6)' 
+              : '0 0 30px rgba(196, 151, 86, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2
+          }}>
+            {otherParty?.uniformPhoto ? (
+              <img 
+                src={otherParty.uniformPhoto} 
+                alt="Officer" 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+              />
+            ) : (
+              <User size={72} color="var(--khaki-light, #dfb97e)" />
+            )}
+          </div>
+        </div>
+
+        {/* Officer Full Name */}
+        <h1 style={{
+          fontSize: '1.65rem',
+          fontWeight: 800,
+          margin: '0 0 0.4rem 0',
+          color: '#ffffff',
+          letterSpacing: '0.02em',
+          textShadow: '0 2px 10px rgba(0,0,0,0.8)'
+        }}>
+          {otherParty?.name || 'पुलिस अधिकारी'}
+        </h1>
+
+        {/* Post & Designation */}
+        <div style={{
+          fontSize: '1.05rem',
+          fontWeight: 700,
+          color: '#fef08a',
+          margin: '0 0 0.3rem 0',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#070e1c',
-          boxShadow: isConnected 
-            ? '0 0 25px rgba(16, 185, 129, 0.4)' 
-            : '0 0 20px rgba(196, 151, 86, 0.35)',
-          animation: isIncoming ? 'pulse 1.5s infinite' : 'none'
+          gap: '8px'
         }}>
-          {otherParty?.uniformPhoto ? (
-            <img src={otherParty.uniformPhoto} alt="Officer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <User size={48} color="var(--khaki-light)" />
+          <span>{otherParty?.post || 'कार्मिक'}</span>
+          {otherParty?.pno && (
+            <span style={{
+              background: 'rgba(255, 255, 255, 0.12)',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              fontSize: '0.78rem',
+              color: '#e2e8f0',
+              fontWeight: 600
+            }}>
+              PNO: {otherParty.pno}
+            </span>
           )}
         </div>
 
-        {/* Officer Information */}
-        <div>
-          <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-bright, #fff)' }}>
-            {otherParty?.name || 'पुलिस अधिकारी'}
-          </h3>
-          <p style={{ fontSize: '0.82rem', color: 'var(--khaki-light, #dfb97e)', margin: '4px 0 0 0' }}>
-            {otherParty?.post} • {otherParty?.district}
-          </p>
-          <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>
-            {otherParty?.office || 'उत्तर प्रदेश पुलिस'}
-          </span>
+        {/* Office & District */}
+        <div style={{
+          fontSize: '0.92rem',
+          color: 'rgba(255, 255, 255, 0.8)',
+          margin: '0 0 1.25rem 0'
+        }}>
+          {otherParty?.office ? `${otherParty.office} • ` : ''}
+          {otherParty?.district || 'उत्तर प्रदेश पुलिस'}
         </div>
 
-        {/* Call Status & Timer Display */}
+        {/* Status Text & Sound Equalizer or Timer */}
         {isConnected ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+            {/* Live Equalizer Animation */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: '26px' }}>
+              <div style={{ width: '4px', background: '#34d399', borderRadius: '2px', animation: 'callSoundWave 0.9s ease-in-out infinite' }} />
+              <div style={{ width: '4px', background: '#34d399', borderRadius: '2px', animation: 'callSoundWave 1.2s ease-in-out 0.2s infinite' }} />
+              <div style={{ width: '4px', background: '#34d399', borderRadius: '2px', animation: 'callSoundWave 0.7s ease-in-out 0.4s infinite' }} />
+              <div style={{ width: '4px', background: '#34d399', borderRadius: '2px', animation: 'callSoundWave 1.4s ease-in-out 0.1s infinite' }} />
+              <div style={{ width: '4px', background: '#34d399', borderRadius: '2px', animation: 'callSoundWave 0.8s ease-in-out 0.3s infinite' }} />
+            </div>
+
+            {/* Glowing Big Timer */}
             <div style={{
-              fontSize: '1.45rem',
+              fontSize: '2rem',
               fontWeight: 800,
-              letterSpacing: '0.05em',
+              letterSpacing: '0.08em',
               color: '#34d399',
-              fontVariantNumeric: 'tabular-nums'
+              fontVariantNumeric: 'tabular-nums',
+              textShadow: '0 0 20px rgba(52, 211, 153, 0.6)'
             }}>
               {formatTimer(elapsedSeconds)} / 05:00
             </div>
+
             <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              fontSize: '0.75rem',
-              color: remainingSeconds <= 30 ? '#fca5a5' : 'rgba(255,255,255,0.6)'
+              fontSize: '0.82rem',
+              color: remainingSeconds <= 30 ? '#fca5a5' : 'rgba(255,255,255,0.7)'
             }}>
-              <Clock size={12} />
+              <Clock size={14} />
               <span>
                 {remainingSeconds <= 30 
-                  ? `⚠️ कॉल समाप्त होने में ${remainingSeconds} सेकंड शेष`
-                  : `अधिकतम कॉल समय: 05 मिनट (शेष: ${formatTimer(remainingSeconds)})`
+                  ? `⚠️ कॉल समाप्त होने में केवल ${remainingSeconds} सेकंड शेष!`
+                  : `अधिकतम कॉल समय सीमा: 05 मिनट (शेष: ${formatTimer(remainingSeconds)})`
                 }
               </span>
             </div>
           </div>
         ) : (
           <div style={{
-            fontSize: '0.9rem',
-            fontWeight: 700,
-            color: isIncoming ? '#38bdf8' : 'var(--khaki-light)',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
-            gap: '6px'
+            gap: '8px'
           }}>
-            {isIncoming ? '🔔 इनकमिंग कॉल बज रही है...' : '📞 कनेक्ट किया जा रहा है (Ringing)...'}
+            <div style={{
+              fontSize: '1.15rem',
+              fontWeight: 700,
+              color: isIncoming ? '#38bdf8' : '#fde047',
+              animation: 'callIncomingBlink 1.4s ease-in-out infinite',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span>
+                {isIncoming ? '🔔 इनकमिंग विभागीय कॉल आ रही है...' : '📞 कॉलिंग... (Ringing)'}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.55)' }}>
+              {isIncoming ? 'कृपया कॉल रिसीव करने के लिए हरा बटन दबाएं' : 'अधिकारी के फोन पर रिंग जा रही है...'}
+            </div>
           </div>
         )}
 
-        {/* 5-minute Alert Warning banner if near limit */}
+        {/* Warning Banner if call limit near */}
         {isConnected && remainingSeconds <= 30 && (
           <div style={{
-            background: 'rgba(239, 68, 68, 0.2)',
+            background: 'rgba(239, 68, 68, 0.25)',
             border: '1px solid #ef4444',
-            padding: '6px 12px',
-            borderRadius: '8px',
-            fontSize: '0.75rem',
+            padding: '8px 16px',
+            borderRadius: '10px',
+            fontSize: '0.8rem',
             color: '#fca5a5',
+            marginTop: '1rem',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px'
+            gap: '8px'
           }}>
-            <AlertTriangle size={15} color="#ef4444" />
-            <span>05 मिनट की अधिकतम सीमा पूर्ण होते ही कॉल स्वतः कट जाएगी।</span>
+            <AlertTriangle size={18} color="#ef4444" />
+            <span>05 मिनट की अधिकतम सीमा पूर्ण होते ही कॉल स्वतः डिस्कनेक्ट हो जाएगी।</span>
           </div>
         )}
+      </div>
 
-        {/* Action Controls */}
+      {/* BOTTOM: Action Controls (WhatsApp / Phone Full Screen Style) */}
+      <div style={{
+        width: '100%',
+        maxWidth: '420px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '1.25rem'
+      }}>
         {isIncoming ? (
-          /* Incoming Call: Accept or Decline */
-          <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.5rem' }}>
-            <button
-              onClick={() => callManager.rejectCall()}
-              style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '50%',
-                border: 'none',
-                background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: '0 6px 20px rgba(220, 38, 38, 0.5)'
-              }}
-              title="कॉल अस्वीकार करें (Decline)"
-            >
-              <PhoneOff size={26} />
-            </button>
+          /* Incoming Call Mode: Two Big WhatsApp Action Buttons */
+          <div style={{
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'space-around',
+            alignItems: 'center',
+            padding: '0 1rem'
+          }}>
+            {/* Decline Button (Red) */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => callManager.rejectCall()}
+                style={{
+                  width: '74px',
+                  height: '74px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 8px 25px rgba(239, 68, 68, 0.6)',
+                  transition: 'transform 0.15s ease',
+                  WebkitTapHighlightColor: 'transparent'
+                }}
+                onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
+                onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+                title="कॉल अस्वीकार करें (Decline)"
+              >
+                <PhoneOff size={32} />
+              </button>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fca5a5' }}>
+                अस्वीकार करें
+              </span>
+            </div>
 
-            <button
-              onClick={() => callManager.acceptCall()}
-              style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '50%',
-                border: 'none',
-                background: 'linear-gradient(135deg, #10b981, #059669)',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: '0 6px 20px rgba(16, 185, 129, 0.5)'
-              }}
-              title="कॉल स्वीकार करें (Answer)"
-            >
-              <Phone size={26} />
-            </button>
+            {/* Accept Button (Green with Pulse Glow) */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => callManager.acceptCall()}
+                style={{
+                  width: '74px',
+                  height: '74px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 8px 30px rgba(16, 185, 129, 0.75)',
+                  transition: 'transform 0.15s ease',
+                  WebkitTapHighlightColor: 'transparent',
+                  animation: 'callAvatarPulse 1.8s infinite'
+                }}
+                onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
+                onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+                title="कॉल उठाएं (Accept)"
+              >
+                <Phone size={32} />
+              </button>
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#6ee7b7' }}>
+                कॉल उठाएं
+              </span>
+            </div>
           </div>
         ) : (
-          /* Connected or Dialing Call: Controls & Hangup */
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', width: '100%' }}>
+          /* Connected or Dialing Outgoing Call Mode */
+          <div style={{
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1.25rem'
+          }}>
+            {/* Mid Action Buttons: Mute & Speaker */}
             {isConnected && (
-              <div style={{ display: 'flex', gap: '1.25rem', justifyContent: 'center' }}>
-                {/* Mute Mic Toggle */}
-                <button
-                  type="button"
-                  onClick={() => callManager.toggleMute()}
-                  style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '50%',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: callState.isMuted ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.1)',
-                    color: callState.isMuted ? '#fca5a5' : '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer'
-                  }}
-                  title={callState.isMuted ? "माइक अनम्यूट करें" : "माइक म्यूट करें"}
-                >
-                  {callState.isMuted ? <MicOff size={20} /> : <Mic size={20} />}
-                </button>
+              <div style={{ display: 'flex', gap: '2rem', justifyContent: 'center' }}>
+                {/* Mute Mic Button */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => callManager.toggleMute()}
+                    style={{
+                      width: '56px',
+                      height: '56px',
+                      borderRadius: '50%',
+                      border: '1.5px solid rgba(255,255,255,0.25)',
+                      background: callState.isMuted ? 'rgba(239, 68, 68, 0.35)' : 'rgba(255, 255, 255, 0.12)',
+                      color: callState.isMuted ? '#fca5a5' : '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      backdropFilter: 'blur(8px)',
+                      WebkitTapHighlightColor: 'transparent'
+                    }}
+                    title={callState.isMuted ? "माइक अनम्यूट करें" : "माइक म्यूट करें"}
+                  >
+                    {callState.isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+                  </button>
+                  <span style={{ fontSize: '0.74rem', color: callState.isMuted ? '#fca5a5' : 'rgba(255,255,255,0.7)' }}>
+                    {callState.isMuted ? 'म्यूट है' : 'म्यूट'}
+                  </span>
+                </div>
 
                 {/* Speaker Indicator */}
-                <button
-                  type="button"
-                  style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '50%',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer'
-                  }}
-                  title="स्पीकर सक्रिय"
-                >
-                  <Volume2 size={20} />
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    type="button"
+                    style={{
+                      width: '56px',
+                      height: '56px',
+                      borderRadius: '50%',
+                      border: '1.5px solid rgba(255,255,255,0.25)',
+                      background: 'rgba(255, 255, 255, 0.12)',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      backdropFilter: 'blur(8px)',
+                      WebkitTapHighlightColor: 'transparent'
+                    }}
+                    title="स्पीकर सक्रिय"
+                  >
+                    <Volume2 size={24} />
+                  </button>
+                  <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.7)' }}>
+                    स्पीकर
+                  </span>
+                </div>
               </div>
             )}
 
             {/* Hangup Button */}
-            <button
-              onClick={() => callManager.endCall(true, 'completed')}
-              style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '50%',
-                border: 'none',
-                background: 'linear-gradient(135deg, #dc2626, #991b1b)',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: '0 6px 20px rgba(220, 38, 38, 0.5)'
-              }}
-              title="कॉल समाप्त करें (End Call)"
-            >
-              <PhoneOff size={26} />
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => callManager.endCall(true, 'completed')}
+                style={{
+                  width: '74px',
+                  height: '74px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #ef4444, #b91c1c)',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 8px 30px rgba(239, 68, 68, 0.7)',
+                  transition: 'transform 0.15s ease',
+                  WebkitTapHighlightColor: 'transparent'
+                }}
+                onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
+                onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+                title="कॉल समाप्त करें (End Call)"
+              >
+                <PhoneOff size={32} />
+              </button>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fca5a5' }}>
+                कॉल समाप्त करें
+              </span>
+            </div>
           </div>
         )}
 
-        <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '0.25rem' }}>
-          🔒 एंड-टू-एंड एन्क्रिप्टेड • यह कॉल विभागीय कॉल-लॉग में दर्ज होगी
+        {/* Footer Security Badge */}
+        <div style={{
+          fontSize: '0.74rem',
+          color: 'rgba(255,255,255,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          marginTop: '0.5rem'
+        }}>
+          <span>🔒 एंड-टू-एंड एन्क्रिप्टेड • यह कॉल विभागीय कॉल-लॉग में दर्ज होगी</span>
         </div>
       </div>
     </div>

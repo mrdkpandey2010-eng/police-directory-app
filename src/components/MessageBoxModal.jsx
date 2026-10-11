@@ -4,7 +4,7 @@ import {
   PhoneCall, Search, Plus, X, Download, FileText, 
   FileSpreadsheet, Image as ImageIcon, MapPin, 
   Share2, Check, CheckCheck, Compass, Info, ShieldCheck,
-  UserPlus, UserMinus, LogOut, Trash2, Crown, Shield, Home
+  UserPlus, UserMinus, LogOut, Trash2, Crown, Shield, Home, RotateCcw
 } from 'lucide-react';
 import { getChatsForUser, getUnreadCountForChat } from '../utils/storage';
 import { callManager } from '../utils/webrtc';
@@ -25,6 +25,7 @@ export default function MessageBoxModal({
   onRemoveGroupParticipant, 
   onLeaveGroupChat, 
   onDeleteGroupChat, 
+  onClearChatMessages,
   onAppendMessage, 
   onMarkChatAsRead,
   onStartEmptyDirectChat
@@ -173,6 +174,9 @@ export default function MessageBoxModal({
     if (confirmLeave) {
       onLeaveGroupChat(currentChat.id);
       setShowGroupInfoModal(false);
+      if (activeChatId === currentChat.id) {
+        setActiveChatId(null);
+      }
       setMobileView('list');
     }
   };
@@ -184,7 +188,23 @@ export default function MessageBoxModal({
     if (confirmDelete) {
       onDeleteGroupChat(currentChat.id);
       setShowGroupInfoModal(false);
+      if (activeChatId === currentChat.id) {
+        setActiveChatId(null);
+      }
       setMobileView('list');
+    }
+  };
+
+  // Handle Clear All Messages in Current Chat (Clear Chat)
+  const handleClearChat = (chatId) => {
+    const targetId = chatId || currentChat?.id;
+    if (!targetId || !onClearChatMessages) return;
+    const chatTitle = currentChat?.type === 'direct' 
+      ? (otherContact?.name || 'इस अधिकारी') 
+      : (currentChat?.title || 'इस समूह');
+    const confirmClear = window.confirm(`⚠️ चैट संदेश साफ़ करें (Clear Chat):\nक्या आप "${chatTitle}" के साथ हुई बातचीत के सभी संदेश मिटाना चाहते हैं?`);
+    if (confirmClear) {
+      onClearChatMessages(targetId);
     }
   };
 
@@ -1043,6 +1063,7 @@ export default function MessageBoxModal({
 
                 {/* Right Call & Actions in Header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {/* Group Info Button */}
                   {currentChat.type === 'group' && (
                     <button
                       type="button"
@@ -1070,6 +1091,32 @@ export default function MessageBoxModal({
                     </button>
                   )}
 
+                  {/* Direct Leave Group Button for fast exit */}
+                  {currentChat.type === 'group' && (
+                    <button
+                      type="button"
+                      onClick={handleLeaveCurrentGroup}
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        color: '#fca5a5',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="ग्रुप से बाहर निकलें (Leave Group)"
+                    >
+                      <LogOut size={13} />
+                      <span className="hide-on-mobile">ग्रुप छोड़ें</span>
+                    </button>
+                  )}
+
+                  {/* Direct Calling Buttons */}
                   {currentChat.type === 'direct' && otherContact && (
                     <>
                       <button 
@@ -1116,6 +1163,29 @@ export default function MessageBoxModal({
                       )}
                     </>
                   )}
+
+                  {/* Clear Chat Messages Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleClearChat(currentChat.id)}
+                    style={{
+                      background: 'rgba(59, 130, 246, 0.15)',
+                      border: '1px solid rgba(59, 130, 246, 0.4)',
+                      color: '#93c5fd',
+                      borderRadius: '6px',
+                      padding: '5px 8px',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="इस बातचीत के सभी संदेश साफ़ करें (Clear Chat)"
+                  >
+                    <RotateCcw size={13} />
+                    <span className="hide-on-mobile">साफ़ करें</span>
+                  </button>
 
                   {/* Delete Conversation Button (WhatsApp style removal) */}
                   <button

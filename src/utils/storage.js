@@ -1358,16 +1358,48 @@ export const removeGroupParticipant = (chats, groupId, participantIdToRemove, re
   return { updatedChats, updatedChat };
 };
 
+// Deleted chat IDs tracking to prevent cloud sync resurrection
+export const getDeletedChatIds = () => {
+  try {
+    const data = localStorage.getItem('police_deleted_chat_ids_v1');
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const addDeletedChatId = (chatId) => {
+  if (!chatId) return;
+  try {
+    const current = getDeletedChatIds();
+    if (!current.includes(chatId)) {
+      current.push(chatId);
+      localStorage.setItem('police_deleted_chat_ids_v1', JSON.stringify(current));
+    }
+  } catch (e) {}
+};
+
+export const removeDeletedChatId = (chatId) => {
+  if (!chatId) return;
+  try {
+    const current = getDeletedChatIds().filter(id => id !== chatId);
+    localStorage.setItem('police_deleted_chat_ids_v1', JSON.stringify(current));
+  } catch (e) {}
+};
+
 // Leave a group chat
 export const leaveGroupChat = (chats, groupId, leavingUser) => {
   if (!Array.isArray(chats) || !groupId || !leavingUser) {
     return { updatedChats: chats, targetChat: null };
   }
 
+  // Register in user's deleted list so it vanishes from their chat view immediately
+  addDeletedChatId(groupId);
+
   const targetChat = chats.find(c => c.id === groupId);
   if (!targetChat) return { updatedChats: chats, targetChat: null };
 
-  const systemText = `${leavingUser.name || 'सदस्य'} ग्रुप से बाहर हो गए।`;
+  const systemText = `${leavingUser.name || 'सदस्य'} (${leavingUser.post || 'अधिकारी'}) ग्रुप से बाहर हो गए।`;
 
   const systemMessage = {
     id: `grp-sys-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -1381,10 +1413,12 @@ export const leaveGroupChat = (chats, groupId, leavingUser) => {
   };
 
   const updatedParticipants = (targetChat.participants || []).filter(id => id !== leavingUser.id);
+  const leftUsers = Array.from(new Set([...(targetChat.leftUsers || []), leavingUser.id]));
 
   const updatedChat = {
     ...targetChat,
     participants: updatedParticipants,
+    leftUsers,
     messages: [...(targetChat.messages || []), systemMessage],
     lastMessage: systemText,
     lastUpdated: new Date().toISOString()
@@ -1396,14 +1430,39 @@ export const leaveGroupChat = (chats, groupId, leavingUser) => {
   return { updatedChats, updatedChat };
 };
 
-// Delete a group chat completely
+// Delete a group or direct chat completely
 export const deleteGroupChat = (chats, groupId) => {
   if (!Array.isArray(chats) || !groupId) return chats;
+  // Mark as deleted in persistent blacklist
+  addDeletedChatId(groupId);
   const updatedChats = chats.filter(c => c.id !== groupId);
   saveChats(updatedChats);
   return updatedChats;
 };
 
+// Clear all messages inside a specific conversation (Clear Chat)
+export const clearChatMessages = (chats, chatId, userId) => {
+  if (!Array.isArray(chats) || !chatId) {
+    return { updatedChats: chats, updatedChat: null };
+  }
+
+  let updatedChat = null;
+  const updatedChats = chats.map(c => {
+    if (c.id === chatId) {
+      updatedChat = {
+        ...c,
+        messages: [],
+        lastMessage: 'चैट संदेश साफ़ किए गए (Chat Cleared)',
+        lastUpdated: new Date().toISOString()
+      };
+      return updatedChat;
+    }
+    return c;
+  });
+
+  saveChats(updatedChats);
+  return { updatedChats, updatedChat };
+};
 
 // Mark all messages in a chat as read by a user
 export const markChatAsRead = (chats, chatId, userId) => {
@@ -1466,17 +1525,40 @@ export const getUnreadCountForChat = (chat, userId) => {
 
 // Filter chats for a user (Includes Direct Chats and Group Chats)
 export const getChatsForUser = (chats, contacts, currentUser) => {
-  if (!currentUser) return [];
+  if (!currentUser || !Array.isArray(chats)) return [];
 
+  const deletedIds = getDeletedChatIds();
+
+  // If super-admin, see all except chats they explicitly deleted
   if (currentUser.role === 'admin') {
-    return chats;
+    return chats.filter(c => c && c.id && !deletedIds.includes(c.id));
   }
 
   return chats.filter(c => {
-    if (c.participants && c.participants.includes(currentUser.id)) {
-      return true;
+    if (!c || !c.id) return false;
+    // Exclude any deleted or left chats
+    if (deletedIds.includes(c.id)) return false;
+
+    // Direct P2P chat
+    if (c.type === 'direct') {
+      return Array.isArray(c.participants) && c.participants.includes(currentUser.id);
     }
+
+    // Group chat
     if (c.type === 'group') {
+      // If user has explicitly left this group
+      if (Array.isArray(c.leftUsers) && c.leftUsers.includes(currentUser.id)) {
+        return false;
+      }
+
+      // If user is explicitly in the group's participants list
+      if (Array.isArray(c.participants)) {
+        if (c.participants.includes(currentUser.id)) return true;
+        // If participants is not empty and user is not in it, do not show
+        if (c.participants.length > 0) return false;
+      }
+
+      // Fallback for open district/state groups without an explicit participants list
       if (c.district === 'सभी ज़िले (All Districts)' || c.district === currentUser.district) {
         return true;
       }
