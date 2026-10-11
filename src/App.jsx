@@ -186,6 +186,7 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [adminInitialTab, setAdminInitialTab] = useState('pending');
   const [isAdmin2FAModalOpen, setIsAdmin2FAModalOpen] = useState(false);
   const [is2FAVerifiedThisSession, setIs2FAVerifiedThisSession] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -827,7 +828,9 @@ export default function App() {
     showToast('✅ आपने आधिकारिक अस्वीकरण एवं सेवा शर्तों को स्वीकार कर लिया है।');
   };
 
-  const handleOpenAdminPanel = () => {
+  const handleOpenAdminPanel = (tab = 'pending') => {
+    const targetTab = typeof tab === 'string' ? tab : 'pending';
+    setAdminInitialTab(targetTab);
     const cfg = getStored2FAConfig();
     if (cfg.enabled && !is2FAVerifiedThisSession) {
       setIsAdmin2FAModalOpen(true);
@@ -2195,6 +2198,7 @@ export default function App() {
         <AdminPanel
           isOpen={isAdminModalOpen}
           onClose={() => setIsAdminModalOpen(false)}
+          initialTab={adminInitialTab}
           contacts={contacts}
           currentUser={currentUser}
           coAdmins={coAdmins}

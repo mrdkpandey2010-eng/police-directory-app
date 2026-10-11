@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   X, Shield, ShieldCheck, User, Users, Lock, Phone, MessageSquare, 
   Mail, Bell, Database, Cloud, FileText, Settings, LogOut, CheckCircle2,
-  HardDrive, ShieldAlert, KeyRound, Eye, ChevronRight
+  HardDrive, ShieldAlert, KeyRound, Eye, ChevronRight, Trash2, Cpu
 } from 'lucide-react';
 import { DEFAULT_POLICIES } from '../utils/storage';
 
@@ -235,23 +235,61 @@ export default function HeaderMenuDrawer({
                 </button>
 
                 {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onTriggerBackup) {
-                        onTriggerBackup();
-                        alert('✅ 6-घंटे का सुरक्षित डेटाबेस बैकअप स्लॉट तैयार हो गया है!');
-                      }
-                      onClose();
-                    }}
-                    style={menuItemStyle}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <HardDrive size={16} color="var(--khaki-light)" />
-                      <span>तुरंत 6-घंटे बैकअप तैयार करें</span>
-                    </div>
-                    <ChevronRight size={14} color="#64748b" />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleAction(() => onOpenAdmin('recycle_bin'))}
+                      style={{ ...menuItemStyle, border: '1px solid rgba(245, 158, 11, 0.35)', background: 'rgba(245, 158, 11, 0.1)' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Trash2 size={16} color="#f59e0b" />
+                        <span style={{ color: '#fcd34d', fontWeight: 700 }}>🗑️ रीसायकल बिन लॉग्स</span>
+                      </div>
+                      <ChevronRight size={14} color="#f59e0b" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAction(() => onOpenAdmin('device_lock'))}
+                      style={{ ...menuItemStyle, border: '1px solid rgba(239, 68, 68, 0.35)', background: 'rgba(239, 68, 68, 0.1)' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Lock size={16} color="#ef4444" />
+                        <span style={{ color: '#fca5a5', fontWeight: 700 }}>🔒 प्रतिबंधित डिवाइस सुरक्षा लॉक</span>
+                      </div>
+                      <ChevronRight size={14} color="#ef4444" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAction(() => onOpenAdmin('reg_device_logs'))}
+                      style={menuItemStyle}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Cpu size={16} color="#38bdf8" />
+                        <span>📱 पंजीकृत डिवाइस ऑडिट लॉग्स</span>
+                      </div>
+                      <ChevronRight size={14} color="#64748b" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onTriggerBackup) {
+                          onTriggerBackup();
+                          alert('✅ 6-घंटे का सुरक्षित डेटाबेस बैकअप स्लॉट तैयार हो गया है!');
+                        }
+                        onClose();
+                      }}
+                      style={menuItemStyle}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <HardDrive size={16} color="var(--khaki-light)" />
+                        <span>तुरंत 6-घंटे बैकअप तैयार करें</span>
+                      </div>
+                      <ChevronRight size={14} color="#64748b" />
+                    </button>
+                  </>
                 )}
               </div>
             </div>

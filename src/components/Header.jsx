@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Lock, MessageSquare, User, LogOut, ChevronDown, Search 
+  Lock, MessageSquare, User, LogOut, ChevronDown, Search, Trash2, Shield 
 } from 'lucide-react';
 
 export default function Header({ 
@@ -328,6 +328,66 @@ export default function Header({
                       <MessageSquare size={15} color="var(--khaki-light, #dfb97e)" />
                       <span>सुझाव व फीडबैक</span>
                     </button>
+
+                    {/* Admin Specific Quick Links */}
+                    {isAdmin && (
+                      <>
+                        <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileMenuOpen(false);
+                            if (onOpenAdmin) onOpenAdmin('recycle_bin');
+                          }}
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 10px',
+                            background: 'rgba(245, 158, 11, 0.1)',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            borderRadius: '6px',
+                            color: '#fcd34d',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            margin: '3px 0'
+                          }}
+                        >
+                          <Trash2 size={15} color="#f59e0b" />
+                          <span>🗑️ रीसायकल बिन लॉग्स</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileMenuOpen(false);
+                            if (onOpenAdmin) onOpenAdmin('device_lock');
+                          }}
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 10px',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: '6px',
+                            color: '#fca5a5',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            margin: '3px 0'
+                          }}
+                        >
+                          <Lock size={15} color="#ef4444" />
+                          <span>🔒 प्रतिबंधित डिवाइस सुरक्षा लॉक</span>
+                        </button>
+                      </>
+                    )}
 
                     <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
 
