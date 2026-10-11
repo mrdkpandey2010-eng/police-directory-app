@@ -14,12 +14,18 @@ import {
   getStoredAdminMasterPin, saveAdminMasterPin,
   getStoredPolicies, DEFAULT_POLICIES, addCustomPolicy,
   editPolicyItem, deleteCustomPolicyItem,
-  getStoredRegistrationLogs, updateOfficerDeviceAudit
+  getStoredRegistrationLogs, updateOfficerDeviceAudit,
+  getStoredRecycleBin, saveRecycleBinItem, permanentlyDeleteFromRecycleBin, clearRecycleBin,
+  getStoredAdminDeviceLockConfig, saveAdminDeviceLockConfig
 } from '../utils/storage';
 import { syncAllContactsToFirestore } from '../utils/firebase';
 import { validateFileSize } from '../utils/imageCompressor';
-import { fetchAllUsersPresence, fetchGlobalCallLogs, fetchRegistrationAuditLogsFromCloud } from '../utils/cloudflareR2';
-import { checkDeviceChange } from '../utils/deviceTelemetry';
+import { 
+  fetchAllUsersPresence, fetchGlobalCallLogs, fetchRegistrationAuditLogsFromCloud,
+  fetchRecycleBinFromCloud, deleteRecycledOfficerFromCloud, clearRecycleBinFromCloud,
+  fetchAdminDeviceLockFromCloud, saveAdminDeviceLockToCloud
+} from '../utils/cloudflareR2';
+import { checkDeviceChange, captureFullDeviceTelemetry } from '../utils/deviceTelemetry';
 
 export default function AdminPanel({ 
   isOpen, 
@@ -43,6 +49,7 @@ export default function AdminPanel({
   onToggleBlock,
   onToggleUserActive,
   onDeleteContact,
+  onRestoreContact,
   onContactsImported,
   onResetPassword,
   onAddCoAdmin,
@@ -78,7 +85,7 @@ export default function AdminPanel({
   
   // Guard Co-Admin from accessing super admin only tabs
   useEffect(() => {
-    if (isCoAdmin && ['terms', 'call_logs', 'backups', 'coadmins', 'master', '2fa_settings', 'cloud_chat', 'reg_device_logs'].includes(activeTab)) {
+    if (isCoAdmin && ['terms', 'call_logs', 'backups', 'coadmins', 'master', '2fa_settings', 'cloud_chat', 'reg_device_logs', 'manage', 'activity_report', 'recycle_bin'].includes(activeTab)) {
       setActiveTab('pending');
     }
   }, [isCoAdmin, activeTab]);
@@ -103,6 +110,21 @@ export default function AdminPanel({
   const [regLogSearch, setRegLogSearch] = useState('');
   const [regDeviceChangeFilter, setRegDeviceChangeFilter] = useState('all'); // 'all' | 'changed_only'
   const [selectedOfficerDeviceAudit, setSelectedOfficerDeviceAudit] = useState(null);
+
+  // Recycle Bin state
+  const [recycleBinList, setRecycleBinList] = useState([]);
+  const [recycleSearch, setRecycleSearch] = useState('');
+  const [recycleDistrictFilter, setRecycleDistrictFilter] = useState('all');
+  const [recycleNotice, setRecycleNotice] = useState('');
+
+  // Super Admin Device Lock State
+  const [adminDeviceLockConfig, setAdminDeviceLockConfig] = useState({
+    lockEnabled: false,
+    authorizedSignatures: [],
+    authorizedDevices: []
+  });
+  const [currentDeviceSignature, setCurrentDeviceSignature] = useState('');
+  const [deviceLockNotice, setDeviceLockNotice] = useState('');
 
   // Backups state
   const [backups, setBackups] = useState([]);
@@ -240,6 +262,40 @@ export default function AdminPanel({
             setRegistrationLogs(merged);
           }
         }).catch(err => console.warn('Cloud registration logs fetch err:', err));
+      }
+
+      // 3. Load Recycle Bin (Super Admin)
+      const localRecycle = getStoredRecycleBin();
+      setRecycleBinList(localRecycle);
+      if (isAdmin) {
+        fetchRecycleBinFromCloud().then(cloudRecycle => {
+          if (Array.isArray(cloudRecycle) && cloudRecycle.length > 0) {
+            const existingIds = new Set(localRecycle.map(r => r.id || r.pno));
+            const merged = [...localRecycle];
+            cloudRecycle.forEach(cr => {
+              if (cr && !existingIds.has(cr.id || cr.pno)) {
+                existingIds.add(cr.id || cr.pno);
+                merged.push(cr);
+              }
+            });
+            merged.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+            setRecycleBinList(merged);
+          }
+        }).catch(err => console.warn('Recycle bin cloud fetch err:', err));
+
+        // 4. Load Admin Device Lock Config
+        const localLock = getStoredAdminDeviceLockConfig();
+        setAdminDeviceLockConfig(localLock);
+        fetchAdminDeviceLockFromCloud().then(cloudLock => {
+          if (cloudLock && typeof cloudLock === 'object') {
+            setAdminDeviceLockConfig(cloudLock);
+            saveAdminDeviceLockConfig(cloudLock);
+          }
+        }).catch(err => console.warn('Admin lock cloud fetch err:', err));
+
+        captureFullDeviceTelemetry().then(t => {
+          if (t && t.signature) setCurrentDeviceSignature(t.signature);
+        }).catch(e => {});
       }
 
       setBackups(getStoredBackups());
@@ -799,13 +855,15 @@ export default function AdminPanel({
               )}
             </button>
 
-            <button 
-              className={`admin-tab ${activeTab === 'manage' ? 'active' : ''}`}
-              onClick={() => setActiveTab('manage')}
-            >
-              <Users size={16} />
-              यूज़र्स प्रबंधन ({scopedContacts.length})
-            </button>
+            {isAdmin && (
+              <button 
+                className={`admin-tab ${activeTab === 'manage' ? 'active' : ''}`}
+                onClick={() => setActiveTab('manage')}
+              >
+                <Users size={16} />
+                यूज़र्स प्रबंधन ({scopedContacts.length})
+              </button>
+            )}
 
             <button 
               className={`admin-tab ${activeTab === 'transfers' ? 'active' : ''}`}
@@ -901,6 +959,32 @@ export default function AdminPanel({
                   <HardDrive size={16} />
                   6-घंटे ऑटो बैकअप ({Array.isArray(backups) ? backups.length : 0}/5)
                 </button>
+
+                <button 
+                  className={`admin-tab ${activeTab === 'recycle_bin' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('recycle_bin')}
+                >
+                  <Trash2 size={16} />
+                  🗑️ रीसायकल बिन ({Array.isArray(recycleBinList) ? recycleBinList.length : 0})
+                  {recycleBinList.length > 0 && (
+                    <span className="tab-badge" style={{ background: '#f59e0b', color: '#000', fontWeight: 800 }}>
+                      {recycleBinList.length}
+                    </span>
+                  )}
+                </button>
+
+                <button 
+                  className={`admin-tab ${activeTab === 'activity_report' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('activity_report')}
+                >
+                  <Activity size={16} />
+                  📊 यूज़र्स गतिविधि रिपोर्ट
+                  {activityStats.online > 0 && (
+                    <span className="tab-badge" style={{ background: '#10b981', color: '#fff', fontWeight: 800 }}>
+                      {activityStats.online}
+                    </span>
+                  )}
+                </button>
               </>
             )}
 
@@ -910,19 +994,6 @@ export default function AdminPanel({
             >
               <Eye size={16} />
               नंबर अनुमति ({Array.isArray(phonePermissions) ? phonePermissions.filter(p => p && p.status === 'pending').length : 0})
-            </button>
-
-            <button 
-              className={`admin-tab ${activeTab === 'activity_report' ? 'active' : ''}`}
-              onClick={() => setActiveTab('activity_report')}
-            >
-              <Activity size={16} />
-              📊 यूज़र्स गतिविधि रिपोर्ट
-              {activityStats.online > 0 && (
-                <span className="tab-badge" style={{ background: '#10b981', color: '#fff', fontWeight: 800 }}>
-                  {activityStats.online}
-                </span>
-              )}
             </button>
 
             {isAdmin && (
@@ -1039,8 +1110,8 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* TAB 2: MANAGE USERS, ACTIVE/INACTIVE & PROMOTION */}
-          {activeTab === 'manage' && (
+          {/* TAB 2: MANAGE USERS, ACTIVE/INACTIVE & PROMOTION (Super Admin Only) */}
+          {isAdmin && activeTab === 'manage' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                 <input
@@ -3141,6 +3212,248 @@ export default function AdminPanel({
             </div>
           )}
 
+          {/* TAB: RECYCLE BIN (Super Admin Only) */}
+          {isAdmin && activeTab === 'recycle_bin' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.75)',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                padding: '0.9rem 1.1rem',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div>
+                  <h4 style={{ margin: 0, color: '#fca5a5', fontSize: '0.98rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Trash2 size={18} color="#ef4444" />
+                    <span>🗑️ रीसायकल बिन एवं पुनः पंजीकरण वॉल्ट (Recycle Bin & Re-Registration Vault)</span>
+                  </h4>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '0.76rem', color: '#cbd5e1' }}>
+                    हटाए गए अथवा सुपर ब्लॉक अधिकारियों का सुरक्षित डेटाबेस। जब तक एडमिन द्वारा पूर्णतः साफ़ नहीं किया जाता, यह डेटा सुरक्षित रहेगा। डिलीट होने के बाद संबंधित अधिकारी अपने नए डिवाइस से नया पंजीकरण कर सकते हैं।
+                  </p>
+                </div>
+                {recycleBinList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('⚠️ चेतावनी: क्या आप सुनिश्चित हैं कि रीसायकल बिन के समस्त रिकॉर्ड्स स्थाई रूप से मिटाना चाहते हैं? यह क्रिया वापस नहीं होगी।')) {
+                        clearRecycleBin();
+                        clearRecycleBinFromCloud();
+                        setRecycleBinList([]);
+                        setRecycleNotice('✅ रीसायकल बिन पूर्णतः खाली कर दिया गया।');
+                        setTimeout(() => setRecycleNotice(''), 3000);
+                      }
+                    }}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      border: '1px solid #ef4444',
+                      color: '#fca5a5',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🗑️ रीसायकल बिन खाली करें
+                  </button>
+                )}
+              </div>
+
+              {recycleNotice && (
+                <div className="status-tag status-approved" style={{ padding: '0.75rem', width: '100%', fontSize: '0.85rem' }}>
+                  <CheckCircle size={16} />
+                  {recycleNotice}
+                </div>
+              )}
+
+              {/* Filters & Search */}
+              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="अधिकारी नाम, PNO, मोबाइल या ज़िला द्वारा खोजें..."
+                  value={recycleSearch}
+                  onChange={e => setRecycleSearch(e.target.value)}
+                  style={{ flex: 1, minWidth: '220px' }}
+                />
+                <select
+                  className="form-select"
+                  value={recycleDistrictFilter}
+                  onChange={e => setRecycleDistrictFilter(e.target.value)}
+                  style={{ width: 'auto', minWidth: '160px' }}
+                >
+                  <option value="all">समस्त ज़िले ({recycleBinList.length})</option>
+                  {safeDistricts.filter((_, i) => i > 0).map((d, i) => (
+                    <option key={i} value={d}>{d}</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600 }}>
+                  कुल रिकॉर्ड्स: <strong style={{ color: 'var(--gold-primary)' }}>{recycleBinList.length}</strong>
+                </div>
+              </div>
+
+              {/* Recycle Bin Table */}
+              <div style={{ overflowX: 'auto', background: 'rgba(0,0,0,0.25)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <table className="admin-table" style={{ width: '100%', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '15%' }}>हटाने का समय</th>
+                      <th style={{ width: '22%' }}>अधिकारी विवरण</th>
+                      <th style={{ width: '18%' }}>जनपद & थाना</th>
+                      <th style={{ width: '18%' }}>पंजीकृत डिवाइस</th>
+                      <th style={{ width: '14%' }}>हटाने वाला & कारण</th>
+                      <th style={{ width: '13%' }}>कार्रवाई</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recycleBinList.filter(item => {
+                      if (recycleDistrictFilter !== 'all' && item.district !== recycleDistrictFilter) return false;
+                      if (!recycleSearch.trim()) return true;
+                      const q = recycleSearch.toLowerCase();
+                      return (item.name || '').toLowerCase().includes(q) ||
+                        (item.pno || '').toLowerCase().includes(q) ||
+                        (item.phone || '').includes(q) ||
+                        (item.district || '').toLowerCase().includes(q);
+                    }).length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+                          रीसायकल बिन वर्तमान में खाली है।
+                        </td>
+                      </tr>
+                    ) : (
+                      recycleBinList.filter(item => {
+                        if (recycleDistrictFilter !== 'all' && item.district !== recycleDistrictFilter) return false;
+                        if (!recycleSearch.trim()) return true;
+                        const q = recycleSearch.toLowerCase();
+                        return (item.name || '').toLowerCase().includes(q) ||
+                          (item.pno || '').toLowerCase().includes(q) ||
+                          (item.phone || '').includes(q) ||
+                          (item.district || '').toLowerCase().includes(q);
+                      }).map((item, idx) => {
+                        const d = item.registeredDevice || item.device || {};
+                        return (
+                          <tr key={item.id || idx}>
+                            <td style={{ color: '#cbd5e1', fontSize: '0.76rem' }}>
+                              {item.deletedAt ? new Date(item.deletedAt).toLocaleString('hi-IN') : 'हाल ही में'}
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 700, color: '#f8fafc' }}>{item.name || 'अज्ञात'}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--khaki-light)' }}>
+                                {item.post || 'कार्मिक'} {item.pno ? `• PNO: ${item.pno}` : ''}
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                                📞 {item.phone || 'N/A'}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{item.district}</div>
+                              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{item.office || '—'}</div>
+                            </td>
+                            <td>
+                              <div style={{ fontSize: '0.74rem', color: '#e2e8f0' }}>
+                                📱 {d.deviceModel || d.platform || 'सामान्य डिवाइस'}
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                                {d.os || ''} {d.browser ? `• ${d.browser}` : ''}
+                              </div>
+                              {d.ip && (
+                                <div style={{ fontSize: '0.7rem', color: '#38bdf8', fontFamily: 'monospace' }}>
+                                  🌐 {d.ip}
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ fontSize: '0.72rem', color: '#cbd5e1', fontWeight: 600 }}>
+                                👤 {item.deletedBy || 'प्रशासक'} ({item.deletedByRole || 'Admin'})
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: '#fca5a5' }}>
+                                {item.deletionReason || 'पुनः पंजीकरण हेतु हटाया गया'}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (window.confirm(`क्या आप ${item.name} (${item.pno}) को पुनः सक्रिय सूची में पुनर्स्थापित (Restore) करना चाहते हैं?`)) {
+                                      const restoredOfficer = {
+                                        ...item,
+                                        status: 'approved',
+                                        isDeviceChanged: false,
+                                        isSuperBlocked: false
+                                      };
+                                      delete restoredOfficer.deletedAt;
+                                      delete restoredOfficer.deletedBy;
+                                      delete restoredOfficer.deletionReason;
+                                      
+                                      if (onRestoreContact) {
+                                        onRestoreContact(restoredOfficer);
+                                      } else if (onApprove) {
+                                        onApprove(restoredOfficer.id);
+                                      } else if (onContactsImported) {
+                                        onContactsImported([restoredOfficer, ...contacts.filter(c => c.id !== restoredOfficer.id)]);
+                                      }
+                                      permanentlyDeleteFromRecycleBin(item.id);
+                                      deleteRecycledOfficerFromCloud(item.id);
+                                      setRecycleBinList(prev => prev.filter(r => r.id !== item.id));
+                                      setRecycleNotice(`✅ ${item.name} को सक्रिय डायरेक्टरी में पुनर्स्थापित किया गया!`);
+                                      setTimeout(() => setRecycleNotice(''), 3000);
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'rgba(16, 185, 129, 0.2)',
+                                    border: '1px solid #10b981',
+                                    color: '#34d399',
+                                    padding: '3px 7px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.7rem',
+                                    cursor: 'pointer',
+                                    fontWeight: 700
+                                  }}
+                                  title="इस अधिकारी को सक्रिय सूची में वापस लाएं"
+                                >
+                                  🔄 पुनर्स्थापित करें
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (window.confirm(`क्या आप ${item.name} का रिकॉर्ड रीसायकल बिन से हमेशा के लिए मिटाना चाहते हैं?`)) {
+                                      permanentlyDeleteFromRecycleBin(item.id);
+                                      deleteRecycledOfficerFromCloud(item.id);
+                                      setRecycleBinList(prev => prev.filter(r => r.id !== item.id));
+                                      setRecycleNotice(`🗑️ रिकॉर्ड स्थायी रूप से हटा दिया गया।`);
+                                      setTimeout(() => setRecycleNotice(''), 3000);
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'rgba(239, 68, 68, 0.15)',
+                                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                                    color: '#f87171',
+                                    padding: '3px 7px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.7rem',
+                                    cursor: 'pointer'
+                                  }}
+                                  title="स्थायी रूप से मिटाएं"
+                                >
+                                  ❌ स्थाई मिटाएं
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* TAB: BACKUPS (6-Hour Rolling, Max 5 Slots, Super Admin Only) */}
           {isAdmin && activeTab === 'backups' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -3551,6 +3864,162 @@ export default function AdminPanel({
                   सुरक्षा पिन सहेजें (Save PIN)
                 </button>
               </div>
+
+              {/* SECTION 3: SUPER ADMIN DEVICE SECURITY LOCK */}
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.75)',
+                border: adminDeviceLockConfig.lockEnabled ? '2px solid #ef4444' : '1px solid rgba(196, 151, 86, 0.35)',
+                borderRadius: '10px',
+                padding: '1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.85rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Shield size={20} color={adminDeviceLockConfig.lockEnabled ? '#ef4444' : 'var(--khaki-primary)'} />
+                    <div>
+                      <h4 style={{ margin: 0, color: 'var(--text-bright)', fontSize: '1rem', fontWeight: 700 }}>
+                        🔒 सुपर एडमिन डिवाइस सुरक्षा लॉक (Device Restriction Lock)
+                      </h4>
+                      <div style={{ fontSize: '0.76rem', color: '#94a3b8' }}>
+                        सुपर एडमिन आईडी को अन्य किसी भी अनधिकृत मोबाइल/ब्राउज़र पर लॉगिन होने से प्रतिबंधित करने का नियंत्रण
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{
+                    padding: '3px 9px',
+                    borderRadius: '12px',
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    background: adminDeviceLockConfig.lockEnabled ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                    color: adminDeviceLockConfig.lockEnabled ? '#f87171' : '#34d399',
+                    border: adminDeviceLockConfig.lockEnabled ? '1px solid #ef4444' : '1px solid #10b981'
+                  }}>
+                    {adminDeviceLockConfig.lockEnabled ? '🔒 अन्य डिवाइस लॉगिन प्रतिबंधित (अनाधिकृत)' : '🔓 अन्य डिवाइस लॉगिन अधिकृत'}
+                  </span>
+                </div>
+
+                {deviceLockNotice && (
+                  <div className="status-tag status-approved" style={{ padding: '0.6rem', fontSize: '0.8rem' }}>
+                    <CheckCircle size={14} /> {deviceLockNotice}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.82rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.25)', padding: '0.75rem 1rem', borderRadius: '8px', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ maxWidth: '380px' }}>
+                      <div style={{ fontWeight: 700, color: '#f8fafc' }}>
+                        डिवाइस लॉक स्थिति (Toggle Lock)
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                        सक्रिय करने पर केवल नीचे अधिकृत डिवाइस से ही सुपर एडमिन लॉगिन संभव होगा। अन्य सभी मोबाइल/ब्राउज़र पर लॉगिन तत्काल ब्लॉक रहेगा।
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = {
+                          ...adminDeviceLockConfig,
+                          lockEnabled: !adminDeviceLockConfig.lockEnabled,
+                          authorizedSignatures: (adminDeviceLockConfig.authorizedSignatures && adminDeviceLockConfig.authorizedSignatures.length > 0)
+                            ? adminDeviceLockConfig.authorizedSignatures 
+                            : (currentDeviceSignature ? [currentDeviceSignature] : ['super_admin_primary_device'])
+                        };
+                        setAdminDeviceLockConfig(updated);
+                        saveAdminDeviceLockConfig(updated);
+                        saveAdminDeviceLockToCloud(updated);
+                        setDeviceLockNotice(`✅ सुपर एडमिन डिवाइस लॉक ${updated.lockEnabled ? 'सक्रिय (अन्य डिवाइस प्रतिबंधित)' : 'निष्क्रिय (अन्य डिवाइस अधिकृत)'} किया गया!`);
+                        setTimeout(() => setDeviceLockNotice(''), 3500);
+                      }}
+                      className={`btn ${adminDeviceLockConfig.lockEnabled ? 'btn-danger' : 'btn-success'}`}
+                      style={{ padding: '6px 14px', fontSize: '0.8rem', fontWeight: 700 }}
+                    >
+                      {adminDeviceLockConfig.lockEnabled ? '🔓 डिवाइस लॉक हटाएं (अन्य अधिकृत करें)' : '🔒 डिवाइस लॉक लगाएं (अन्य अनाधिकृत करें)'}
+                    </button>
+                  </div>
+
+                  {/* Current Device Register */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.15)', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div>
+                      <span style={{ fontSize: '0.74rem', color: '#cbd5e1' }}>
+                        वर्तमान प्रयुक्त डिवाइस: <strong style={{ color: 'var(--gold-primary)' }}>{currentDeviceSignature ? currentDeviceSignature.split('__')[0] : 'वर्तमान ब्राउज़र/डिवाइस'}</strong>
+                      </span>
+                      <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                        सिग्नेचर: {currentDeviceSignature || 'प्राप्त किया जा रहा है...'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const registerCurrent = (sig) => {
+                          const list = adminDeviceLockConfig.authorizedSignatures || [];
+                          if (!list.includes(sig)) {
+                            const updated = {
+                              ...adminDeviceLockConfig,
+                              authorizedSignatures: [...list, sig]
+                            };
+                            setAdminDeviceLockConfig(updated);
+                            saveAdminDeviceLockConfig(updated);
+                            saveAdminDeviceLockToCloud(updated);
+                            setDeviceLockNotice('✅ वर्तमान डिवाइस को सुपर एडमिन अधिकृत डिवाइस सूची में जोड़ा गया!');
+                          } else {
+                            setDeviceLockNotice('ℹ️ यह डिवाइस पहले से ही अधिकृत है।');
+                          }
+                          setTimeout(() => setDeviceLockNotice(''), 3000);
+                        };
+
+                        if (!currentDeviceSignature) {
+                          captureFullDeviceTelemetry().then(t => {
+                            const sig = t.signature || 'browser_current';
+                            setCurrentDeviceSignature(sig);
+                            registerCurrent(sig);
+                          });
+                        } else {
+                          registerCurrent(currentDeviceSignature);
+                        }
+                      }}
+                      className="btn btn-secondary"
+                      style={{ padding: '4px 10px', fontSize: '0.74rem' }}
+                    >
+                      ✅ वर्तमान डिवाइस को अधिकृत करें
+                    </button>
+                  </div>
+
+                  {/* Authorized devices list */}
+                  {adminDeviceLockConfig.authorizedSignatures && adminDeviceLockConfig.authorizedSignatures.length > 0 && (
+                    <div style={{ marginTop: '0.25rem' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, marginBottom: '4px' }}>
+                        अधिकृत डिवाइस सिग्नेचर सूची ({adminDeviceLockConfig.authorizedSignatures.length}):
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {adminDeviceLockConfig.authorizedSignatures.map((sig, i) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.04)', padding: '5px 8px', borderRadius: '4px', fontSize: '0.72rem' }}>
+                            <span style={{ fontFamily: 'monospace', color: '#38bdf8' }}>📱 {sig}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = {
+                                  ...adminDeviceLockConfig,
+                                  authorizedSignatures: adminDeviceLockConfig.authorizedSignatures.filter(s => s !== sig)
+                                };
+                                setAdminDeviceLockConfig(updated);
+                                saveAdminDeviceLockConfig(updated);
+                                saveAdminDeviceLockToCloud(updated);
+                                setDeviceLockNotice('🗑️ डिवाइस अधिकार वापस लिया गया।');
+                                setTimeout(() => setDeviceLockNotice(''), 3000);
+                              }}
+                              style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.7rem' }}
+                            >
+                              अधिकार हटाएं
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -3699,8 +4168,8 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* TAB: ACTIVITY REPORT */}
-          {activeTab === 'activity_report' && (
+          {/* TAB: ACTIVITY REPORT (Super Admin Only) */}
+          {isAdmin && activeTab === 'activity_report' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {/* Header banner */}
               <div style={{

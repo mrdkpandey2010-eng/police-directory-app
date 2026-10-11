@@ -319,28 +319,39 @@ export const captureFullDeviceTelemetry = async () => {
  */
 export const checkDeviceChange = (registeredDevice, currentTelemetry) => {
   if (!registeredDevice || !currentTelemetry) {
-    return { isChanged: false };
+    return { isChanged: false, reasons: [] };
   }
 
-  // If registered device has a signature, compare
-  const regSig = (registeredDevice.signature || `${registeredDevice.os}__${registeredDevice.deviceModel}__${registeredDevice.screenResolution || ''}`).toLowerCase();
-  const curSig = (currentTelemetry.signature || `${currentTelemetry.os}__${currentTelemetry.deviceModel}__${currentTelemetry.screenResolution || ''}`).toLowerCase();
+  const reasons = [];
 
-  // If both have OS and deviceModel, compare directly
-  const regModel = (registeredDevice.deviceModel || registeredDevice.deviceName || '').toLowerCase();
-  const curModel = (currentTelemetry.deviceModel || currentTelemetry.deviceName || '').toLowerCase();
-  const regOs = (registeredDevice.os || '').toLowerCase();
-  const curOs = (currentTelemetry.os || '').toLowerCase();
+  const regModel = (registeredDevice.deviceModel || registeredDevice.model || registeredDevice.deviceName || '').trim().toLowerCase();
+  const curModel = (currentTelemetry.deviceModel || currentTelemetry.model || currentTelemetry.deviceName || '').trim().toLowerCase();
+  const regOs = (registeredDevice.os || '').trim().toLowerCase();
+  const curOs = (currentTelemetry.os || '').trim().toLowerCase();
+  const regBrowser = (registeredDevice.browser || '').trim().toLowerCase();
+  const curBrowser = (currentTelemetry.browser || '').trim().toLowerCase();
+  const regPlatform = (registeredDevice.platform || '').trim().toLowerCase();
+  const curPlatform = (currentTelemetry.platform || '').trim().toLowerCase();
 
   const isModelDifferent = regModel && curModel && !curModel.includes(regModel) && !regModel.includes(curModel);
   const isOsDifferent = regOs && curOs && !curOs.includes(regOs) && !regOs.includes(curOs);
+  const isPlatformDifferent = regPlatform && curPlatform && regPlatform !== curPlatform;
+  const isBrowserDifferent = regBrowser && curBrowser && !curBrowser.includes(regBrowser) && !regBrowser.includes(curBrowser);
 
-  const isChanged = (regSig && curSig && regSig !== curSig && (isModelDifferent || isOsDifferent)) || 
-                    (isModelDifferent && isOsDifferent);
+  if (isModelDifferent) reasons.push(`डिवाइस मॉडल भिन्न (${registeredDevice.deviceModel || registeredDevice.deviceName || 'मूल'} ≠ ${currentTelemetry.deviceModel || currentTelemetry.deviceName || 'वर्तमान'})`);
+  if (isOsDifferent) reasons.push(`ऑपरेटिंग सिस्टम भिन्न (${registeredDevice.os || 'मूल'} ≠ ${currentTelemetry.os || 'वर्तमान'})`);
+  if (isPlatformDifferent) reasons.push(`प्लेटफ़ॉर्म भिन्न (${registeredDevice.platform || 'मूल'} ≠ ${currentTelemetry.platform || 'वर्तमान'})`);
+  if (isBrowserDifferent) reasons.push(`ब्राउज़र भिन्न (${registeredDevice.browser || 'मूल'} ≠ ${currentTelemetry.browser || 'वर्तमान'})`);
+
+  const regSig = (registeredDevice.signature || '').toLowerCase();
+  const curSig = (currentTelemetry.signature || '').toLowerCase();
+
+  const isChanged = reasons.length > 0 || (regSig && curSig && regSig !== curSig && (isModelDifferent || isOsDifferent || isBrowserDifferent));
 
   if (isChanged) {
     return {
       isChanged: true,
+      reasons,
       oldDevice: registeredDevice.deviceName || `${registeredDevice.model || ''} (${registeredDevice.os || ''})`,
       newDevice: currentTelemetry.deviceName || `${currentTelemetry.model || ''} (${currentTelemetry.os || ''})`,
       oldIp: registeredDevice.ip || 'अज्ञात',
@@ -349,5 +360,5 @@ export const checkDeviceChange = (registeredDevice, currentTelemetry) => {
     };
   }
 
-  return { isChanged: false };
+  return { isChanged: false, reasons: [] };
 };

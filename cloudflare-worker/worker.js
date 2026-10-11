@@ -198,6 +198,89 @@ export default {
         }
       }
 
+      // 5B. User-specific Deleted Chat IDs: /api/chats/deleted?userId=...
+      if (path === '/api/chats/deleted') {
+        const userId = url.searchParams.get('userId');
+        if (!userId) {
+          return new Response(JSON.stringify({ error: 'Missing userId parameter' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        if (request.method === 'GET') {
+          const data = await getItem(`deleted_chats_user_${userId}`);
+          return new Response(data || JSON.stringify([]), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        if (request.method === 'POST') {
+          const body = await request.text();
+          await putItem(`deleted_chats_user_${userId}`, body);
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      // 5C. Recycle Bin for Deleted Officers: /api/recycle-bin/*
+      if (path.startsWith('/api/recycle-bin')) {
+        if (path === '/api/recycle-bin/all' && request.method === 'GET') {
+          const data = await getItem('admin_recycle_bin');
+          return new Response(data || JSON.stringify([]), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        if (path === '/api/recycle-bin/save' && request.method === 'POST') {
+          const body = await request.text();
+          const recycledOfficer = JSON.parse(body);
+          const str = await getItem('admin_recycle_bin');
+          let bin = [];
+          try { bin = str ? JSON.parse(str) : []; } catch (e) {}
+          if (!Array.isArray(bin)) bin = [];
+          const updatedBin = [recycledOfficer, ...bin.filter(b => b.id !== recycledOfficer.id && (!recycledOfficer.pno || b.pno !== recycledOfficer.pno))];
+          await putItem('admin_recycle_bin', JSON.stringify(updatedBin));
+          return new Response(JSON.stringify({ success: true, count: updatedBin.length }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        if (path === '/api/recycle-bin/delete' && request.method === 'POST') {
+          const body = await request.text();
+          const { officerId } = JSON.parse(body);
+          const str = await getItem('admin_recycle_bin');
+          let bin = [];
+          try { bin = str ? JSON.parse(str) : []; } catch (e) {}
+          const updatedBin = bin.filter(b => b.id !== officerId && b.officerId !== officerId);
+          await putItem('admin_recycle_bin', JSON.stringify(updatedBin));
+          return new Response(JSON.stringify({ success: true, count: updatedBin.length }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        if (path === '/api/recycle-bin/clear' && request.method === 'POST') {
+          await putItem('admin_recycle_bin', JSON.stringify([]));
+          return new Response(JSON.stringify({ success: true, count: 0 }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      // 5D. Super Admin Device Lock Configuration: /api/admin/device-lock
+      if (path === '/api/admin/device-lock') {
+        if (request.method === 'GET') {
+          const data = await getItem('admin_device_lock_config');
+          return new Response(data || JSON.stringify({ lockEnabled: false, authorizedDevices: [] }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        if (request.method === 'POST') {
+          const body = await request.text();
+          JSON.parse(body);
+          await putItem('admin_device_lock_config', body);
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
       // 6. In-App Voice Call Signaling: /api/calls/*
       if (path.startsWith('/api/calls')) {
         // A. Ring / Initiate Call: /api/calls/ring

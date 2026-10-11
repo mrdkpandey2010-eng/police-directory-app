@@ -136,13 +136,25 @@ import {
   clearCallLogs,
   markCallLogsAsSeen,
   getUnseenMissedCallsCount,
-  updateOfficerDeviceAudit
+  updateOfficerDeviceAudit,
+  saveRecycleBinItem,
+  getUserDeletedChatIds,
+  saveUserDeletedChatIdsLocal,
+  addUserDeletedChatIdLocal
 } from './utils/storage';
 import { getNotificationPermissionStatus, requestAppNotificationPermission } from './utils/notifications';
 import TermsFooter from './components/TermsFooter';
 import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall, PhoneMissed } from 'lucide-react';
 import { callManager } from './utils/webrtc';
-import { sendPresenceHeartbeat, fetchCallHistoryFromCloudflare, deleteCallHistoryFromCloudflare, saveRegistrationAuditLogToCloud } from './utils/cloudflareR2';
+import { 
+  sendPresenceHeartbeat, 
+  fetchCallHistoryFromCloudflare, 
+  deleteCallHistoryFromCloudflare, 
+  saveRegistrationAuditLogToCloud,
+  fetchUserDeletedChatIds,
+  saveUserDeletedChatIds,
+  saveRecycleBinItemToCloud
+} from './utils/cloudflareR2';
 import { captureFullDeviceTelemetry } from './utils/deviceTelemetry';
 
 export default function App() {
@@ -601,12 +613,14 @@ export default function App() {
     const unsubscribe = subscribeToFirestoreChats((cloudChats) => {
       if (!Array.isArray(cloudChats) || cloudChats.length === 0) return;
 
-      const deletedIds = getDeletedChatIds();
+      const userDeleted = currentUser?.id ? getUserDeletedChatIds(currentUser.id) : [];
+      const globalDeleted = getDeletedChatIds();
+      const allDeletedIds = Array.from(new Set([...globalDeleted, ...userDeleted]));
 
       setChats((prevChats) => {
         const mergedMap = new Map();
         (prevChats || []).forEach((c) => {
-          if (!deletedIds.includes(c.id)) {
+          if (!allDeletedIds.includes(c.id)) {
             mergedMap.set(c.id, c);
           }
         });
@@ -615,7 +629,7 @@ export default function App() {
 
         cloudChats.forEach((cloudChat) => {
           // If this chat is in user's deleted list, skip it! Do not resurrect!
-          if (deletedIds.includes(cloudChat.id)) return;
+          if (allDeletedIds.includes(cloudChat.id)) return;
 
           const local = mergedMap.get(cloudChat.id);
           if (!local) {
@@ -631,7 +645,7 @@ export default function App() {
             const cloudCount = cloudChat.messages?.length || 0;
             const isCloudNewer = cloudChat.lastUpdated && (!local.lastUpdated || cloudChat.lastUpdated > local.lastUpdated);
 
-            if (cloudCount > localCount || isCloudNewer) {
+            if (isCloudNewer || cloudCount > localCount) {
               mergedMap.set(cloudChat.id, { ...local, ...cloudChat });
               const lastMsg = cloudChat.messages?.[cloudChat.messages.length - 1];
               if (currentUser && lastMsg && lastMsg.senderId !== currentUser.id) {
@@ -657,6 +671,28 @@ export default function App() {
       if (unsubscribe) unsubscribe();
     };
   }, [isFirebaseConnected, currentUser]);
+
+  // Cross-Device Chat Synchronization: Fetch user-deleted chat IDs from Cloudflare Edge (Requirement 2)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    fetchUserDeletedChatIds(currentUser.id).then(cloudDeletedIds => {
+      if (Array.isArray(cloudDeletedIds) && cloudDeletedIds.length > 0) {
+        const local = getUserDeletedChatIds(currentUser.id);
+        const combined = Array.from(new Set([...local, ...cloudDeletedIds]));
+        saveUserDeletedChatIdsLocal(currentUser.id, combined);
+        
+        // Exclude these deleted chats from active chat state immediately across all devices
+        setChats(prev => {
+          const filtered = (prev || []).filter(c => !combined.includes(c.id));
+          if (filtered.length !== (prev || []).length) {
+            saveChats(filtered);
+            return filtered;
+          }
+          return prev;
+        });
+      }
+    }).catch(err => console.warn('Fetch user deleted chats note:', err));
+  }, [currentUser?.id]);
 
   // Listen for incoming in-app voice calls across devices (Cloudflare KV + WebRTC)
   useEffect(() => {
@@ -1049,15 +1085,68 @@ export default function App() {
     showToast('स्थानांतरण अनुरोध निरस्त/रद्द कर दिया गया।');
   };
 
-  // Handler: Delete Contact
+  // Handler: Super Block User on Device Change violation (Requirement 3)
+  const handleSuperBlockUser = (userId, updatedUser) => {
+    setContacts(prev => {
+      const next = prev.map(c => c.id === userId ? updatedUser : c);
+      saveContacts(next);
+      return next;
+    });
+    if (isFirebaseConfigured() && updatedUser) {
+      saveFirestoreContact(updatedUser);
+    }
+  };
+
+  // Handler: Restore Officer from Recycle Bin (Requirement 4 & 5)
+  const handleRestoreContact = (restoredOfficer) => {
+    if (!restoredOfficer) return;
+    setContacts(prev => {
+      const exists = prev.some(c => c.id === restoredOfficer.id);
+      const next = exists 
+        ? prev.map(c => c.id === restoredOfficer.id ? restoredOfficer : c)
+        : [restoredOfficer, ...prev];
+      saveContacts(next);
+      return next;
+    });
+    if (isFirebaseConfigured()) {
+      saveFirestoreContact(restoredOfficer);
+    }
+    showToast(`✅ ${restoredOfficer.name} को सक्रिय डायरेक्टरी में पुनर्स्थापित कर दिया गया!`);
+  };
+
+  // Handler: Delete Contact (Requirement 4 & 5: Moves to Recycle Bin for audit trail & frees for re-registration)
   const handleDeleteContact = (id) => {
-    if (window.confirm('क्या आप इस संपर्क को हमेशा के लिए डिलीट करना चाहते हैं?')) {
+    const targetOfficer = contacts.find(c => c.id === id);
+    if (!targetOfficer) return;
+
+    const confirmMsg = targetOfficer.isSuperBlocked
+      ? `क्या आप सुपर ब्लॉक अधिकारी "${targetOfficer.name}" की पुरानी आईडी डिलीट करके रीसायकल बिन में भेजना चाहते हैं?\n(इससे उनका पुराना रिकॉर्ड रीसायकल बिन में सुरक्षित रहेगा और वे नए डिवाइस से नया पंजीकरण कर सकेंगे)`
+      : `क्या आप अधिकारी "${targetOfficer.name}" को डिलीट करके रीसायकल बिन (Recycle Bin) में स्थानांतरित करना चाहते हैं?`;
+
+    if (window.confirm(confirmMsg)) {
+      // 1. Move old officer data to Recycle Bin
+      const isSuperAdmin = currentUser?.role === 'admin';
+      const recycledEntry = {
+        ...targetOfficer,
+        deletedAt: new Date().toISOString(),
+        deletedBy: isSuperAdmin ? 'Super Admin (मुख्यालय)' : (currentUser?.name ? `${currentUser.name} (${currentUser.district || 'Co-Admin'})` : 'Admin'),
+        deletedByRole: isSuperAdmin ? 'superadmin' : 'coadmin',
+        deletionReason: targetOfficer.isSuperBlocked 
+          ? 'डिवाइस परिवर्तन / सुपर ब्लॉक उपरांत पुनः पंजीकरण हेतु हटाया गया' 
+          : 'एडमिन / Co-Admin द्वारा हटाया गया',
+        originalRegisteredDevice: targetOfficer.registeredDevice || targetOfficer.currentDevice || null
+      };
+
+      saveRecycleBinItem(recycledEntry);
+      saveRecycleBinItemToCloud(recycledEntry).catch(err => console.warn('Cloud recycle save warning:', err));
+
+      // 2. Remove from active contacts
       const updated = deleteOfficerProfile(contacts, id);
       setContacts(updated);
       if (isFirebaseConfigured()) {
         deleteFirestoreContact(id);
       }
-      showToast('संपर्क डिलीट कर दिया गया!');
+      showToast('✅ अधिकारी रिकॉर्ड सुरक्षित रूप से रीसायकल बिन (Recycle Bin) में भेज दिया गया!');
     }
   };
 
@@ -1422,6 +1511,13 @@ export default function App() {
       setActiveChatId(null);
     }
     showToast('चैट सफलतापूर्वक हटा दी गई।');
+
+    // Real-time Cloud Synchronization of deleted chat (Requirement 2)
+    if (currentUser?.id) {
+      addUserDeletedChatIdLocal(currentUser.id, groupId);
+      const userDeletedList = getUserDeletedChatIds(currentUser.id);
+      saveUserDeletedChatIds(currentUser.id, userDeletedList).catch(err => console.warn('Cloud deleted chats sync:', err));
+    }
 
     if (isFirebaseConfigured()) {
       deleteFirestoreChat(groupId);
@@ -2062,6 +2158,7 @@ export default function App() {
         onLoginSuccess={handleLoginSuccess}
         contacts={contacts}
         coAdmins={coAdmins}
+        onSuperBlockUser={handleSuperBlockUser}
       />
 
       {/* Employee Self-Registration Modal */}
@@ -2116,6 +2213,7 @@ export default function App() {
           onToggleBlock={handleToggleBlock}
           onToggleUserActive={handleToggleUserActive}
           onDeleteContact={handleDeleteContact}
+          onRestoreContact={handleRestoreContact}
           onContactsImported={handleContactsImported}
           onResetPassword={handleResetPassword}
           onAddCoAdmin={handleAddCoAdmin}

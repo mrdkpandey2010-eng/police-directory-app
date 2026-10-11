@@ -855,4 +855,126 @@ export const fetchRegistrationAuditLogsFromCloud = async () => {
   }
 };
 
+// ---------------- USER DELETED CHATS (CROSS-DEVICE SYNC) ----------------
+
+export const fetchUserDeletedChatIds = async (userId) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !userId) return [];
+  try {
+    const res = await fetch(`${baseUrl}/api/chats/deleted?userId=${encodeURIComponent(userId)}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveUserDeletedChatIds = async (userId, deletedChatIds) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !userId) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/chats/deleted?userId=${encodeURIComponent(userId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deletedChatIds)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+// ---------------- RECYCLE BIN (DELETED OFFICERS AUDIT) ----------------
+
+export const fetchRecycleBinFromCloud = async () => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl) return [];
+  try {
+    const res = await fetch(`${baseUrl}/api/recycle-bin/all`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveRecycleBinItemToCloud = async (recycledOfficer) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !recycledOfficer) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/recycle-bin/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(recycledOfficer)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+export const deleteRecycledOfficerFromCloud = async (officerId) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !officerId) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/recycle-bin/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ officerId })
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+export const clearRecycleBinFromCloud = async () => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/recycle-bin/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+// ---------------- SUPER ADMIN DEVICE LOCK ----------------
+
+export const fetchAdminDeviceLockFromCloud = async () => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl) return null;
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/device-lock`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+};
+
+export const saveAdminDeviceLockToCloud = async (lockConfig) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !lockConfig) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/device-lock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lockConfig)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
 

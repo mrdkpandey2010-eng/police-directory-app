@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { X, Lock, Shield, User, KeyRound, Building, ArrowRight } from 'lucide-react';
+import { X, Lock, Shield, User, KeyRound, Building, ArrowRight, AlertTriangle } from 'lucide-react';
+import { captureFullDeviceTelemetry, checkDeviceChange } from '../utils/deviceTelemetry';
+import { getStoredAdminDeviceLockConfig } from '../utils/storage';
 
 export default function LoginModal({ 
   isOpen, 
   onClose, 
   onLoginSuccess, 
   contacts, 
-  coAdmins 
+  coAdmins,
+  onSuperBlockUser
 }) {
   const [activeTab, setActiveTab] = useState('user'); // 'user' | 'co_admin' | 'admin'
   const [identifier, setIdentifier] = useState('');
@@ -16,7 +19,7 @@ export default function LoginModal({
 
   if (!isOpen) return null;
 
-  const handleUserLogin = (e) => {
+  const handleUserLogin = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     const idClean = identifier.trim().toLowerCase();
@@ -38,6 +41,12 @@ export default function LoginModal({
       return;
     }
 
+    // Strict Super Block check (Requirement 3 & 4)
+    if (matchedUser.isSuperBlocked || matchedUser.status === 'super_blocked') {
+      setErrorMsg('⛔ आपका खाता सुपर ब्लॉक (Super Blocked) है!\n\nअति कठोर सुरक्षा नियम: पंजीकृत डिवाइस/ब्राउज़र के अतिरिक्त अन्य डिवाइस पर लॉगिन प्रयास के कारण यह खाता ब्लॉक किया गया है।\n\nनिवारण: अपने जनपद के Co-Admin अथवा Super Admin से संपर्क कर अपनी पुरानी आईडी डिलीट करवाएं। पुराना डेटा सुरक्षित रूप से "रीसायकल बिन" में जाने के उपरांत ही आप नए डिवाइस पर नया पंजीकरण कर सकेंगे।');
+      return;
+    }
+
     if (matchedUser.status === 'blocked') {
       setErrorMsg('आपकी प्रोफ़ाइल/लॉगिन एडमिन द्वारा ब्लॉक कर दी गई है। कृपया नोडल अधिकारी से संपर्क करें।');
       return;
@@ -51,6 +60,46 @@ export default function LoginModal({
     if ((matchedUser.password || '1234') !== pwdClean) {
       setErrorMsg('गलत पासवर्ड! कृपया सही पासवर्ड दर्ज करें।');
       return;
+    }
+
+    // Strict Device Verification (Requirement 3)
+    let currentTelemetry = null;
+    try {
+      currentTelemetry = await captureFullDeviceTelemetry();
+    } catch (e) {
+      console.warn('Telemetry capture failed:', e);
+    }
+
+    if (matchedUser.registeredDevice && currentTelemetry) {
+      const devChange = checkDeviceChange(matchedUser.registeredDevice, currentTelemetry);
+      if (devChange.isChanged) {
+        // Automatic Super Block on different device!
+        const reasonsList = devChange.reasons && devChange.reasons.length > 0 ? devChange.reasons.join(', ') : 'अनाधिकृत डिवाइस/ब्राउज़र';
+        const reasonDesc = `अनाधिकृत डिवाइस परिवर्तन: पंजीकृत (${matchedUser.registeredDevice.deviceName || 'मूल डिवाइस'}) से भिन्न (${currentTelemetry.deviceName || 'नया डिवाइस'}) पाया गया। ${reasonsList}`;
+        
+        const updatedUser = {
+          ...matchedUser,
+          isSuperBlocked: true,
+          status: 'super_blocked',
+          superBlockedAt: new Date().toISOString(),
+          superBlockReason: reasonDesc,
+          lastAttemptedDevice: currentTelemetry
+        };
+
+        if (typeof onSuperBlockUser === 'function') {
+          onSuperBlockUser(matchedUser.id, updatedUser);
+        }
+
+        setErrorMsg(`⛔ अति कठोर सुरक्षा नियम (Super Blocked):\n\nरजिस्ट्रेशन करने वाले मोबाइल/ब्राउज़र के अतिरिक्त अन्य डिवाइस (${currentTelemetry.deviceName}) से लॉगिन का प्रयास किया गया है।\n\nकारण: ${reasonsList}\n\nयह खाता स्वतः SUPER BLOCKED कर दिया गया है!\n\nनिवारण:\nयूज़र को अपनी आईडी ज़िला Co-Admin अथवा Super Admin द्वारा डिलीट करवानी होगी। आपका पुराना डेटा सुरक्षित रूप से 'रीसायकल बिन' में चला जाएगा, जिसके उपरांत ही इस नए डिवाइस से आपका नया रजिस्ट्रेशन संभव हो सकेगा।`);
+        return;
+      }
+    } else if (!matchedUser.registeredDevice && currentTelemetry) {
+      // First time device binding if user registered before telemetry was introduced
+      matchedUser.registeredDevice = currentTelemetry;
+      matchedUser.currentDevice = currentTelemetry;
+      if (typeof onSuperBlockUser === 'function') {
+        onSuperBlockUser(matchedUser.id, matchedUser);
+      }
     }
 
     // Auto-detect Co-Admin role if user is an authorized district Co-Admin
@@ -101,6 +150,16 @@ export default function LoginModal({
       return;
     }
 
+    // Check if linked user is super-blocked
+    const matchedOfficer = contacts.find(c => 
+      c.id === targetCoAdmin.userId ||
+      (c.phone && targetCoAdmin.phone && c.phone.replace(/\D/g, '') === targetCoAdmin.phone.replace(/\D/g, ''))
+    );
+    if (matchedOfficer && (matchedOfficer.isSuperBlocked || matchedOfficer.status === 'super_blocked')) {
+      setErrorMsg('⛔ यह Co-Admin खाता सुपर ब्लॉक (Super Blocked) है! डिवाइस परिवर्तन सुरक्षा उल्लंघन के कारण लॉगिन प्रतिबंधित है। Super Admin से संपर्क करें।');
+      return;
+    }
+
     if ((targetCoAdmin.password || '1234') !== password.trim()) {
       setErrorMsg('गलत Co-Admin पासवर्ड! कृपया सही पासवर्ड दर्ज करें।');
       return;
@@ -113,10 +172,29 @@ export default function LoginModal({
     onClose();
   };
 
-  const handleSuperAdminLogin = (e) => {
+  const handleSuperAdminLogin = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     if (password.trim() === '1234' || password.trim() === 'admin') {
+      // Check Super Admin Device Security Lock (Requirement 6)
+      try {
+        const lockConfig = getStoredAdminDeviceLockConfig();
+        if (lockConfig && lockConfig.lockEnabled) {
+          const currentTelemetry = await captureFullDeviceTelemetry();
+          const curSig = (currentTelemetry?.signature || '').toLowerCase();
+          const authSigs = Array.isArray(lockConfig.authorizedSignatures) 
+            ? lockConfig.authorizedSignatures.map(s => (s || '').toLowerCase()) 
+            : [];
+          
+          if (!authSigs.includes(curSig)) {
+            setErrorMsg('🔒 सुपर एडमिन डिवाइस सुरक्षा लॉक सक्रिय है!\n\nयह मोबाइल/ब्राउज़र Super Admin लॉगिन हेतु अधिकृत नहीं है (अनाधिकृत डिवाइस)।\n\nकेवल पूर्व-अधिकृत डिवाइस से ही Super Admin कंट्रोल मेनू खोला जा सकता है। अधिकृत डिवाइस के कंट्रोल मेनू में जाकर इस नए डिवाइस को अधिकृत करें अथवा डिवाइस लॉक हटाएं।');
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Super admin device check note:', err);
+      }
+
       onLoginSuccess({
         role: 'admin',
         name: 'मुख्यालय पुलिस महानिदेशक (Super Admin)',

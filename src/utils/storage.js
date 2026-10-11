@@ -1462,8 +1462,13 @@ export const markChatAsRead = (chats, chatId, userId) => {
 // Count total unread messages for a given user across all their chats
 export const getUnreadMessagesCountForUser = (chats, userId) => {
   if (!userId || !Array.isArray(chats)) return 0;
+  const userDeleted = getUserDeletedChatIds(userId);
+  const globalDeleted = getDeletedChatIds();
+  const deletedIds = Array.from(new Set([...globalDeleted, ...userDeleted]));
+
   let count = 0;
   for (const c of chats) {
+    if (!c || !c.id || deletedIds.includes(c.id)) continue;
     if (c.participants && c.participants.includes(userId)) {
       for (const m of c.messages || []) {
         if (m.senderId !== userId) {
@@ -1497,7 +1502,9 @@ export const getUnreadCountForChat = (chat, userId) => {
 export const getChatsForUser = (chats, contacts, currentUser) => {
   if (!currentUser || !Array.isArray(chats)) return [];
 
-  const deletedIds = getDeletedChatIds();
+  const userDeleted = currentUser?.id ? getUserDeletedChatIds(currentUser.id) : [];
+  const globalDeleted = getDeletedChatIds();
+  const deletedIds = Array.from(new Set([...globalDeleted, ...userDeleted]));
 
   // If super-admin, see all except chats they explicitly deleted
   if (currentUser.role === 'admin') {
@@ -2723,4 +2730,104 @@ export const saveAdminMasterPin = (newPin) => {
   try {
     localStorage.setItem(SUPER_ADMIN_PIN_KEY, String(newPin).trim());
   } catch (err) {}
+};
+
+// ---------------- RECYCLE BIN (DELETED OFFICERS AUDIT & RE-REGISTRATION) ----------------
+const RECYCLE_BIN_KEY = 'police_recycle_bin_v1';
+
+export const getStoredRecycleBin = () => {
+  try {
+    const raw = localStorage.getItem(RECYCLE_BIN_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveRecycleBinItem = (officerEntry) => {
+  if (!officerEntry) return getStoredRecycleBin();
+  try {
+    const current = getStoredRecycleBin();
+    const entry = {
+      ...officerEntry,
+      deletedAt: officerEntry.deletedAt || Date.now(),
+      deletionReason: officerEntry.deletionReason || 'प्रशासक द्वारा हटाया गया (रीसायकल बिन में सुरक्षित)'
+    };
+    const updated = [entry, ...current.filter(item => item.id !== entry.id && (!entry.pno || item.pno !== entry.pno))];
+    localStorage.setItem(RECYCLE_BIN_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (e) {
+    return getStoredRecycleBin();
+  }
+};
+
+export const permanentlyDeleteFromRecycleBin = (officerId) => {
+  try {
+    const current = getStoredRecycleBin();
+    const updated = current.filter(item => item.id !== officerId && item.officerId !== officerId);
+    localStorage.setItem(RECYCLE_BIN_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (e) {
+    return getStoredRecycleBin();
+  }
+};
+
+export const clearRecycleBin = () => {
+  try {
+    localStorage.setItem(RECYCLE_BIN_KEY, JSON.stringify([]));
+    return [];
+  } catch (e) {
+    return [];
+  }
+};
+
+// ---------------- SUPER ADMIN DEVICE LOCK CONFIGURATION ----------------
+const ADMIN_DEVICE_LOCK_KEY = 'police_admin_device_lock_v1';
+
+export const getStoredAdminDeviceLockConfig = () => {
+  try {
+    const raw = localStorage.getItem(ADMIN_DEVICE_LOCK_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return {
+    lockEnabled: false,
+    authorizedSignatures: [],
+    authorizedDevices: []
+  };
+};
+
+export const saveAdminDeviceLockConfig = (config) => {
+  try {
+    localStorage.setItem(ADMIN_DEVICE_LOCK_KEY, JSON.stringify(config));
+  } catch (e) {}
+  return config;
+};
+
+// ---------------- USER-SPECIFIC DELETED CHATS (CROSS-DEVICE SYNC) ----------------
+export const getUserDeletedChatIds = (userId) => {
+  if (!userId) return getDeletedChatIds();
+  try {
+    const userRaw = localStorage.getItem(`police_deleted_chats_user_${userId}`);
+    if (userRaw) return JSON.parse(userRaw);
+  } catch (e) {}
+  return getDeletedChatIds();
+};
+
+export const saveUserDeletedChatIdsLocal = (userId, ids) => {
+  if (!userId || !Array.isArray(ids)) return;
+  try {
+    localStorage.setItem(`police_deleted_chats_user_${userId}`, JSON.stringify(ids));
+  } catch (e) {}
+};
+
+export const addUserDeletedChatIdLocal = (userId, chatId) => {
+  if (!chatId) return;
+  addDeletedChatId(chatId);
+  if (userId) {
+    const current = getUserDeletedChatIds(userId);
+    if (!current.includes(chatId)) {
+      current.push(chatId);
+      saveUserDeletedChatIdsLocal(userId, current);
+    }
+  }
 };
