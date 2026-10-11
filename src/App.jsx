@@ -1786,7 +1786,7 @@ export default function App() {
       />
 
       {/* Official Departmental Copyright Footer */}
-      <TermsFooter />
+      <TermsFooter onOpenPolicy={() => handleOpenPolicy('disclaimer')} />
 
       {/* Lazy-Loaded Modals Section */}
       <ErrorBoundary fallbackTitle="मॉड्यूल लोड करने में समस्या आई">
@@ -1860,6 +1860,11 @@ export default function App() {
         onCancelDistrictTransfer={handleRejectDistrictTransfer}
         districts={districts}
         offices={offices}
+        onLogout={handleLogout}
+        onOpenFeedback={() => {
+          setIsProfileModalOpen(false);
+          setIsFeedbackModalOpen(true);
+        }}
       />
 
       {/* Admin / Co-Admin Control Portal */}

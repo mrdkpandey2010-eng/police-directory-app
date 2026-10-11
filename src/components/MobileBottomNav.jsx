@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Users, MessageSquare, Bell, ShieldCheck, User, Menu } from 'lucide-react';
+import { Home, Users, MessageSquare, Bell, ShieldCheck, User } from 'lucide-react';
 
 export default function MobileBottomNav({
   currentUser,
@@ -15,14 +15,13 @@ export default function MobileBottomNav({
   isChatModalOpen = false,
   isNotifsModalOpen = false,
   isAdminModalOpen = false,
-  isProfileModalOpen = false,
-  isMenuDrawerOpen = false
+  isProfileModalOpen = false
 }) {
   if (!currentUser) return null;
 
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
-  const isHomeActive = !isChatModalOpen && !isNotifsModalOpen && !isAdminModalOpen && !isProfileModalOpen && !isMenuDrawerOpen;
+  const isHomeActive = !isChatModalOpen && !isNotifsModalOpen && !isAdminModalOpen && !isProfileModalOpen;
 
   const navItemStyle = (isActive) => ({
     flex: 1,
@@ -186,19 +185,6 @@ export default function MobileBottomNav({
           <span style={labelStyle(isProfileModalOpen)}>प्रोफ़ाइल</span>
         </button>
       )}
-
-      {/* 5. TOGGLE MENU DRAWER TAB */}
-      <button
-        type="button"
-        onClick={onOpenMenu}
-        style={navItemStyle(isMenuDrawerOpen)}
-        title="टॉगल मेनू एवं सेटिंग्स (Main Menu)"
-      >
-        <div style={iconContainerStyle(isMenuDrawerOpen)}>
-          <Menu size={19} color={isMenuDrawerOpen ? '#fef08a' : '#94a3b8'} strokeWidth={isMenuDrawerOpen ? 2.4 : 2} />
-        </div>
-        <span style={labelStyle(isMenuDrawerOpen)}>मेनू</span>
-      </button>
     </nav>
   );
 }

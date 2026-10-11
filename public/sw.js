@@ -3,7 +3,7 @@
 // Provides offline capability, instant load cache, and network resiliency
 // ============================================================================
 
-const CACHE_NAME = 'up-police-cache-v4';
+const CACHE_NAME = 'up-police-cache-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
