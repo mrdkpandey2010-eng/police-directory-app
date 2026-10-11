@@ -144,10 +144,12 @@ import {
 } from './utils/storage';
 import { getNotificationPermissionStatus, requestAppNotificationPermission } from './utils/notifications';
 import TermsFooter from './components/TermsFooter';
+import MandatoryPermissionModal from './components/MandatoryPermissionModal';
 import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall, PhoneMissed } from 'lucide-react';
 import { callManager } from './utils/webrtc';
 import { 
   sendPresenceHeartbeat, 
+  fetchAllUsersPresence,
   fetchCallHistoryFromCloudflare, 
   deleteCallHistoryFromCloudflare, 
   saveRegistrationAuditLogToCloud,
@@ -163,6 +165,7 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [feedbacks, setFeedbacks] = useState([]);
   const [chats, setChats] = useState([]);
+  const [presenceMap, setPresenceMap] = useState({});
   const [currentUser, setCurrentUser] = useState(null);
   const [terms, setTerms] = useState(DEFAULT_TERMS);
   const [policies, setPolicies] = useState(DEFAULT_POLICIES);
@@ -784,6 +787,45 @@ export default function App() {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [currentUser, userLocationCoords]);
+
+  // ---------------- ALL USERS REAL-TIME ONLINE PRESENCE TRACKING ----------------
+  useEffect(() => {
+    let isCancelled = false;
+    const loadPresence = async () => {
+      try {
+        const data = await fetchAllUsersPresence();
+        if (isCancelled || !data) return;
+        const users = Array.isArray(data.users) ? data.users : (Array.isArray(data) ? data : []);
+        const map = {};
+        users.forEach(u => {
+          const info = {
+            isOnline: !!u.isOnline,
+            lastSeen: u.lastSeen,
+            platform: u.platform,
+            district: u.district,
+            post: u.post
+          };
+          if (u.userId) map[u.userId] = info;
+          if (u.id) map[u.id] = info;
+          if (u.pno) map[u.pno] = info;
+          if (u.phone) {
+            const clean = String(u.phone).replace(/\D/g, '');
+            if (clean) map[clean] = info;
+          }
+        });
+        setPresenceMap(map);
+      } catch (err) {
+        console.warn('Error loading presence map:', err);
+      }
+    };
+
+    loadPresence();
+    const presenceTimer = setInterval(loadPresence, 15000);
+    return () => {
+      isCancelled = true;
+      clearInterval(presenceTimer);
+    };
+  }, [currentUser]);
 
   // Update current user session on login
   const handleLoginSuccess = (userObj) => {
@@ -2098,6 +2140,7 @@ export default function App() {
         totalCount={filteredContacts.length}
         currentUser={currentUser}
         permissions={phonePermissions}
+        presenceMap={presenceMap}
         onEditContact={handleStartEdit}
         onToggleBlockContact={handleToggleBlock}
         onToggleActiveContact={handleToggleUserActive}
@@ -2122,6 +2165,7 @@ export default function App() {
         chats={chats}
         contacts={contacts}
         currentUser={currentUser}
+        presenceMap={presenceMap}
         activeChatId={activeChatId}
         setActiveChatId={setActiveChatId}
         isFirebaseConnected={isFirebaseConnected}
@@ -2179,6 +2223,7 @@ export default function App() {
         user={currentUser}
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
+        presenceMap={presenceMap}
         onUpdateProfileRequest={handleUserProfileUpdateRequest}
         onChangePassword={handleChangeMyPassword}
         onUpdateUniformPhoto={handleUpdateUniformPhoto}
@@ -2295,6 +2340,9 @@ export default function App() {
         }}
       />
 
+      {/* Mandatory Audio & Notification Permissions Gate Modal */}
+      <MandatoryPermissionModal currentUser={currentUser} />
+
       {/* WhatsApp / Phone Style Call History & Recent Calls Modal */}
       <RecentCallsModal
         isOpen={isCallHistoryModalOpen}
@@ -2302,6 +2350,7 @@ export default function App() {
         currentUser={currentUser}
         callLogs={callLogs}
         contacts={contacts}
+        presenceMap={presenceMap}
         onDeleteCall={(callId) => {
           const updated = deleteCallLog(callId);
           setCallLogs(updated);

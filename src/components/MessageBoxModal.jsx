@@ -9,6 +9,7 @@ import {
 import { getChatsForUser, getUnreadCountForChat } from '../utils/storage';
 import { callManager } from '../utils/webrtc';
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
+import { sendChatTypingStatus, fetchChatTypingStatus } from '../utils/cloudflareR2';
 
 export default function MessageBoxModal({ 
   isOpen, 
@@ -16,6 +17,7 @@ export default function MessageBoxModal({
   chats = [], 
   contacts = [], 
   currentUser, 
+  presenceMap = {},
   activeChatId, 
   setActiveChatId, 
   onSendDirectMessage, 
@@ -47,6 +49,9 @@ export default function MessageBoxModal({
   const docInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const chatInputRef = useRef(null);
+  const [activeTypers, setActiveTypers] = useState([]);
+  const typingTimeoutRef = useRef(null);
+  const lastSentTypingRef = useRef(0);
 
   // Modals inside messaging
   const [showNewDirectModal, setShowNewDirectModal] = useState(false);
@@ -122,6 +127,30 @@ export default function MessageBoxModal({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [isOpen, mobileView, currentChat?.messages?.length, activeChatId]);
 
+  // Real-time Chat Typing Indicator Polling
+  useEffect(() => {
+    if (!isOpen || !activeChatId) {
+      setActiveTypers([]);
+      return;
+    }
+    let isCancelled = false;
+    const pollTyping = async () => {
+      try {
+        const typers = await fetchChatTypingStatus(activeChatId);
+        if (!isCancelled && Array.isArray(typers)) {
+          // Filter out self
+          setActiveTypers(typers.filter(t => t.userId !== currentUser?.id));
+        }
+      } catch (e) {}
+    };
+    pollTyping();
+    const interval = setInterval(pollTyping, 2000);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [isOpen, activeChatId, currentUser?.id]);
+
   if (!isOpen || !currentUser) return null;
 
   // Find other participant for direct chat
@@ -131,6 +160,15 @@ export default function MessageBoxModal({
   const otherContact = otherParticipantId 
     ? contacts.find(c => c.id === otherParticipantId) 
     : null;
+
+  // Compute live presence status of other contact
+  const otherPresence = otherContact ? (
+    (otherContact.id && presenceMap[otherContact.id]) ||
+    (otherContact.pno && presenceMap[otherContact.pno]) ||
+    (otherContact.phone && presenceMap[String(otherContact.phone).replace(/\D/g, '')])
+  ) : null;
+  const isOtherOnline = Boolean(otherPresence?.isOnline);
+  const isOtherTyping = activeTypers.length > 0;
 
   // Resolve participant helper for groups
   const resolveParticipant = (participantId) => {
@@ -368,11 +406,37 @@ export default function MessageBoxModal({
     chatInputRef.current?.focus();
   };
 
+  // Handle user typing and broadcast real-time indicator
+  const handleChatInputChange = (e) => {
+    const val = e.target.value;
+    setInputText(val);
+
+    if (activeChatId && currentUser) {
+      const now = Date.now();
+      if (now - (lastSentTypingRef.current || 0) > 1500) {
+        lastSentTypingRef.current = now;
+        sendChatTypingStatus(activeChatId, currentUser, true);
+      }
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        sendChatTypingStatus(activeChatId, currentUser, false);
+        lastSentTypingRef.current = 0;
+      }, 2500);
+    }
+  };
+
   // Send message
   const handleSendMessage = (e) => {
     if (e) e.preventDefault();
     if (!inputText.trim() && !attachedFile) return;
     if (!currentChat) return;
+
+    // Immediately clear typing status on send
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (activeChatId && currentUser) {
+      sendChatTypingStatus(activeChatId, currentUser, false);
+      lastSentTypingRef.current = 0;
+    }
 
     if (currentChat.type === 'direct' && otherContact) {
       onAppendMessage(currentChat.id, currentUser, inputText.trim(), attachedFile);
@@ -978,25 +1042,48 @@ export default function MessageBoxModal({
                   >
                     {/* Avatar */}
                     <div style={{
+                      position: 'relative',
                       width: '38px',
                       height: '38px',
-                      borderRadius: '50%',
-                      overflow: 'hidden',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1.5px solid var(--khaki-primary, #c49756)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
                       flexShrink: 0
                     }}>
-                      {otherContact?.uniformPhoto ? (
-                        <img src={otherContact.uniformPhoto} alt={otherContact.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : currentChat.type === 'group' ? (
-                        <Users size={19} color="var(--khaki-light)" />
-                      ) : (
-                        <span style={{ fontWeight: 800, color: 'var(--khaki-light)' }}>
-                          {((otherContact?.name || currentChat.title || 'P').charAt(0)).toUpperCase()}
-                        </span>
+                      <div style={{
+                        width: '100%',
+                        height: '100%',
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1.5px solid var(--khaki-primary, #c49756)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        {otherContact?.uniformPhoto ? (
+                          <img src={otherContact.uniformPhoto} alt={otherContact.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : currentChat.type === 'group' ? (
+                          <Users size={19} color="var(--khaki-light)" />
+                        ) : (
+                          <span style={{ fontWeight: 800, color: 'var(--khaki-light)' }}>
+                            {((otherContact?.name || currentChat.title || 'P').charAt(0)).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      {currentChat.type === 'direct' && isOtherOnline && (
+                        <span 
+                          title="ऑनलाइन" 
+                          style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            right: 0,
+                            width: '11px',
+                            height: '11px',
+                            borderRadius: '50%',
+                            background: '#10b981',
+                            border: '2px solid #0c1830',
+                            boxShadow: '0 0 6px #10b981',
+                            zIndex: 2
+                          }}
+                        />
                       )}
                     </div>
 
@@ -1046,17 +1133,38 @@ export default function MessageBoxModal({
                         )}
                       </div>
 
-                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {currentChat.type === 'direct' ? (
-                          otherContact ? (
-                            `${otherContact.post || ''} • ${otherContact.district || ''}`
-                          ) : (
-                            'उत्तर प्रदेश पुलिस'
-                          )
+                      {/* Online vs Typing vs Offline Status */}
+                      {currentChat.type === 'direct' ? (
+                        isOtherTyping ? (
+                          <div style={{ fontSize: '0.74rem', color: '#38bdf8', marginTop: '1px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>✍️ टाइप कर रहे हैं...</span>
+                          </div>
+                        ) : isOtherOnline ? (
+                          <div style={{ fontSize: '0.7rem', color: '#34d399', marginTop: '1px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981', flexShrink: 0 }} />
+                            <span>ऑनलाइन</span>
+                            <span style={{ color: '#64748b' }}>•</span>
+                            <span style={{ color: '#cbd5e1' }}>{otherContact ? `${otherContact.post || ''} (${otherContact.district || ''})` : ''}</span>
+                          </div>
                         ) : (
-                          `${currentChat.participants?.length || 0} सदस्य • टैप करके विवरण देखें`
-                        )}
-                      </div>
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '1px', display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#64748b', display: 'inline-block', flexShrink: 0 }} />
+                            <span>ऑफ़लाइन</span>
+                            <span style={{ color: '#475569' }}>•</span>
+                            <span>{otherContact ? `${otherContact.post || ''} (${otherContact.district || ''})` : 'उत्तर प्रदेश पुलिस'}</span>
+                          </div>
+                        )
+                      ) : (
+                        activeTypers.length > 0 ? (
+                          <div style={{ fontSize: '0.72rem', color: '#38bdf8', marginTop: '1px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>✍️ {activeTypers.map(t => t.userName).join(', ')} टाइप कर रहे हैं...</span>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {`${currentChat.participants?.length || 0} सदस्य • टैप करके विवरण देखें`}
+                          </div>
+                        )
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1506,11 +1614,70 @@ export default function MessageBoxModal({
                             color: 'rgba(255, 255, 255, 0.6)'
                           }}>
                             <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            {isMe && (
-                              <span style={{ color: hasRead ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)' }}>
-                                {hasRead ? '✓✓' : '✓'}
-                              </span>
-                            )}
+                            {isMe && (() => {
+                              const isSeen = Array.isArray(msg.readBy) && (
+                                currentChat.type === 'direct'
+                                  ? msg.readBy.some(id => id !== currentUser.id)
+                                  : msg.readBy.length > 1
+                              );
+                              const isDelivered = !isSeen && (
+                                (Array.isArray(msg.deliveredTo) && msg.deliveredTo.some(id => id !== currentUser.id)) ||
+                                isOtherOnline ||
+                                msg.status === 'delivered'
+                              );
+
+                              if (isSeen) {
+                                return (
+                                  <span 
+                                    title="देखा गया (Seen / Read)" 
+                                    style={{ 
+                                      color: '#38bdf8', 
+                                      fontWeight: 800, 
+                                      fontSize: '0.74rem', 
+                                      letterSpacing: '-1.5px',
+                                      marginLeft: '3px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center'
+                                    }}
+                                  >
+                                    ✓✓
+                                  </span>
+                                );
+                              }
+                              if (isDelivered) {
+                                return (
+                                  <span 
+                                    title="पहुंचा (Delivered)" 
+                                    style={{ 
+                                      color: '#94a3b8', 
+                                      fontWeight: 800, 
+                                      fontSize: '0.74rem', 
+                                      letterSpacing: '-1.5px',
+                                      marginLeft: '3px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center'
+                                    }}
+                                  >
+                                    ✓✓
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span 
+                                  title="भेजा गया (Sent)" 
+                                  style={{ 
+                                    color: 'rgba(255, 255, 255, 0.55)', 
+                                    fontWeight: 700, 
+                                    fontSize: '0.72rem', 
+                                    marginLeft: '3px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center'
+                                  }}
+                                >
+                                  ✓
+                                </span>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -1717,7 +1884,7 @@ export default function MessageBoxModal({
                   type="text"
                   placeholder="संदेश लिखें..."
                   value={inputText}
-                  onChange={e => setInputText(e.target.value)}
+                  onChange={handleChatInputChange}
                   style={{
                     flex: 1,
                     padding: '10px 14px',

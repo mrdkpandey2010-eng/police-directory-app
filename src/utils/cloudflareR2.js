@@ -977,4 +977,75 @@ export const saveAdminDeviceLockToCloud = async (lockConfig) => {
   }
 };
 
+// ---------------- REAL-TIME CHAT TYPING STATUS ----------------
+
+export const sendChatTypingStatus = async (chatId, user, isTyping) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!chatId || !user) return false;
+
+  // Broadcast cross-tab locally for instant UI update
+  try {
+    localStorage.setItem(`police_chat_typing_${chatId}`, JSON.stringify({
+      userId: user.id,
+      userName: user.name,
+      isTyping,
+      _ts: Date.now()
+    }));
+  } catch (e) {}
+
+  if (!baseUrl) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/chats/typing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chatId,
+        userId: user.id,
+        userName: user.name,
+        isTyping: !!isTyping
+      })
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+export const fetchChatTypingStatus = async (chatId) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!chatId) return [];
+
+  // Check local storage broadcast first
+  let localTypers = [];
+  try {
+    const str = localStorage.getItem(`police_chat_typing_${chatId}`);
+    if (str) {
+      const parsed = JSON.parse(str);
+      if (parsed.isTyping && Date.now() - (parsed._ts || 0) < 4000) {
+        localTypers.push(parsed);
+      }
+    }
+  } catch (e) {}
+
+  if (!baseUrl) return localTypers;
+
+  try {
+    const res = await fetch(`${baseUrl}/api/chats/typing?chatId=${encodeURIComponent(chatId)}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return localTypers;
+    const data = await res.json();
+    const cloudTypers = Array.isArray(data?.typers) ? data.typers : [];
+
+    // Merge cloud and local typers
+    const map = new Map();
+    cloudTypers.forEach(t => map.set(t.userId, t));
+    localTypers.forEach(t => map.set(t.userId, t));
+    return Array.from(map.values());
+  } catch (e) {
+    return localTypers;
+  }
+};
+
+
 

@@ -10,6 +10,7 @@ export default function ContactCard({
   contact, 
   currentUser,
   permissions = [],
+  presenceMap = {},
   onEdit, 
   onToggleBlock, 
   onToggleActive,
@@ -21,6 +22,14 @@ export default function ContactCard({
 }) {
   const [copied, setCopied] = useState(false);
   const [requestStatus, setRequestStatus] = useState(null);
+
+  // Live Online Presence Status
+  const userPresence = 
+    (contact.id && presenceMap[contact.id]) ||
+    (contact.pno && presenceMap[contact.pno]) ||
+    (contact.phone && presenceMap[String(contact.phone).replace(/\D/g, '')]) ||
+    null;
+  const isOnline = Boolean(userPresence?.isOnline);
 
   // Check if current user has permission to view this officer's phone number
   const isPhoneVisible = canViewPhoneNumber(currentUser, contact, permissions);
@@ -136,6 +145,23 @@ export default function ContactCard({
               <ShieldCheck size={11} color="#fff" />
             </span>
           )}
+          {/* Live Online Presence Indicator Dot on Avatar */}
+          <span 
+            title={isOnline ? "🟢 ऑनलाइन (Online Now)" : "⚪ ऑफ़लाइन (Offline)"}
+            style={{
+              position: 'absolute',
+              top: -3,
+              right: -3,
+              width: '13px',
+              height: '13px',
+              borderRadius: '50%',
+              background: isOnline ? '#10b981' : '#64748b',
+              border: '2px solid #0f172a',
+              boxShadow: isOnline ? '0 0 8px rgba(16, 185, 129, 0.9)' : 'none',
+              display: 'inline-block',
+              zIndex: 4
+            }}
+          />
         </div>
 
         <div className="officer-details" style={{ flex: 1, minWidth: 0 }}>
@@ -157,8 +183,43 @@ export default function ContactCard({
               </span>
             )}
           </div>
-          <div className="officer-pno" style={{ fontSize: '0.74rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 600, marginTop: '1px' }}>
-            PNO: {contact.pno}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+            <div className="officer-pno" style={{ fontSize: '0.74rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 600 }}>
+              PNO: {contact.pno}
+            </div>
+            {isOnline ? (
+              <span style={{
+                fontSize: '0.66rem',
+                background: 'rgba(16, 185, 129, 0.18)',
+                color: '#34d399',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                padding: '0.5px 6px',
+                borderRadius: '10px',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}>
+                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981' }} />
+                ऑनलाइन
+              </span>
+            ) : (
+              <span style={{
+                fontSize: '0.64rem',
+                background: 'rgba(148, 163, 184, 0.1)',
+                color: '#94a3b8',
+                border: '1px solid rgba(148, 163, 184, 0.25)',
+                padding: '0.5px 5px',
+                borderRadius: '10px',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px'
+              }}>
+                <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#64748b', display: 'inline-block' }} />
+                ऑफ़लाइन
+              </span>
+            )}
           </div>
           <span className="officer-post" style={{
             fontSize: '0.74rem',

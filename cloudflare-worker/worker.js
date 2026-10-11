@@ -592,6 +592,69 @@ export default {
         }
       }
 
+      // 7.5. Chat Real-time Typing Status: /api/chats/typing
+      if (path === '/api/chats/typing') {
+        if (request.method === 'POST') {
+          try {
+            const body = await request.text();
+            const { chatId, userId, userName, isTyping } = JSON.parse(body);
+            if (chatId && userId) {
+              const typingKey = `typing_${chatId}`;
+              let typingMap = {};
+              const cur = await getItem(typingKey);
+              if (cur) {
+                try { typingMap = JSON.parse(cur); } catch (e) {}
+              }
+              if (!typingMap || typeof typingMap !== 'object') typingMap = {};
+
+              if (isTyping) {
+                typingMap[userId] = { userId, userName: userName || 'अधिकारी', timestamp: Date.now() };
+              } else {
+                delete typingMap[userId];
+              }
+
+              // Prune stale typers (> 6 seconds)
+              const now = Date.now();
+              for (const k of Object.keys(typingMap)) {
+                if (now - (typingMap[k].timestamp || 0) > 6000) {
+                  delete typingMap[k];
+                }
+              }
+
+              await putItem(typingKey, JSON.stringify(typingMap));
+            }
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          } catch (e) {
+            return new Response(JSON.stringify({ success: false, error: e.message }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+
+        if (request.method === 'GET') {
+          const chatId = url.searchParams.get('chatId');
+          if (!chatId) {
+            return new Response(JSON.stringify({ typers: [] }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          const cur = await getItem(`typing_${chatId}`);
+          let typers = [];
+          if (cur) {
+            try {
+              const obj = JSON.parse(cur);
+              const now = Date.now();
+              typers = Object.values(obj).filter(t => (now - (t.timestamp || 0)) < 5000);
+            } catch (e) {}
+          }
+          return new Response(JSON.stringify({ typers }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
       // 8. Device Telemetry & Registration Audit Endpoints: /api/telemetry/*
       if (path === '/api/telemetry/ip') {
         const clientIp = request.headers.get('cf-connecting-ip') || 

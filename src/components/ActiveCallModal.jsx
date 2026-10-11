@@ -631,6 +631,9 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
         }}>
           <span>🔒 एंड-टू-एंड एन्क्रिप्टेड • यह कॉल विभागीय कॉल-लॉग में दर्ज होगी</span>
         </div>
+
+        {/* Remote Police Audio Stream Receiver Element */}
+        <audio id="remote_police_call_audio" autoPlay playsInline style={{ display: 'none' }} />
       </div>
     </div>
   );

@@ -18,10 +18,19 @@ export default function UserProfileModal({
   onCancelDistrictTransfer,
   districts = [],
   offices = [],
+  presenceMap = {},
   onLogout,
   onOpenFeedback
 }) {
   const [activeTab, setActiveTab] = useState('details'); // 'details' | 'edit' | 'transfer' | 'password'
+
+  // Live presence status
+  const userPresence = 
+    (user?.id && presenceMap[user.id]) ||
+    (user?.pno && presenceMap[user.pno]) ||
+    (user?.phone && presenceMap[String(user.phone).replace(/\D/g, '')]) ||
+    null;
+  const isOnline = userPresence ? Boolean(userPresence.isOnline) : true;
 
   const districtOffices = React.useMemo(() => {
     if (!Array.isArray(offices) || !user) return [];
@@ -258,6 +267,22 @@ export default function UserProfileModal({
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>रोल (Role):</span>
                 <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--gold-primary)' }}>
                   {user.isCoAdmin ? `ज़िला Co-Admin (${user.district})` : 'पुलिस कर्मचारी (User)'}
+                </div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>लाइव उपस्थिति:</span>
+                <div style={{ marginTop: '2px' }}>
+                  {isOnline ? (
+                    <span className="status-tag status-approved" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981' }} />
+                      🟢 ऑनलाइन
+                    </span>
+                  ) : (
+                    <span className="status-tag" style={{ background: 'rgba(148, 163, 184, 0.1)', color: '#94a3b8', borderColor: 'rgba(148, 163, 184, 0.3)' }}>
+                      ⚪ ऑफ़लाइन
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

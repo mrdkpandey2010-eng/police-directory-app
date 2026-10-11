@@ -180,6 +180,9 @@ class InAppCallManager {
     this.ringTimeout = null;
     this.pollIncomingInterval = null;
     this.pollActiveCallInterval = null;
+    this.remoteAudioCtx = null;
+    this.remoteAudioSource = null;
+    this.remoteGainNode = null;
 
     try {
       this.broadcastChannel = new BroadcastChannel('up_police_webrtc_calls');
@@ -204,6 +207,38 @@ class InAppCallManager {
 
   notify() {
     this.listeners.forEach(l => l(this.activeCall));
+  }
+
+  // Pre-unlock and prime audio playback within user gesture (Click / Tap)
+  unlockAudioPipeline() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        if (!this.remoteAudioCtx) this.remoteAudioCtx = new AudioCtx();
+        if (this.remoteAudioCtx.state === 'suspended') {
+          this.remoteAudioCtx.resume().catch(() => {});
+        }
+      }
+      let audioElem = document.getElementById('remote_police_call_audio');
+      if (!audioElem) {
+        audioElem = document.createElement('audio');
+        audioElem.id = 'remote_police_call_audio';
+        audioElem.autoplay = true;
+        audioElem.playsInline = true;
+        audioElem.setAttribute('playsinline', 'true');
+        audioElem.setAttribute('webkit-playsinline', 'true');
+        audioElem.muted = false;
+        audioElem.volume = 1.0;
+        document.body.appendChild(audioElem);
+      } else {
+        audioElem.muted = false;
+        audioElem.volume = 1.0;
+      }
+      // Prime audio playback
+      audioElem.play().catch(() => {});
+    } catch (e) {
+      console.warn('[WebRTC Audio] Unlock audio notice:', e);
+    }
   }
 
   // Broadcast signaling event locally
@@ -454,8 +489,23 @@ class InAppCallManager {
       }
     }, 35000);
 
+    // Pre-unlock audio element within user click gesture
+    this.unlockAudioPipeline();
+
+    const audioConstraints = {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    };
+
     try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      this.localStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
+      if (this.localStream) {
+        this.localStream.getAudioTracks().forEach(t => { t.enabled = true; });
+      }
     } catch (err) {
       console.warn('Microphone permission not granted or unavailable:', err);
       this.localStream = null;
@@ -466,6 +516,7 @@ class InAppCallManager {
 
       if (this.localStream) {
         this.localStream.getTracks().forEach(track => {
+          track.enabled = true;
           this.peerConnection.addTrack(track, this.localStream);
         });
       }
@@ -482,8 +533,11 @@ class InAppCallManager {
       };
 
       this.peerConnection.ontrack = (event) => {
-        this.remoteStream = event.streams[0];
-        this.playRemoteAudio(this.remoteStream);
+        console.log('[WebRTC Caller] Received remote track:', event.track?.kind);
+        if (event.track) event.track.enabled = true;
+        const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+        this.remoteStream = stream;
+        this.playRemoteAudio(stream);
       };
 
       this.peerConnection.onconnectionstatechange = () => {
@@ -639,9 +693,25 @@ class InAppCallManager {
     this.activeCall.startedAt = Date.now();
     this.notify();
 
+    // Pre-unlock audio element within user click gesture
+    this.unlockAudioPipeline();
+
+    const audioConstraints = {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    };
+
     try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      this.localStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
+      if (this.localStream) {
+        this.localStream.getAudioTracks().forEach(t => { t.enabled = true; });
+      }
     } catch (err) {
+      console.warn('Microphone permission not granted or unavailable:', err);
       this.localStream = null;
     }
 
@@ -650,6 +720,7 @@ class InAppCallManager {
 
       if (this.localStream) {
         this.localStream.getTracks().forEach(track => {
+          track.enabled = true;
           this.peerConnection.addTrack(track, this.localStream);
         });
       }
@@ -668,8 +739,11 @@ class InAppCallManager {
       };
 
       this.peerConnection.ontrack = (event) => {
-        this.remoteStream = event.streams[0];
-        this.playRemoteAudio(this.remoteStream);
+        console.log('[WebRTC Receiver] Received remote track:', event.track?.kind);
+        if (event.track) event.track.enabled = true;
+        const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+        this.remoteStream = stream;
+        this.playRemoteAudio(stream);
       };
 
       this.peerConnection.onconnectionstatechange = () => {
@@ -807,24 +881,69 @@ class InAppCallManager {
   toggleSpeaker() {
     if (!this.activeCall) return;
     this.activeCall.isSpeaker = !this.activeCall.isSpeaker;
+    const targetVolume = this.activeCall.isSpeaker ? 1.0 : 0.45;
+
     const audioElem = document.getElementById('remote_police_call_audio');
     if (audioElem) {
-      audioElem.volume = this.activeCall.isSpeaker ? 1.0 : 0.25;
+      audioElem.volume = targetVolume;
+    }
+    if (this.remoteGainNode && this.remoteAudioCtx) {
+      try {
+        this.remoteGainNode.gain.setValueAtTime(targetVolume, this.remoteAudioCtx.currentTime);
+      } catch (e) {}
     }
     this.notify();
   }
 
+  // Play remote caller audio through both HTMLAudioElement and Web Audio API destination
   playRemoteAudio(stream) {
-    let audioElem = document.getElementById('remote_police_call_audio');
-    if (!audioElem) {
-      audioElem = document.createElement('audio');
-      audioElem.id = 'remote_police_call_audio';
+    if (!stream) return;
+    try {
+      let audioElem = document.getElementById('remote_police_call_audio');
+      if (!audioElem) {
+        audioElem = document.createElement('audio');
+        audioElem.id = 'remote_police_call_audio';
+        document.body.appendChild(audioElem);
+      }
       audioElem.autoplay = true;
-      document.body.appendChild(audioElem);
+      audioElem.playsInline = true;
+      audioElem.setAttribute('playsinline', 'true');
+      audioElem.setAttribute('webkit-playsinline', 'true');
+      audioElem.muted = false;
+
+      const targetVolume = this.activeCall?.isSpeaker !== false ? 1.0 : 0.45;
+      audioElem.volume = targetVolume;
+      audioElem.srcObject = stream;
+
+      const playPromise = audioElem.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('[WebRTC] HTMLAudioElement play caught, relying on Web Audio destination:', err);
+        });
+      }
+
+      // High-Fidelity Web Audio Routing (Bypasses mobile WebView autoplay restrictions)
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        if (!this.remoteAudioCtx) this.remoteAudioCtx = new AudioCtx();
+        if (this.remoteAudioCtx.state === 'suspended') {
+          this.remoteAudioCtx.resume().catch(() => {});
+        }
+        if (this.remoteAudioSource) {
+          try { this.remoteAudioSource.disconnect(); } catch (e) {}
+          this.remoteAudioSource = null;
+        }
+        this.remoteAudioSource = this.remoteAudioCtx.createMediaStreamSource(stream);
+        if (!this.remoteGainNode) {
+          this.remoteGainNode = this.remoteAudioCtx.createGain();
+          this.remoteGainNode.connect(this.remoteAudioCtx.destination);
+        }
+        this.remoteGainNode.gain.setValueAtTime(targetVolume, this.remoteAudioCtx.currentTime);
+        this.remoteAudioSource.connect(this.remoteGainNode);
+      }
+    } catch (err) {
+      console.error('[WebRTC] playRemoteAudio execution error:', err);
     }
-    audioElem.srcObject = stream;
-    audioElem.volume = this.activeCall?.isSpeaker ? 1.0 : 0.25;
-    audioElem.play().catch(() => {});
   }
 
   logCompletedCall(status, duration) {
@@ -887,6 +1006,17 @@ class InAppCallManager {
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => track.stop());
       this.localStream = null;
+    }
+    if (this.remoteAudioSource) {
+      try { this.remoteAudioSource.disconnect(); } catch (e) {}
+      this.remoteAudioSource = null;
+    }
+    const audioElem = document.getElementById('remote_police_call_audio');
+    if (audioElem) {
+      try {
+        audioElem.pause();
+        audioElem.srcObject = null;
+      } catch (e) {}
     }
     if (this.peerConnection) {
       this.peerConnection.close();

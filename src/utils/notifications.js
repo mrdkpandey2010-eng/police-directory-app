@@ -8,6 +8,53 @@ export const getNotificationPermissionStatus = () => {
   return Notification.permission; // 'granted' | 'denied' | 'default'
 };
 
+// Check Microphone Permission status
+export const getMicrophonePermissionStatus = async () => {
+  if (typeof window === 'undefined' || !navigator?.mediaDevices) {
+    return 'unsupported';
+  }
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      const status = await navigator.permissions.query({ name: 'microphone' });
+      return status.state; // 'granted' | 'denied' | 'prompt'
+    }
+  } catch (e) {}
+
+  // Fallback check from persistent flag
+  if (localStorage.getItem('police_mic_permission_granted') === 'true') {
+    return 'granted';
+  }
+  return 'prompt';
+};
+
+// Request Microphone Permission
+export const requestAppMicrophonePermission = async () => {
+  if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
+    return 'unsupported';
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      } 
+    });
+    // Stop tracks after successful grant
+    stream.getTracks().forEach(track => track.stop());
+    localStorage.setItem('police_mic_permission_granted', 'true');
+    console.log('[Microphone] Permission granted successfully');
+    return 'granted';
+  } catch (err) {
+    console.warn('[Microphone] Permission request error:', err);
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      return 'denied';
+    }
+    return 'denied';
+  }
+};
+
+
 export const requestAppNotificationPermission = async () => {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'unsupported';

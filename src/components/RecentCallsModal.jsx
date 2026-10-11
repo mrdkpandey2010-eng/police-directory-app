@@ -13,6 +13,7 @@ export default function RecentCallsModal({
   currentUser,
   callLogs = [],
   contacts = [],
+  presenceMap = {},
   onDeleteCall,
   onClearAllCalls,
   onStartCall,
@@ -443,6 +444,16 @@ export default function RecentCallsModal({
                             {otherParty.post}
                           </span>
                         )}
+                        {(() => {
+                          const p = (otherParty.id && presenceMap[otherParty.id]) ||
+                                    (otherParty.pno && presenceMap[otherParty.pno]) ||
+                                    (otherParty.phone && presenceMap[String(otherParty.phone).replace(/\D/g, '')]);
+                          return p?.isOnline ? (
+                            <span style={{ fontSize: '0.62rem', color: '#34d399', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.35)', padding: '0.5px 5px', borderRadius: '8px', fontWeight: 700 }}>
+                              🟢 ऑनलाइन
+                            </span>
+                          ) : null;
+                        })()}
                       </div>
 
                       <div style={{
@@ -749,6 +760,51 @@ export default function RecentCallsModal({
                     {selectedOfficerCard.post}
                   </div>
                 )}
+
+                {/* Live Online Presence Status Indicator */}
+                {(() => {
+                  const officerPresence = 
+                    (selectedOfficerCard.id && presenceMap[selectedOfficerCard.id]) ||
+                    (selectedOfficerCard.pno && presenceMap[selectedOfficerCard.pno]) ||
+                    (selectedOfficerCard.phone && presenceMap[String(selectedOfficerCard.phone).replace(/\D/g, '')]) ||
+                    null;
+                  const isCardOnline = Boolean(officerPresence?.isOnline);
+                  return isCardOnline ? (
+                    <div style={{
+                      marginTop: '6px',
+                      fontSize: '0.74rem',
+                      background: 'rgba(16, 185, 129, 0.2)',
+                      color: '#34d399',
+                      border: '1px solid rgba(16, 185, 129, 0.45)',
+                      padding: '3px 12px',
+                      borderRadius: '20px',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }} />
+                      🟢 ऑनलाइन (Active Now)
+                    </div>
+                  ) : (
+                    <div style={{
+                      marginTop: '6px',
+                      fontSize: '0.72rem',
+                      background: 'rgba(148, 163, 184, 0.1)',
+                      color: '#94a3b8',
+                      border: '1px solid rgba(148, 163, 184, 0.25)',
+                      padding: '3px 12px',
+                      borderRadius: '20px',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}>
+                      <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#64748b', display: 'inline-block' }} />
+                      ⚪ ऑफ़लाइन (Offline)
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Verified Details Sheet */}

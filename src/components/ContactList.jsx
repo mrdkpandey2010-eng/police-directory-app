@@ -7,6 +7,7 @@ export default function ContactList({
   totalCount = 0,
   currentUser, 
   permissions = [],
+  presenceMap = {},
   onEditContact, 
   onToggleBlockContact, 
   onToggleActiveContact,
@@ -64,6 +65,7 @@ export default function ContactList({
             contact={contact}
             currentUser={currentUser}
             permissions={permissions}
+            presenceMap={presenceMap}
             onEdit={onEditContact}
             onToggleBlock={onToggleBlockContact}
             onToggleActive={onToggleActiveContact}
