@@ -1581,6 +1581,10 @@ export default function App() {
     return contacts.filter(c => c.status === 'pending').length;
   }, [contacts, currentUser]);
 
+  const approvedCount = useMemo(() => {
+    return contacts.filter(c => c.status === 'approved' || c.status === 'active').length;
+  }, [contacts]);
+
   const unreadMessagesCount = getUnreadMessagesCountForUser(chats, currentUser?.id);
 
   // Missed calls count strictly for Call tab badge
