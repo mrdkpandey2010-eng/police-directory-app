@@ -106,17 +106,17 @@ export default function MobileBottomNav({
         pointerEvents: 'auto'
       }}
     >
-      {/* 1. HOME TAB */}
+      {/* 1. DIRECTORY / HOME TAB */}
       <button
         type="button"
         onClick={onNavigateHome}
         style={navItemStyle(isHomeActive)}
-        title="होम स्क्रीन निर्देशिका (Home Tab)"
+        title="पुलिस निर्देशिका (Home Directory)"
       >
         <div style={iconContainerStyle(isHomeActive)}>
-          <Home size={19} color={isHomeActive ? '#fef08a' : '#94a3b8'} strokeWidth={isHomeActive ? 2.4 : 2} />
+          <Users size={19} color={isHomeActive ? '#fef08a' : '#94a3b8'} strokeWidth={isHomeActive ? 2.4 : 2} />
         </div>
-        <span style={labelStyle(isHomeActive)}>होम</span>
+        <span style={labelStyle(isHomeActive)}>निर्देशिका</span>
       </button>
 
       {/* 2. CHATS / MESSAGES TAB */}

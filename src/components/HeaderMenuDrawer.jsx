@@ -212,7 +212,7 @@ export default function HeaderMenuDrawer({
           )}
 
           {/* Section: Admin / Co-Admin Controls */}
-          {onOpenAdmin && (
+          {(isAdmin || isCoAdmin) && onOpenAdmin && (
             <div>
               <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--khaki-primary, #c49756)', letterSpacing: '0.08em', marginBottom: '0.45rem', paddingLeft: '4px' }}>
                 प्रशासकीय नियंत्रण कक्ष (2FA Protected)

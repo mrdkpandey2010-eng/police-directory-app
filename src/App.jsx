@@ -628,10 +628,8 @@ export default function App() {
     setCurrentUser(userObj);
     saveSession(userObj);
     localStorage.setItem('police_last_activity_time', String(Date.now()));
-    if (userObj.role === 'user') {
+    if (userObj.role === 'user' || userObj.role === 'co_admin') {
       setUserDistrictScope('my_district');
-      setSelectedDistrict(userObj.district || '');
-    } else if (userObj.role === 'co_admin') {
       setSelectedDistrict(userObj.district || '');
     } else {
       setSelectedDistrict('');
@@ -706,16 +704,9 @@ export default function App() {
       const isCardActive = c.status === 'approved' || c.status === 'active';
       if (!isCardActive) return false;
 
-      // Co-Admin: Strictly scoped to their posted district
-      if (currentUser?.role === 'co_admin') {
-        const userDist = (currentUser.district || '').trim().toLowerCase();
-        const contactDist = (c.district || '').trim().toLowerCase();
-        if (contactDist !== userDist) return false;
-      }
-
-      // Regular Employee User:
-      if (currentUser?.role === 'user') {
-        // If in "केवल मेरा जनपद" mode, strictly show their district
+      // Co-Admin and Regular Employee User:
+      // If in "केवल मेरा जनपद" mode, strictly show their district
+      if (currentUser?.role === 'user' || currentUser?.role === 'co_admin') {
         if (userDistrictScope === 'my_district') {
           const userDist = (currentUser.district || '').trim().toLowerCase();
           const contactDist = (c.district || '').trim().toLowerCase();
@@ -1284,7 +1275,7 @@ export default function App() {
     if (activeChatId === groupId) {
       setActiveChatId(null);
     }
-    showToast('समूह सफलतापूर्वक समाप्त (Delete) कर दिया गया।');
+    showToast('चैट सफलतापूर्वक हटा दी गई।');
 
     if (isFirebaseConfigured()) {
       deleteFirestoreChat(groupId);
@@ -1396,9 +1387,7 @@ export default function App() {
 
   const handleResetFilters = () => {
     setSearchQuery('');
-    if (currentUser?.role === 'user' && userDistrictScope === 'my_district') {
-      setSelectedDistrict(currentUser.district || '');
-    } else if (currentUser?.role === 'co_admin') {
+    if ((currentUser?.role === 'user' || currentUser?.role === 'co_admin') && userDistrictScope === 'my_district') {
       setSelectedDistrict(currentUser.district || '');
     } else {
       setSelectedDistrict('');
@@ -1426,7 +1415,12 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const hasActiveFilters = Boolean(searchQuery || (currentUser?.role === 'admin' && selectedDistrict) || selectedPost || selectedOffice);
+  const hasActiveFilters = Boolean(
+    searchQuery || 
+    (selectedDistrict && (currentUser?.role === 'admin' || userDistrictScope === 'all' || selectedDistrict !== currentUser?.district)) || 
+    selectedPost || 
+    selectedOffice
+  );
 
   // Scoped pending counts
   const pendingCount = useMemo(() => {
@@ -1614,12 +1608,46 @@ export default function App() {
           padding: '0.75rem 1rem',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px'
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.75rem'
         }}>
-          <Shield size={18} color="var(--gold-primary)" />
-          <span style={{ fontSize: '0.88rem', color: 'var(--text-bright)' }}>
-            अधिकार क्षेत्र: केवल <strong>{currentUser.district}</strong> जनपद (Co-Admin Scoped Directory)
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Shield size={18} color="var(--gold-primary)" />
+            <span style={{ fontSize: '0.88rem', color: 'var(--text-bright)' }}>
+              पदस्थापित जनपद: <strong>{currentUser.district}</strong> (ज़िला Co-Admin)
+            </span>
+            <span className="status-tag status-approved" style={{ fontSize: '0.72rem' }}>
+              सक्रिय जनपद
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button 
+              className={`btn ${userDistrictScope === 'my_district' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+              onClick={() => {
+                setUserDistrictScope('my_district');
+                setSelectedDistrict(currentUser.district);
+              }}
+              title={`केवल ${currentUser.district} जनपद के कार्मिक देखें`}
+            >
+              📌 केवल मेरा जनपद ({currentUser.district})
+            </button>
+
+            <button 
+              className={`btn ${userDistrictScope === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+              onClick={() => {
+                setUserDistrictScope('all');
+                setSelectedDistrict('');
+              }}
+              title="पूरे राज्य या किसी विशिष्ट अधिकारी को खोजें"
+            >
+              <Search size={13} />
+              विशिष्ट अधिकारी / अन्य जनपद खोजें
+            </button>
+          </div>
         </div>
       )}
 

@@ -72,6 +72,13 @@ export default function AdminPanel({
   const [masterSubTab, setMasterSubTab] = useState('posts'); // 'posts' | 'offices' | 'districts'
   const [adminStatusFilter, setAdminStatusFilter] = useState('active'); // 'active' | 'all' | 'inactive' | 'blocked'
   
+  // Guard Co-Admin from accessing super admin only tabs
+  useEffect(() => {
+    if (isCoAdmin && ['terms', 'call_logs', 'backups', 'coadmins', 'master', '2fa_settings', 'cloud_chat'].includes(activeTab)) {
+      setActiveTab('pending');
+    }
+  }, [isCoAdmin, activeTab]);
+  
   // Master data edit state
   const [editingPost, setEditingPost] = useState(null); // { oldName, newName }
   const [editingDistrict, setEditingDistrict] = useState(null); // { oldName, newName }
@@ -352,12 +359,16 @@ export default function AdminPanel({
       if (res.isCloudSynced) {
         setImportStatusMsg({
           type: 'success',
-          text: `✅ एक्सेल डेटा (${res.addedCount} नए, ${res.updatedCount} अपडेट) स्थानीय डेटाबेस एवं Cloudflare R2 क्लाउड पर लाइव सिंक हो गया है!`
+          text: isCoAdmin
+            ? `✅ एक्सेल डेटा (${res.addedCount} नए, ${res.updatedCount} अपडेट) सफलतापूर्वक प्रोसेस व सिंक हो गया है!`
+            : `✅ एक्सेल डेटा (${res.addedCount} नए, ${res.updatedCount} अपडेट) स्थानीय डेटाबेस एवं Cloudflare R2 क्लाउड पर लाइव सिंक हो गया है!`
         });
       } else {
         setImportStatusMsg({
           type: 'warning',
-          text: `⚠️ डेटा स्थानीय डेटाबेस में सुरक्षित हो गया है, लेकिन Cloudflare R2 क्लाउड सिंक लंबित है (${res.cloudErrorNotice || 'नेटवर्क / अनुमति'})। नीचे दिए गए "क्लाउड पर तुरंत सिंक करें" बटन से सिंक कर सकते हैं।`
+          text: isCoAdmin
+            ? `✅ एक्सेल डेटा (${res.addedCount} नए, ${res.updatedCount} अपडेट) स्थानीय डेटाबेस में सुरक्षित हो गया है!`
+            : `⚠️ डेटा स्थानीय डेटाबेस में सुरक्षित हो गया है, लेकिन Cloudflare R2 क्लाउड सिंक लंबित है (${res.cloudErrorNotice || 'नेटवर्क / अनुमति'})। नीचे दिए गए "क्लाउड पर तुरंत सिंक करें" बटन से सिंक कर सकते हैं।`
         });
       }
       setExcelFile(null);
@@ -624,29 +635,33 @@ export default function AdminPanel({
               </button>
             )}
 
-            <button 
-              className={`admin-tab ${activeTab === 'terms' ? 'active' : ''}`}
-              onClick={() => setActiveTab('terms')}
-            >
-              <Globe size={16} />
-              नीतियां व कस्टम लिंक्स ({Array.isArray(policiesList) ? policiesList.length : 0})
-            </button>
+            {isAdmin && (
+              <>
+                <button 
+                  className={`admin-tab ${activeTab === 'terms' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('terms')}
+                >
+                  <Globe size={16} />
+                  नीतियां व कस्टम लिंक्स ({Array.isArray(policiesList) ? policiesList.length : 0})
+                </button>
 
-            <button 
-              className={`admin-tab ${activeTab === 'call_logs' ? 'active' : ''}`}
-              onClick={() => setActiveTab('call_logs')}
-            >
-              <PhoneCall size={16} />
-              कॉल लॉग्स ({Array.isArray(callLogs) ? callLogs.length : 0})
-            </button>
+                <button 
+                  className={`admin-tab ${activeTab === 'call_logs' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('call_logs')}
+                >
+                  <PhoneCall size={16} />
+                  कॉल लॉग्स ({Array.isArray(callLogs) ? callLogs.length : 0})
+                </button>
 
-            <button 
-              className={`admin-tab ${activeTab === 'backups' ? 'active' : ''}`}
-              onClick={() => setActiveTab('backups')}
-            >
-              <HardDrive size={16} />
-              6-घंटे ऑटो बैकअप ({Array.isArray(backups) ? backups.length : 0}/5)
-            </button>
+                <button 
+                  className={`admin-tab ${activeTab === 'backups' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('backups')}
+                >
+                  <HardDrive size={16} />
+                  6-घंटे ऑटो बैकअप ({Array.isArray(backups) ? backups.length : 0}/5)
+                </button>
+              </>
+            )}
 
             <button 
               className={`admin-tab ${activeTab === 'phone_perms' ? 'active' : ''}`}
@@ -1111,90 +1126,92 @@ export default function AdminPanel({
                 </p>
               </div>
 
-              {/* Cloud Sync Status & Force Sync Control Card */}
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 58, 138, 0.3))',
-                border: '1.5px solid rgba(196, 151, 86, 0.4)',
-                borderRadius: '12px',
-                padding: '1rem 1.25rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '1rem'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '10px',
-                    background: isFirebaseConnected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                    border: `1px solid ${isFirebaseConnected ? '#10b981' : '#ef4444'}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
-                  }}>
-                    <Cloud size={22} color={isFirebaseConnected ? '#34d399' : '#f87171'} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.94rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>Cloudflare R2 क्लाउड स्थिति</span>
-                      <span style={{
-                        fontSize: '0.72rem',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        background: isFirebaseConnected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                        color: isFirebaseConnected ? '#34d399' : '#fca5a5',
-                        border: `1px solid ${isFirebaseConnected ? '#10b981' : '#ef4444'}`
-                      }}>
-                        {isFirebaseConnected ? '🟢 Cloudflare R2 कनेक्टेड (50,000+ यूज़र्स)' : '⚪ ऑफ़लाइन / लोकल'}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>
-                      स्थानीय संपर्क संख्या: <strong style={{ color: '#fef08a' }}>{contacts.length}</strong> • यदि एक्सेल डेटा क्लाउड में न दिख रहा हो तो तुरंत सिंक करें
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <button
-                    type="button"
-                    disabled={isManualSyncing}
-                    onClick={handleForceSyncFirebase}
-                    className="btn btn-primary"
-                    style={{
-                      background: 'linear-gradient(135deg, #f97316, #ea580c)',
-                      border: 'none',
-                      color: '#fff',
-                      padding: '8px 16px',
-                      fontSize: '0.82rem',
-                      fontWeight: 700,
+              {/* Cloud Sync Status & Force Sync Control Card (Super Admin Only) */}
+              {!isCoAdmin && (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 58, 138, 0.3))',
+                  border: '1.5px solid rgba(196, 151, 86, 0.4)',
+                  borderRadius: '12px',
+                  padding: '1rem 1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '1rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '10px',
+                      background: isFirebaseConnected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      border: `1px solid ${isFirebaseConnected ? '#10b981' : '#ef4444'}`,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
-                      cursor: isManualSyncing ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    <RefreshCw size={15} style={isManualSyncing ? { animation: 'spin 1s linear infinite' } : {}} />
-                    <span>{isManualSyncing ? 'क्लाउड सिंक जारी...' : '🔄 सभी संपर्क Cloudflare R2 पर सिंक करें'}</span>
-                  </button>
-                </div>
-
-                {manualSyncMsg && (
-                  <div style={{
-                    width: '100%',
-                    padding: '0.65rem 0.85rem',
-                    borderRadius: '8px',
-                    fontSize: '0.82rem',
-                    background: manualSyncMsg.includes('✅') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(234, 179, 8, 0.15)',
-                    border: `1px solid ${manualSyncMsg.includes('✅') ? '#10b981' : '#eab308'}`,
-                    color: manualSyncMsg.includes('✅') ? '#6ee7b7' : '#fef08a'
-                  }}>
-                    {manualSyncMsg}
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <Cloud size={22} color={isFirebaseConnected ? '#34d399' : '#f87171'} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.94rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>Cloudflare R2 क्लाउड स्थिति</span>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: isFirebaseConnected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                          color: isFirebaseConnected ? '#34d399' : '#fca5a5',
+                          border: `1px solid ${isFirebaseConnected ? '#10b981' : '#ef4444'}`
+                        }}>
+                          {isFirebaseConnected ? '🟢 Cloudflare R2 कनेक्टेड (50,000+ यूज़र्स)' : '⚪ ऑफ़लाइन / लोकल'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>
+                        स्थानीय संपर्क संख्या: <strong style={{ color: '#fef08a' }}>{contacts.length}</strong> • यदि एक्सेल डेटा क्लाउड में न दिख रहा हो तो तुरंत सिंक करें
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      disabled={isManualSyncing}
+                      onClick={handleForceSyncFirebase}
+                      className="btn btn-primary"
+                      style={{
+                        background: 'linear-gradient(135deg, #f97316, #ea580c)',
+                        border: 'none',
+                        color: '#fff',
+                        padding: '8px 16px',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        cursor: isManualSyncing ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      <RefreshCw size={15} style={isManualSyncing ? { animation: 'spin 1s linear infinite' } : {}} />
+                      <span>{isManualSyncing ? 'क्लाउड सिंक जारी...' : '🔄 सभी संपर्क Cloudflare R2 पर सिंक करें'}</span>
+                    </button>
+                  </div>
+
+                  {manualSyncMsg && (
+                    <div style={{
+                      width: '100%',
+                      padding: '0.65rem 0.85rem',
+                      borderRadius: '8px',
+                      fontSize: '0.82rem',
+                      background: manualSyncMsg.includes('✅') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                      border: `1px solid ${manualSyncMsg.includes('✅') ? '#10b981' : '#eab308'}`,
+                      color: manualSyncMsg.includes('✅') ? '#6ee7b7' : '#fef08a'
+                    }}>
+                      {manualSyncMsg}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', background: 'rgba(15,23,42,0.6)', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid rgba(196,151,86,0.3)' }}>
                 <div>
@@ -1389,8 +1406,12 @@ export default function AdminPanel({
                     <span>📍 नए जनपद: <strong style={{ color: '#facc15' }}>{importProgress.report.newDistrictsCount}</strong></span>
                     <span>•</span>
                     <span>👮 नए पद: <strong style={{ color: '#facc15' }}>{importProgress.report.newPostsCount}</strong></span>
-                    <span>•</span>
-                    <span>☁️ क्लाउड स्थिति: <strong style={{ color: importProgress.report.isCloudSynced ? '#34d399' : '#94a3b8' }}>{importProgress.report.isCloudSynced ? '🟢 Firebase Firestore पर लाइव सिंक (सक्रिय)' : '⚪ स्थानीय रूप से सुरक्षित'}</strong></span>
+                    {!isCoAdmin && (
+                      <>
+                        <span>•</span>
+                        <span>☁️ क्लाउड स्थिति: <strong style={{ color: importProgress.report.isCloudSynced ? '#34d399' : '#94a3b8' }}>{importProgress.report.isCloudSynced ? '🟢 Firebase Firestore पर लाइव सिंक (सक्रिय)' : '⚪ स्थानीय रूप से सुरक्षित'}</strong></span>
+                      </>
+                    )}
                   </div>
 
                   {/* Expandable Skipped Rows Reason */}
@@ -2111,8 +2132,8 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* TAB 6: POLICIES & CUSTOM LINKS CMS */}
-          {activeTab === 'terms' && (
+          {/* TAB 6: POLICIES & CUSTOM LINKS CMS (Super Admin Only) */}
+          {isAdmin && activeTab === 'terms' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div style={{
                 background: 'rgba(30,58,138,0.25)',
@@ -2412,8 +2433,8 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* TAB: CALL LOGS */}
-          {activeTab === 'call_logs' && (
+          {/* TAB: CALL LOGS (Super Admin Only) */}
+          {isAdmin && activeTab === 'call_logs' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={{
                 background: 'rgba(30, 58, 138, 0.25)',
@@ -2558,8 +2579,8 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* TAB: BACKUPS (6-Hour Rolling, Max 5 Slots) */}
-          {activeTab === 'backups' && (
+          {/* TAB: BACKUPS (6-Hour Rolling, Max 5 Slots, Super Admin Only) */}
+          {isAdmin && activeTab === 'backups' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={{
                 background: 'rgba(14, 30, 60, 0.6)',

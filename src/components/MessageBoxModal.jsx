@@ -188,6 +188,19 @@ export default function MessageBoxModal({
     }
   };
 
+  // Handle Delete Direct/Any Chat (WhatsApp style chat list removal)
+  const handleDeleteChat = (chatId, title = 'यह चैट') => {
+    if (!chatId || !onDeleteGroupChat) return;
+    const confirmDelete = window.confirm(`⚠️ चैट हटाएं (Delete Chat):\nक्या आप "${title}" के साथ हुई चैट को अपनी सूची से हटाना चाहते हैं?`);
+    if (confirmDelete) {
+      onDeleteGroupChat(chatId);
+      if (activeChatId === chatId) {
+        setActiveChatId(null);
+      }
+      setMobileView('list');
+    }
+  };
+
   // Handle Confirm Add Members to Group
   const handleConfirmAddMembers = () => {
     if (!currentChat || !onAddGroupParticipants || selectedNewMemberIds.length === 0) return;
@@ -842,6 +855,35 @@ export default function MessageBoxModal({
                         {chat.lastMessage || 'कोई संदेश नहीं'}
                       </div>
                     </div>
+
+                    {/* Delete Conversation Button (WhatsApp style list removal) */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteChat(chat.id, displayName);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#94a3b8',
+                        padding: '6px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        opacity: 0.65,
+                        transition: 'all 0.2s ease',
+                        flexShrink: 0,
+                        marginLeft: '4px'
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
+                      onMouseLeave={e => { e.currentTarget.style.opacity = '0.65'; e.currentTarget.style.color = '#94a3b8'; }}
+                      title={`${displayName} के साथ चैट सूची से हटाएं`}
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 );
               })
@@ -1074,6 +1116,34 @@ export default function MessageBoxModal({
                       )}
                     </>
                   )}
+
+                  {/* Delete Conversation Button (WhatsApp style removal) */}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteChat(
+                      currentChat.id, 
+                      currentChat.type === 'direct' 
+                        ? (otherContact?.name || 'अधिकारी') 
+                        : (currentChat.title || 'समूह')
+                    )}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                      color: '#fca5a5',
+                      borderRadius: '6px',
+                      padding: '5px 8px',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="इस चैट को सूची से हटाएं (Delete Chat)"
+                  >
+                    <Trash2 size={13} />
+                    <span className="hide-on-mobile">चैट हटाएं</span>
+                  </button>
 
                   <button
                     type="button"
