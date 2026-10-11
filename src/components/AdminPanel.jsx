@@ -302,8 +302,6 @@ export default function AdminPanel({
     }
   };
 
-  if (!isOpen) return null;
-
   // Safe arrays protecting against null/undefined in all datasets
   const safeContacts = Array.isArray(contacts) ? contacts.filter(c => c && typeof c === 'object') : [];
   const safeCoAdmins = Array.isArray(coAdmins) ? coAdmins.filter(ca => ca && typeof ca === 'object') : [];
@@ -685,6 +683,8 @@ export default function AdminPanel({
     const days = Math.floor(diff / 86400);
     return `${days} दिन पहले (${new Date(ts).toLocaleDateString('hi-IN')})`;
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" style={{ zIndex: 100000 }} onClick={onClose}>
