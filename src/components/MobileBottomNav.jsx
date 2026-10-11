@@ -1,18 +1,21 @@
 import React from 'react';
-import { Home, Users, MessageSquare, Bell, ShieldCheck, User } from 'lucide-react';
+import { Home, Users, MessageSquare, PhoneCall, Bell, ShieldCheck, User } from 'lucide-react';
 
 export default function MobileBottomNav({
   currentUser,
   unreadMessagesCount = 0,
+  missedCallsCount = 0,
   notifCount = 0,
   pendingCount = 0,
   onOpenChat,
+  onOpenCallHistory,
   onOpenNotifications,
   onOpenAdmin,
   onOpenProfile,
   onOpenMenu,
   onNavigateHome,
   isChatModalOpen = false,
+  isCallHistoryModalOpen = false,
   isNotifsModalOpen = false,
   isAdminModalOpen = false,
   isProfileModalOpen = false
@@ -21,7 +24,7 @@ export default function MobileBottomNav({
 
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
-  const isHomeActive = !isChatModalOpen && !isNotifsModalOpen && !isAdminModalOpen && !isProfileModalOpen;
+  const isHomeActive = !isChatModalOpen && !isCallHistoryModalOpen && !isNotifsModalOpen && !isAdminModalOpen && !isProfileModalOpen;
 
   const navItemStyle = (isActive) => ({
     flex: 1,
@@ -118,7 +121,7 @@ export default function MobileBottomNav({
         <span style={labelStyle(isHomeActive)}>निर्देशिका</span>
       </button>
 
-      {/* 2. CHATS / MESSAGES TAB */}
+      {/* 2. CHATS / MESSAGES TAB - Unread message count strictly here */}
       <button
         type="button"
         onClick={onOpenChat}
@@ -136,7 +139,25 @@ export default function MobileBottomNav({
         <span style={labelStyle(isChatModalOpen)}>संदेश</span>
       </button>
 
-      {/* 3. NOTICES / ALERTS TAB */}
+      {/* 3. CALLS / RECENT CALLS TAB - Missed calls count strictly here */}
+      <button
+        type="button"
+        onClick={onOpenCallHistory}
+        style={navItemStyle(isCallHistoryModalOpen)}
+        title="हालिया कॉल व कॉल हिस्ट्री (Recent Calls & Call Logs)"
+      >
+        <div style={iconContainerStyle(isCallHistoryModalOpen)}>
+          <PhoneCall size={19} color={isCallHistoryModalOpen ? '#fef08a' : '#94a3b8'} strokeWidth={isCallHistoryModalOpen ? 2.4 : 2} />
+          {missedCallsCount > 0 && (
+            <span style={badgeStyle}>
+              {missedCallsCount > 99 ? '99+' : missedCallsCount}
+            </span>
+          )}
+        </div>
+        <span style={labelStyle(isCallHistoryModalOpen)}>कॉल</span>
+      </button>
+
+      {/* 4. NOTICES / OFFICIAL ALERTS TAB - Strictly official circulars & alerts */}
       <button
         type="button"
         onClick={onOpenNotifications}
@@ -154,7 +175,7 @@ export default function MobileBottomNav({
         <span style={labelStyle(isNotifsModalOpen)}>सूचनाएं</span>
       </button>
 
-      {/* 4. ADMIN CONTROL OR USER PROFILE TAB */}
+      {/* 5. ADMIN CONTROL OR USER PROFILE TAB */}
       {(isAdmin || isCoAdmin) ? (
         <button
           type="button"

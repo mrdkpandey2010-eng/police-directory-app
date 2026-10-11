@@ -1,6 +1,6 @@
-// In-App Peer-to-Peer Voice Calling Engine using native WebRTC & AudioContext & Cloudflare KV Signaling
 import { saveCallLog, addNotification } from './storage';
 import { addFirestoreNotification } from './firebase';
+import { showSystemCallNotification, showSystemMissedCallNotification } from './notifications';
 import { 
   sendCloudflareCallRing, 
   checkCloudflareIncomingCall, 
@@ -282,7 +282,7 @@ class InAppCallManager {
         );
         if (res && res.active && res.call && (!this.activeCall || this.activeCall.callId !== res.call.callId)) {
           const callData = res.call;
-          if (callData.status === 'calling') {
+          if (callData.status === 'ringing' || callData.status === 'calling') {
             this.activeCall = {
               callId: callData.callId,
               isIncoming: true,
@@ -300,16 +300,7 @@ class InAppCallManager {
             if (navigator.vibrate) {
               try { navigator.vibrate([1000, 400, 1000, 400, 1000]); } catch (e) {}
             }
-            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-              try {
-                new Notification(`🚨 इनकमिंग पुलिस कॉल: ${callData.caller?.name || 'अधिकारी'}`, {
-                  body: `${callData.caller?.post || 'कार्मिक'} (${callData.caller?.district || ''}) से इन-ऐप कॉल आ रही है`,
-                  icon: '/favicon.ico',
-                  tag: 'incoming_police_call',
-                  requireInteraction: true
-                });
-              } catch (e) {}
-            }
+            showSystemCallNotification(callData.caller);
             this.notify();
           }
         }
@@ -325,6 +316,30 @@ class InAppCallManager {
       const reasonLabel = reason === 'offline' 
         ? 'अधिकारी ऑफ़लाइन / नेटवर्क से बाहर होने के कारण संपर्क नहीं हो सका' 
         : 'कॉल अनुत्तरित (Unanswered) रही';
+
+      // 1. Save in recipient's Call History
+      saveCallLog({
+        callerId: caller.id,
+        callerName: caller.name,
+        callerPost: caller.post || 'कार्मिक',
+        callerDistrict: caller.district || 'उत्तर प्रदेश',
+        callerPno: caller.pno || caller.PNO || '',
+        callerPhone: caller.phone || '',
+        receiverId: receiver.id,
+        receiverName: receiver.name,
+        receiverPost: receiver.post || 'कार्मिक',
+        receiverDistrict: receiver.district || 'उत्तर प्रदेश',
+        receiverPno: receiver.pno || receiver.PNO || '',
+        receiverPhone: receiver.phone || '',
+        status: reason === 'offline' ? 'offline' : 'missed',
+        direction: 'incoming',
+        seen: false,
+        durationSeconds: 0
+      });
+
+      // 2. Dispatch system push notification
+      showSystemMissedCallNotification(caller, reasonLabel);
+
       const missedNotif = {
         id: notifId,
         title: '🚨 मिस्ड कॉल अलर्ट (Missed Call Alert)',
@@ -723,18 +738,25 @@ class InAppCallManager {
 
   logCompletedCall(status, duration) {
     if (!this.activeCall) return;
-    const { caller, receiver } = this.activeCall;
+    const { caller, receiver, isIncoming } = this.activeCall;
+    const isCompleted = status === 'completed' || duration > 0;
     saveCallLog({
       callerId: caller?.id || 'unknown',
       callerName: caller?.name || 'अज्ञात कॉलर',
       callerPost: caller?.post || 'कार्मिक',
       callerDistrict: caller?.district || 'उत्तर प्रदेश',
+      callerPno: caller?.pno || caller?.PNO || '',
+      callerPhone: caller?.phone || '',
       receiverId: receiver?.id || 'unknown',
       receiverName: receiver?.name || 'अज्ञात प्राप्तकर्ता',
       receiverPost: receiver?.post || 'कार्मिक',
       receiverDistrict: receiver?.district || 'उत्तर प्रदेश',
+      receiverPno: receiver?.pno || receiver?.PNO || '',
+      receiverPhone: receiver?.phone || '',
       durationSeconds: duration,
-      status // 'completed' | 'rejected' | 'missed'
+      status, // 'completed' | 'rejected' | 'missed' | 'offline'
+      direction: isIncoming ? (isCompleted ? 'incoming' : 'missed') : 'outgoing',
+      seen: isIncoming ? (isCompleted ? true : false) : true
     });
   }
 

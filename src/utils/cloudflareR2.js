@@ -764,3 +764,49 @@ export const fetchAllUsersPresence = async () => {
     return null;
   }
 };
+
+// ---------------- CALL HISTORY CLOUD SYNC ----------------
+export const fetchCallHistoryFromCloudflare = async (userId) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !userId) return [];
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/history?userId=${encodeURIComponent(userId)}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveCallHistoryToCloudflare = async (logEntry) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !logEntry) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/history/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(logEntry)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+export const deleteCallHistoryFromCloudflare = async (userId, callId = null, clearAll = false) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !userId) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/history/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, callId, clearAll })
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+

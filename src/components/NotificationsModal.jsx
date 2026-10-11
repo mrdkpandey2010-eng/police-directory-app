@@ -48,9 +48,15 @@ export default function NotificationsModal({
   const isCO = currentUser?.post && (currentUser.post.includes('DSP') || currentUser.post.includes('क्षेत्राधिकारी'));
   const isSHO = currentUser?.post && (currentUser.post.includes('Inspector') || currentUser.post.includes('प्रभारी निरीक्षक'));
 
-  // Filter notifications visible to current user
+  // Filter notifications visible to current user (strictly official circulars, alerts, and permissions)
   const userVisibleNotifs = notifications.filter(n => {
-    // 0. Personal targeted notifications (missed calls, phone permissions)
+    // Direct messages are strictly tracked in Chats tab
+    if (n.type === 'direct_message') return false;
+
+    // Missed calls are strictly tracked in Recent Calls tab
+    if (n.type === 'missed_call') return false;
+
+    // 0. Personal targeted notifications (e.g. phone access permissions)
     if (n.targetUserId || n.targetPno || n.targetPhone) {
       const match = (
         (n.targetUserId && (n.targetUserId === currentUser?.id || n.targetUserId === currentUser?.pno)) ||
@@ -58,13 +64,6 @@ export default function NotificationsModal({
         (n.targetPhone && (n.targetPhone === currentUser?.phone))
       );
       if (match) return true;
-      if (isAdmin) return true;
-      return false;
-    }
-
-    // 1. Direct Message notification visibility
-    if (n.type === 'direct_message') {
-      if (n.targetUserId && currentUser?.id === n.targetUserId) return true;
       if (isAdmin) return true;
       return false;
     }

@@ -3,7 +3,7 @@
 // Provides offline capability, instant load cache, and network resiliency
 // ============================================================================
 
-const CACHE_NAME = 'up-police-cache-v9';
+const CACHE_NAME = 'up-police-cache-v10';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -72,4 +72,42 @@ self.addEventListener('fetch', (event) => {
         });
       })
   );
+});
+
+// Handle incoming notification clicks to bring app into focus
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('/');
+      }
+    })
+  );
+});
+
+// Handle push notifications
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: 'उत्तर प्रदेश पुलिस पोर्टल', body: event.data ? event.data.text() : 'नई सूचना प्राप्त हुई।' };
+  }
+
+  const title = data.title || '🚨 उत्तर प्रदेश पुलिस पोर्टल';
+  const options = {
+    body: data.body || 'नया पुलिस अलर्ट प्राप्त हुआ है।',
+    icon: '/police-icon.svg',
+    badge: '/favicon.ico',
+    vibrate: [500, 200, 500],
+    data: data
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
 });

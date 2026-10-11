@@ -1163,18 +1163,6 @@ export const sendDirectMessage = (chats, contacts, sender, recipient, text, file
 
   saveChats(updatedChats);
 
-  // Automatic recipient notification
-  addNotification({
-    title: `📩 नया संदेश: ${sender.name} (${sender.post || 'अधिकारी'})`,
-    content: `अधिकारी ${sender.name} (${sender.post || 'अधिकारी'}, जनपद: ${sender.district || ''}) ने आपको संदेश भेजा है: "${cleanText ? cleanText.substring(0, 80) : (file ? file.name : 'फ़ाइल संलग्न')}"`,
-    district: recipient.district || 'सभी ज़िले (All Districts)',
-    postedBy: `${sender.name} (${sender.district || ''})`,
-    type: 'direct_message',
-    targetUserId: recipient.id,
-    senderId: sender.id,
-    chatId: targetChatId
-  });
-
   return { updatedChats, targetChatId };
 };
 
@@ -1234,24 +1222,6 @@ export const appendMessageToChat = (chats, chatId, sender, text, file = null) =>
   });
 
   saveChats(updatedChats);
-
-  // If this is a direct chat, notify the other participant
-  if (targetChat.type === 'direct' && targetChat.participants) {
-    const otherParticipantId = targetChat.participants.find(p => p !== sender.id);
-    if (otherParticipantId) {
-      addNotification({
-        title: `📩 नया संदेश: ${sender.name} (${sender.post || 'अधिकारी'})`,
-        content: `अधिकारी ${sender.name} ने आपको संदेश भेजा है: "${cleanText ? cleanText.substring(0, 80) : (file ? file.name : 'फ़ाइल संलग्न')}"`,
-        district: targetChat.district || 'सभी ज़िले (All Districts)',
-        postedBy: `${sender.name}`,
-        type: 'direct_message',
-        targetUserId: otherParticipantId,
-        senderId: sender.id,
-        chatId: chatId
-      });
-    }
-  }
-
   return updatedChats;
 };
 
@@ -2307,13 +2277,17 @@ export const saveCallLog = (logEntry) => {
   try {
     const current = getStoredCallLogs();
     const newEntry = {
-      id: `call-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      timestamp: new Date().toISOString(),
+      id: logEntry.id || `call-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: logEntry.timestamp || new Date().toISOString(),
+      seen: logEntry.seen !== undefined ? logEntry.seen : (logEntry.direction === 'outgoing' ? true : false),
       ...logEntry
     };
-    // Keep up to 200 call logs in local storage
-    const updated = [newEntry, ...current].slice(0, 200);
-    localStorage.setItem(CALL_LOGS_KEY, JSON.stringify(updated));
+    // Keep up to 300 call logs
+    const updated = [newEntry, ...current.filter(c => c.id !== newEntry.id)].slice(0, 300);
+    try {
+      localStorage.setItem(CALL_LOGS_KEY, JSON.stringify(updated));
+    } catch (e) {}
+    idbSet(CALL_LOGS_KEY, updated);
     return updated;
   } catch (err) {
     console.error('Error saving call log', err);
@@ -2321,12 +2295,70 @@ export const saveCallLog = (logEntry) => {
   }
 };
 
+export const deleteCallLog = (callId) => {
+  try {
+    const current = getStoredCallLogs();
+    const updated = current.filter(c => c.id !== callId);
+    try {
+      localStorage.setItem(CALL_LOGS_KEY, JSON.stringify(updated));
+    } catch (e) {}
+    idbSet(CALL_LOGS_KEY, updated);
+    return updated;
+  } catch (err) {
+    return getStoredCallLogs();
+  }
+};
+
 export const clearCallLogs = () => {
   try {
     localStorage.removeItem(CALL_LOGS_KEY);
+    idbSet(CALL_LOGS_KEY, []);
     return [];
   } catch (err) {
     return [];
+  }
+};
+
+export const markCallLogsAsSeen = (currentUser) => {
+  try {
+    const current = getStoredCallLogs();
+    if (!current || current.length === 0) return [];
+    const updated = current.map(c => {
+      const isTarget = currentUser && (
+        c.receiverId === currentUser.id ||
+        (c.receiverPno && c.receiverPno === currentUser.pno) ||
+        (c.receiverPhone && currentUser.phone && c.receiverPhone.replace(/\D/g, '') === currentUser.phone.replace(/\D/g, ''))
+      );
+      if (isTarget && !c.seen) {
+        return { ...c, seen: true };
+      }
+      return c;
+    });
+    try {
+      localStorage.setItem(CALL_LOGS_KEY, JSON.stringify(updated));
+    } catch (e) {}
+    idbSet(CALL_LOGS_KEY, updated);
+    return updated;
+  } catch (e) {
+    return getStoredCallLogs();
+  }
+};
+
+export const getUnseenMissedCallsCount = (currentUser) => {
+  if (!currentUser) return 0;
+  try {
+    const logs = getStoredCallLogs();
+    return logs.filter(c => {
+      const isTarget = (
+        c.receiverId === currentUser.id ||
+        (c.receiverPno && c.receiverPno === currentUser.pno) ||
+        (c.receiverPhone && currentUser.phone && c.receiverPhone.replace(/\D/g, '') === currentUser.phone.replace(/\D/g, ''))
+      );
+      const isMissed = c.status === 'missed' || c.status === 'rejected' || c.status === 'offline';
+      return isTarget && isMissed && !c.seen;
+    }).length;
+  } catch (e) {
+    return 0;
   }
 };
 

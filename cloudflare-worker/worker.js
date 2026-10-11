@@ -277,7 +277,7 @@ export default {
           const callObj = JSON.parse(callStr);
           const age = Date.now() - (callObj.timestamp || 0);
 
-          if (callObj.status === 'ringing' && age < 45000) {
+          if ((callObj.status === 'ringing' || callObj.status === 'calling') && age < 45000) {
             return new Response(JSON.stringify({ active: true, call: callObj }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
@@ -409,6 +409,63 @@ export default {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+
+        // G. Call History Sync: /api/calls/history
+        if (path === '/api/calls/history' && request.method === 'GET') {
+          const userId = url.searchParams.get('userId');
+          if (!userId) {
+            return new Response(JSON.stringify([]), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          const historyStr = await getItem(`call_history_${userId}`);
+          return new Response(historyStr || '[]', {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // H. Save Call History Entry: /api/calls/history/save
+        if (path === '/api/calls/history/save' && request.method === 'POST') {
+          const body = await request.text();
+          const logEntry = JSON.parse(body);
+          const userIds = new Set();
+          if (logEntry.callerId) userIds.add(String(logEntry.callerId));
+          if (logEntry.receiverId) userIds.add(String(logEntry.receiverId));
+
+          for (const u of userIds) {
+            if (!u) continue;
+            const historyStr = await getItem(`call_history_${u}`);
+            let list = [];
+            try { list = historyStr ? JSON.parse(historyStr) : []; } catch (e) {}
+            if (!Array.isArray(list)) list = [];
+            const updated = [logEntry, ...list.filter(item => item.id !== logEntry.id)].slice(0, 150);
+            await putItem(`call_history_${u}`, JSON.stringify(updated));
+          }
+
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // I. Delete Call History: /api/calls/history/delete
+        if (path === '/api/calls/history/delete' && request.method === 'POST') {
+          const body = await request.text();
+          const { userId, callId, clearAll } = JSON.parse(body);
+          if (userId) {
+            if (clearAll) {
+              await putItem(`call_history_${userId}`, '[]');
+            } else if (callId) {
+              const historyStr = await getItem(`call_history_${userId}`);
+              let list = [];
+              try { list = historyStr ? JSON.parse(historyStr) : []; } catch (e) {}
+              const updated = list.filter(item => item.id !== callId);
+              await putItem(`call_history_${userId}`, JSON.stringify(updated));
+            }
+          }
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
       }
 
       // 7. User Presence & Activity Tracking: /api/presence/*
@@ -514,7 +571,7 @@ export default {
           }
 
           const age = Date.now() - (presenceObj.lastSeen || 0);
-          const isOnline = age < 60000 && presenceObj.isOnline !== false;
+          const isOnline = age < 120000 && presenceObj.isOnline !== false;
 
           return new Response(JSON.stringify({
             isOnline,

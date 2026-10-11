@@ -25,6 +25,7 @@ const PolicyModal = lazy(() => import('./components/PolicyModal'));
 const LoginDisclaimerModal = lazy(() => import('./components/LoginDisclaimerModal'));
 const Admin2FAModal = lazy(() => import('./components/Admin2FAModal'));
 const ActiveCallModal = lazy(() => import('./components/ActiveCallModal'));
+const RecentCallsModal = lazy(() => import('./components/RecentCallsModal'));
 import {
   isFirebaseConfigured,
   subscribeToFirestoreChats,
@@ -128,12 +129,19 @@ import {
   addCustomPolicy,
   editPolicyItem,
   deleteCustomPolicyItem,
-  savePolicies
+  savePolicies,
+  getStoredCallLogs,
+  saveCallLog,
+  deleteCallLog,
+  clearCallLogs,
+  markCallLogsAsSeen,
+  getUnseenMissedCallsCount
 } from './utils/storage';
+import { getNotificationPermissionStatus, requestAppNotificationPermission } from './utils/notifications';
 import TermsFooter from './components/TermsFooter';
 import { MapPin, Shield, Search, Lock, Menu, ShieldCheck, Eye, PhoneCall, PhoneMissed } from 'lucide-react';
 import { callManager } from './utils/webrtc';
-import { sendPresenceHeartbeat } from './utils/cloudflareR2';
+import { sendPresenceHeartbeat, fetchCallHistoryFromCloudflare, deleteCallHistoryFromCloudflare } from './utils/cloudflareR2';
 
 export default function App() {
   const [contacts, setContacts] = useState([]);
@@ -173,6 +181,12 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState(null);
   const [isFirebaseSetupOpen, setIsFirebaseSetupOpen] = useState(false);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(isFirebaseConfigured());
+
+  // Recent Calls & Call History Modal State
+  const [isCallHistoryModalOpen, setIsCallHistoryModalOpen] = useState(false);
+  const [callLogs, setCallLogs] = useState([]);
+  const [notificationPermission, setNotificationPermission] = useState(getNotificationPermissionStatus());
+  const [isNotifBannerDismissed, setIsNotifBannerDismissed] = useState(false);
 
   // Policy Modal
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
@@ -222,6 +236,10 @@ export default function App() {
     }
     if (isFeedbackModalOpen) {
       setIsFeedbackModalOpen(false);
+      return true;
+    }
+    if (isCallHistoryModalOpen) {
+      setIsCallHistoryModalOpen(false);
       return true;
     }
     if (isNotifsModalOpen) {
@@ -285,6 +303,7 @@ export default function App() {
     setTerms(getStoredTerms());
     setPolicies(getStoredPolicies());
     setPhonePermissions(getStoredPhonePermissions());
+    setCallLogs(getStoredCallLogs());
     
     // Load and verify from high-capacity permanent IndexedDB vault (500MB+)
     loadContactsFromPermanentStorage().then((vaultContacts) => {
@@ -641,6 +660,13 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       callManager.listenForUserCalls(currentUser);
+      // Fetch cloud call history
+      fetchCallHistoryFromCloudflare(currentUser.id).then(cloudLogs => {
+        if (Array.isArray(cloudLogs) && cloudLogs.length > 0) {
+          cloudLogs.forEach(c => saveCallLog(c));
+          setCallLogs(getStoredCallLogs());
+        }
+      }).catch(() => {});
     } else {
       callManager.listenForUserCalls(null);
     }
@@ -1555,8 +1581,34 @@ export default function App() {
     return contacts.filter(c => c.status === 'pending').length;
   }, [contacts, currentUser]);
 
-  const approvedCount = contacts.filter(c => c.status === 'approved' || c.status === 'active').length;
   const unreadMessagesCount = getUnreadMessagesCountForUser(chats, currentUser?.id);
+
+  // Missed calls count strictly for Call tab badge
+  const missedCallsCount = useMemo(() => {
+    return getUnseenMissedCallsCount(currentUser);
+  }, [currentUser, callLogs]);
+
+  // Official notifications count strictly for Notifications tab badge (excluding chats & calls)
+  const officialNotifCount = useMemo(() => {
+    if (!currentUser) return 0;
+    const isAdmin = currentUser.role === 'admin';
+    const isCoAdmin = currentUser.role === 'co_admin';
+    return (notifications || []).filter(n => {
+      // Exclude direct messages and missed calls from official notices count
+      if (n.type === 'direct_message' || n.type === 'missed_call') return false;
+      if (n.targetUserId || n.targetPno || n.targetPhone) {
+        const match = (
+          (n.targetUserId && (n.targetUserId === currentUser.id || n.targetUserId === currentUser.pno)) ||
+          (n.targetPno && (n.targetPno === currentUser.pno || n.targetPno === currentUser.id)) ||
+          (n.targetPhone && (n.targetPhone === currentUser.phone))
+        );
+        return match || isAdmin;
+      }
+      if (isCoAdmin && n.district !== currentUser.district && n.district !== 'सभी ज़िले (All Districts)') return false;
+      if (currentUser.role === 'user' && n.district !== currentUser.district && n.district !== 'सभी ज़िले (All Districts)') return false;
+      return true;
+    }).length;
+  }, [notifications, currentUser]);
 
   // Real-time unhandled missed calls for logged-in user
   const missedCallAlerts = useMemo(() => {
@@ -1617,7 +1669,7 @@ export default function App() {
         onOpenFilterSidebar={handleOpenFilterSidebar}
         totalApprovedCount={approvedCount}
         pendingCount={pendingCount}
-        notifCount={notifications.length}
+        notifCount={officialNotifCount}
         chatsCount={unreadMessagesCount}
         onOpenLogin={() => setIsLoginModalOpen(true)}
         onOpenRegister={() => setIsRegisterModalOpen(true)}
@@ -1631,6 +1683,70 @@ export default function App() {
         onOpenMenu={() => setIsMenuDrawerOpen(prev => !prev)}
         onNavigateHome={handleNavigateHome}
       />
+
+      {/* Official Notification Permission Prompt Banner */}
+      {currentUser && notificationPermission === 'default' && !isNotifBannerDismissed && (
+        <div style={{
+          background: 'linear-gradient(90deg, rgba(30, 58, 138, 0.95), rgba(15, 23, 42, 0.98))',
+          borderBottom: '1px solid rgba(196, 151, 86, 0.4)',
+          padding: '8px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          fontSize: '0.82rem',
+          color: '#f8fafc',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 999
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '1.1rem' }}>🔔</span>
+            <span>
+              <strong>महत्वपूर्ण अलर्ट्स:</strong> आपातकालीन पुलिस कॉल व आवश्यक विभागीय संदेश पाने हेतु नोटिफिकेशन चालू करें।
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              onClick={async () => {
+                const res = await requestAppNotificationPermission();
+                setNotificationPermission(res);
+                if (res === 'granted') {
+                  showToast('✅ पुलिस कॉल व संदेश नोटिफिकेशन सक्षम हो गए!');
+                }
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #059669, #10b981)',
+                color: '#fff',
+                border: 'none',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              अनुमति दें
+            </button>
+            <button
+              onClick={() => setIsNotifBannerDismissed(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                padding: '2px 6px',
+                fontSize: '0.9rem'
+              }}
+              title="बंद करें"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Mandatory Uniform Photo Verification Gate (Dismissible to access home screen) */}
       {currentUser && currentUser.role === 'user' && !currentUser.uniformPhoto && !isPhotoGateDismissed && (
@@ -2048,7 +2164,36 @@ export default function App() {
       {/* In-App Peer-to-Peer Voice Call Active/Ringing Screen (Max 5 mins, WebRTC) */}
       <ActiveCallModal
         currentUser={currentUser}
-        onCallEnded={() => {}}
+        onCallEnded={() => {
+          setCallLogs(getStoredCallLogs());
+        }}
+      />
+
+      {/* WhatsApp / Phone Style Call History & Recent Calls Modal */}
+      <RecentCallsModal
+        isOpen={isCallHistoryModalOpen}
+        onClose={() => setIsCallHistoryModalOpen(false)}
+        currentUser={currentUser}
+        callLogs={callLogs}
+        onDeleteCall={(callId) => {
+          const updated = deleteCallLog(callId);
+          setCallLogs(updated);
+          deleteCallHistoryFromCloudflare(currentUser?.id, callId, false);
+          showToast('कॉल रिकॉर्ड हटा दिया गया');
+        }}
+        onClearAllCalls={() => {
+          const updated = clearCallLogs();
+          setCallLogs(updated);
+          deleteCallHistoryFromCloudflare(currentUser?.id, null, true);
+          showToast('पूरी कॉल हिस्ट्री साफ़ कर दी गई');
+        }}
+        onStartCall={(officer) => {
+          callManager.startCall(currentUser, officer);
+        }}
+        onOpenChatWithContact={(officer) => {
+          const targetContact = contacts.find(c => c.id === officer.id) || officer;
+          handleOpenChat(targetContact);
+        }}
       />
 
       {/* Mandatory Post-Login Official Disclaimer Gate */}
@@ -2086,7 +2231,7 @@ export default function App() {
         currentUser={currentUser}
         policies={policies}
         pendingCount={pendingCount}
-        notifCount={notifications.length}
+        notifCount={officialNotifCount}
         chatsCount={unreadMessagesCount}
         onOpenProfile={() => setIsProfileModalOpen(true)}
         onOpenAdmin={handleOpenAdminPanel}
@@ -2110,17 +2255,30 @@ export default function App() {
       <MobileBottomNav
         currentUser={currentUser}
         unreadMessagesCount={unreadMessagesCount}
-        notifCount={notifications.length}
+        missedCallsCount={missedCallsCount}
+        notifCount={officialNotifCount}
         pendingCount={pendingCount}
         onOpenChat={() => {
           setIsNotifsModalOpen(false);
+          setIsCallHistoryModalOpen(false);
           setIsAdminModalOpen(false);
           setIsProfileModalOpen(false);
           setIsMenuDrawerOpen(false);
           setIsChatModalOpen(true);
         }}
+        onOpenCallHistory={() => {
+          setIsChatModalOpen(false);
+          setIsNotifsModalOpen(false);
+          setIsAdminModalOpen(false);
+          setIsProfileModalOpen(false);
+          setIsMenuDrawerOpen(false);
+          markCallLogsAsSeen(currentUser);
+          setCallLogs(getStoredCallLogs());
+          setIsCallHistoryModalOpen(true);
+        }}
         onOpenNotifications={() => {
           setIsChatModalOpen(false);
+          setIsCallHistoryModalOpen(false);
           setIsAdminModalOpen(false);
           setIsProfileModalOpen(false);
           setIsMenuDrawerOpen(false);
@@ -2128,6 +2286,7 @@ export default function App() {
         }}
         onOpenAdmin={() => {
           setIsChatModalOpen(false);
+          setIsCallHistoryModalOpen(false);
           setIsNotifsModalOpen(false);
           setIsProfileModalOpen(false);
           setIsMenuDrawerOpen(false);
@@ -2135,6 +2294,7 @@ export default function App() {
         }}
         onOpenProfile={() => {
           setIsChatModalOpen(false);
+          setIsCallHistoryModalOpen(false);
           setIsNotifsModalOpen(false);
           setIsAdminModalOpen(false);
           setIsMenuDrawerOpen(false);
@@ -2142,13 +2302,18 @@ export default function App() {
         }}
         onOpenMenu={() => {
           setIsChatModalOpen(false);
+          setIsCallHistoryModalOpen(false);
           setIsNotifsModalOpen(false);
           setIsAdminModalOpen(false);
           setIsProfileModalOpen(false);
           setIsMenuDrawerOpen(prev => !prev);
         }}
-        onNavigateHome={handleNavigateHome}
+        onNavigateHome={() => {
+          setIsCallHistoryModalOpen(false);
+          handleNavigateHome();
+        }}
         isChatModalOpen={isChatModalOpen}
+        isCallHistoryModalOpen={isCallHistoryModalOpen}
         isNotifsModalOpen={isNotifsModalOpen}
         isAdminModalOpen={isAdminModalOpen}
         isProfileModalOpen={isProfileModalOpen}
