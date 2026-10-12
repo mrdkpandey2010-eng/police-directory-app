@@ -90,8 +90,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_android.ps1 -Target apk
 
 | अनुमति | उपयोग / उद्देश्य |
 | :--- | :--- |
-| `INTERNET` & `ACCESS_NETWORK_STATE` | सर्वर, डायरेक्टरी डेटा व फ़ायरबेस रियल-टाइम सिंक |
-| `CALL_PHONE` | डायरेक्टरी से सीधे कॉल लगाने की सुविधा |
+| `DIAL` (via `<queries>`) | डायरेक्टरी से सीधे फ़ोन डायलर (`tel:`) खोलने की सुविधा (Google Play नीति अनुपालित) |
 | `RECORD_AUDIO` & `MODIFY_AUDIO_SETTINGS` | इन-ऐप सुरक्षित वॉयस कॉलिंग (WebRTC) व वॉयस सर्च |
 | `CAMERA` | कार्मिक पहचान पत्र व वर्दी की तस्वीर कैप्चर करने हेतु |
 | `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE` | प्रोफ़ाइल फोटो व विभागीय दस्तावेज़ अपलोड |
