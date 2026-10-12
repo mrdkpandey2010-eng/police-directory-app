@@ -5,6 +5,7 @@ import { callManager, MAX_CALL_DURATION_SECONDS } from '../utils/webrtc';
 export default function ActiveCallModal({ currentUser, onCallEnded }) {
   const [callState, setCallState] = useState(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [audioBoosterFeedback, setAudioBoosterFeedback] = useState(false);
 
   useEffect(() => {
     const unsub = callManager.subscribe((state) => {
@@ -587,6 +588,48 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
               </div>
             )}
 
+            {/* Connected State: Audio Booster & Mic Status Quick Bar */}
+            {isConnected && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', width: '100%' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    callManager.forcePlayRemoteAudio();
+                    setAudioBoosterFeedback(true);
+                    setTimeout(() => setAudioBoosterFeedback(false), 2500);
+                  }}
+                  style={{
+                    background: audioBoosterFeedback ? 'rgba(16, 185, 129, 0.25)' : 'rgba(56, 189, 248, 0.15)',
+                    border: audioBoosterFeedback ? '1px solid #10b981' : '1px solid rgba(56, 189, 248, 0.4)',
+                    color: audioBoosterFeedback ? '#6ee7b7' : '#38bdf8',
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    backdropFilter: 'blur(6px)',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.3)'
+                  }}
+                >
+                  <Volume2 size={16} />
+                  <span>
+                    {audioBoosterFeedback 
+                      ? '✓ ऑडियो पुनः सक्रिय एवं लाउड किया गया!' 
+                      : '🔊 आवाज़ नहीं आ रही? यहाँ टैप करें'}
+                  </span>
+                </button>
+                <div style={{ fontSize: '0.68rem', color: 'rgba(255, 255, 255, 0.65)', display: 'flex', gap: '8px' }}>
+                  <span>{callState.isMuted ? '🔴 माइक: म्यूट' : '🟢 माइक: सक्रिय'}</span>
+                  <span>•</span>
+                  <span>{callState.isSpeaker ? '🔊 लाउडस्पीकर' : '🔈 ईयरपीस'}</span>
+                </div>
+              </div>
+            )}
+
             {/* Hangup / Dismiss Button */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
               <button
@@ -633,7 +676,19 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
         </div>
 
         {/* Remote Police Audio Stream Receiver Element */}
-        <audio id="remote_police_call_audio" autoPlay playsInline style={{ display: 'none' }} />
+        <audio 
+          id="remote_police_call_audio" 
+          autoPlay 
+          playsInline 
+          style={{ 
+            position: 'fixed', 
+            width: '1px', 
+            height: '1px', 
+            opacity: 0.001, 
+            pointerEvents: 'none', 
+            top: '-100px' 
+          }} 
+        />
       </div>
     </div>
   );

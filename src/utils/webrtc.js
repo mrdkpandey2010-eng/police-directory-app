@@ -18,9 +18,87 @@ const ICE_SERVERS = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.services.mozilla.com' }
-  ]
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelay',
+      credential: 'openrelay'
+    }
+  ],
+  iceCandidatePoolSize: 10
 };
+
+// Robust Microphone Audio Acquisition with multi-tier fallback
+async function acquireMicrophoneAudioStream() {
+  // Method 1: High-fidelity voice constraints (Echo Cancellation + Noise Suppression)
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+        autoGainControl: { ideal: true },
+        channelCount: { ideal: 1 },
+        sampleRate: { ideal: 48000 }
+      },
+      video: false
+    });
+    if (stream && stream.getAudioTracks().length > 0) {
+      stream.getAudioTracks().forEach(t => { t.enabled = true; });
+      console.log('[WebRTC Mic] Acquired high-fidelity audio stream with echo cancellation');
+      return stream;
+    }
+  } catch (err1) {
+    console.warn('[WebRTC Mic] Ideal constraints failed, falling back to basic audio:', err1);
+  }
+
+  // Method 2: Standard unconstrained audio (100% compatible across all Android chipsets and browsers)
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: false
+    });
+    if (stream && stream.getAudioTracks().length > 0) {
+      stream.getAudioTracks().forEach(t => { t.enabled = true; });
+      console.log('[WebRTC Mic] Acquired basic audio stream successfully');
+      return stream;
+    }
+  } catch (err2) {
+    console.error('[WebRTC Mic] All microphone stream acquisition attempts failed:', err2);
+  }
+
+  return null;
+}
+
+// Complete ICE candidate gathering in SDP (Vanilla ICE) to prevent dropped candidates
+function waitForIceGathering(peerConnection, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    if (!peerConnection || peerConnection.iceGatheringState === 'complete') {
+      resolve();
+      return;
+    }
+    let timer = null;
+    const checkGathering = () => {
+      if (peerConnection.iceGatheringState === 'complete') {
+        peerConnection.removeEventListener('icegatheringstatechange', checkGathering);
+        if (timer) clearTimeout(timer);
+        resolve();
+      }
+    };
+    peerConnection.addEventListener('icegatheringstatechange', checkGathering);
+    timer = setTimeout(() => {
+      try {
+        peerConnection.removeEventListener('icegatheringstatechange', checkGathering);
+      } catch (e) {}
+      resolve();
+    }, timeoutMs);
+  });
+}
 
 // Maximum call duration: 5 minutes (300 seconds)
 export const MAX_CALL_DURATION_SECONDS = 300;
@@ -183,6 +261,7 @@ class InAppCallManager {
     this.remoteAudioCtx = null;
     this.remoteAudioSource = null;
     this.remoteGainNode = null;
+    this.processedCandidates = new Set();
 
     try {
       this.broadcastChannel = new BroadcastChannel('up_police_webrtc_calls');
@@ -229,10 +308,22 @@ class InAppCallManager {
         audioElem.setAttribute('webkit-playsinline', 'true');
         audioElem.muted = false;
         audioElem.volume = 1.0;
+        audioElem.style.position = 'fixed';
+        audioElem.style.width = '1px';
+        audioElem.style.height = '1px';
+        audioElem.style.opacity = '0.001';
+        audioElem.style.pointerEvents = 'none';
+        audioElem.style.top = '-100px';
         document.body.appendChild(audioElem);
       } else {
         audioElem.muted = false;
         audioElem.volume = 1.0;
+        audioElem.style.position = 'fixed';
+        audioElem.style.width = '1px';
+        audioElem.style.height = '1px';
+        audioElem.style.opacity = '0.001';
+        audioElem.style.pointerEvents = 'none';
+        audioElem.style.top = '-100px';
       }
       // Prime audio playback
       audioElem.play().catch(() => {});
@@ -492,33 +583,29 @@ class InAppCallManager {
     // Pre-unlock audio element within user click gesture
     this.unlockAudioPipeline();
 
-    const audioConstraints = {
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      },
-      video: false
-    };
+    this.currentUser = caller;
+    this.processedCandidates = new Set();
 
-    try {
-      this.localStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
-      if (this.localStream) {
-        this.localStream.getAudioTracks().forEach(t => { t.enabled = true; });
-      }
-    } catch (err) {
-      console.warn('Microphone permission not granted or unavailable:', err);
-      this.localStream = null;
-    }
+    // Acquire mic with multi-tier fallback
+    this.localStream = await acquireMicrophoneAudioStream();
 
     try {
       this.peerConnection = new RTCPeerConnection(ICE_SERVERS);
 
       if (this.localStream) {
-        this.localStream.getTracks().forEach(track => {
+        this.localStream.getAudioTracks().forEach(track => {
           track.enabled = true;
           this.peerConnection.addTrack(track, this.localStream);
         });
+      }
+
+      // Explicitly request bidirectional audio transceiver
+      if (this.peerConnection.addTransceiver) {
+        const transceivers = this.peerConnection.getTransceivers ? this.peerConnection.getTransceivers() : [];
+        const hasAudioTx = transceivers.some(t => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio');
+        if (!hasAudioTx) {
+          this.peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
+        }
       }
 
       this.peerConnection.onicecandidate = (event) => {
@@ -540,18 +627,29 @@ class InAppCallManager {
         this.playRemoteAudio(stream);
       };
 
+      this.peerConnection.oniceconnectionstatechange = () => {
+        console.log('[WebRTC Caller] ICE Connection State:', this.peerConnection?.iceConnectionState);
+      };
+
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
+        console.log('[WebRTC Caller] Connection State:', state);
         if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-          console.log('[WebRTC Caller] Peer connection state:', state);
           if (this.activeCall && this.activeCall.status === 'connected') {
             this.endCall(false, 'completed');
           }
         }
       };
 
-      const offer = await this.peerConnection.createOffer();
+      const offer = await this.peerConnection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false
+      });
       await this.peerConnection.setLocalDescription(offer);
+
+      // Wait up to 1.5s for ICE candidates so they are embedded directly in offer.sdp
+      await waitForIceGathering(this.peerConnection, 1500);
+      const completeOffer = this.peerConnection.localDescription || offer;
 
       // Capture Calling Device Telemetry (Zero extra permission)
       let callerTelemetry = null;
@@ -576,7 +674,7 @@ class InAppCallManager {
         callerDeviceChange,
         receiverId: receiver.id,
         receiver,
-        offer,
+        offer: completeOffer,
         status: 'calling',
         createdAt: new Date().toISOString()
       };
@@ -667,13 +765,17 @@ class InAppCallManager {
           this.notify();
         }
 
-        // Process any remote ICE candidates
-        if (Array.isArray(cloudCall.candidates) && this.peerConnection) {
+        // Process any remote ICE candidates safely without duplication
+        if (Array.isArray(cloudCall.candidates) && this.peerConnection && this.peerConnection.remoteDescription) {
           cloudCall.candidates.forEach(candObj => {
-            if (candObj.senderId !== this.currentUser?.id && candObj.candidate) {
+            const candKey = JSON.stringify(candObj.candidate);
+            if (candObj.senderId !== this.currentUser?.id && candObj.candidate && !this.processedCandidates.has(candKey)) {
+              this.processedCandidates.add(candKey);
               try {
                 this.peerConnection.addIceCandidate(new RTCIceCandidate(candObj.candidate));
-              } catch (e) {}
+              } catch (e) {
+                console.warn('[WebRTC] addIceCandidate caught:', e);
+              }
             }
           });
         }
@@ -696,33 +798,28 @@ class InAppCallManager {
     // Pre-unlock audio element within user click gesture
     this.unlockAudioPipeline();
 
-    const audioConstraints = {
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      },
-      video: false
-    };
+    this.processedCandidates = new Set();
 
-    try {
-      this.localStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
-      if (this.localStream) {
-        this.localStream.getAudioTracks().forEach(t => { t.enabled = true; });
-      }
-    } catch (err) {
-      console.warn('Microphone permission not granted or unavailable:', err);
-      this.localStream = null;
-    }
+    // Acquire mic with multi-tier fallback
+    this.localStream = await acquireMicrophoneAudioStream();
 
     try {
       this.peerConnection = new RTCPeerConnection(ICE_SERVERS);
 
       if (this.localStream) {
-        this.localStream.getTracks().forEach(track => {
+        this.localStream.getAudioTracks().forEach(track => {
           track.enabled = true;
           this.peerConnection.addTrack(track, this.localStream);
         });
+      }
+
+      // Explicitly request bidirectional audio transceiver
+      if (this.peerConnection.addTransceiver) {
+        const transceivers = this.peerConnection.getTransceivers ? this.peerConnection.getTransceivers() : [];
+        const hasAudioTx = transceivers.some(t => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio');
+        if (!hasAudioTx) {
+          this.peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
+        }
       }
 
       this.peerConnection.onicecandidate = (event) => {
@@ -746,10 +843,14 @@ class InAppCallManager {
         this.playRemoteAudio(stream);
       };
 
+      this.peerConnection.oniceconnectionstatechange = () => {
+        console.log('[WebRTC Receiver] ICE Connection State:', this.peerConnection?.iceConnectionState);
+      };
+
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
+        console.log('[WebRTC Receiver] Connection State:', state);
         if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-          console.log('[WebRTC Receiver] Peer connection state:', state);
           if (this.activeCall && this.activeCall.status === 'connected') {
             this.endCall(false, 'completed');
           }
@@ -758,8 +859,15 @@ class InAppCallManager {
 
       if (this.activeCall.offer) {
         await this.peerConnection.setRemoteDescription(new RTCSessionDescription(this.activeCall.offer));
-        const answer = await this.peerConnection.createAnswer();
+        const answer = await this.peerConnection.createAnswer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: false
+        });
         await this.peerConnection.setLocalDescription(answer);
+
+        // Wait up to 1.5s for ICE candidates so they are embedded directly into answer.sdp
+        await waitForIceGathering(this.peerConnection, 1500);
+        const completeAnswer = this.peerConnection.localDescription || answer;
 
         // Capture Receiver Device Telemetry (Zero extra permission)
         let receiverTelemetry = null;
@@ -780,16 +888,16 @@ class InAppCallManager {
         this.broadcastSignal({
           callId: this.activeCall.callId,
           type: 'answer',
-          answer,
+          answer: completeAnswer,
           receiverTelemetry,
           receiverDeviceChange,
           status: 'connected'
         });
 
         // 2. Transmit answer to Cloudflare Edge KV with receiver telemetry
-        await answerCloudflareCall(this.activeCall.callId, answer, receiverTelemetry);
+        await answerCloudflareCall(this.activeCall.callId, completeAnswer, receiverTelemetry);
 
-        // 3. Start polling for remote hangup
+        // 3. Start polling for remote hangup and candidate updates
         this.startActiveCallCloudPolling(this.activeCall.callId);
       }
     } catch (err) {
@@ -881,7 +989,7 @@ class InAppCallManager {
   toggleSpeaker() {
     if (!this.activeCall) return;
     this.activeCall.isSpeaker = !this.activeCall.isSpeaker;
-    const targetVolume = this.activeCall.isSpeaker ? 1.0 : 0.45;
+    const targetVolume = this.activeCall.isSpeaker ? 1.0 : 0.5;
 
     const audioElem = document.getElementById('remote_police_call_audio');
     if (audioElem) {
@@ -895,7 +1003,24 @@ class InAppCallManager {
     this.notify();
   }
 
-  // Play remote caller audio through both HTMLAudioElement and Web Audio API destination
+  // Force play / boost audio on demand (e.g. from UI "Tap to Hear Sound" button)
+  forcePlayRemoteAudio() {
+    this.unlockAudioPipeline();
+    const audioElem = document.getElementById('remote_police_call_audio');
+    if (audioElem) {
+      audioElem.muted = false;
+      audioElem.volume = this.activeCall?.isSpeaker !== false ? 1.0 : 0.5;
+      if (this.remoteStream) {
+        audioElem.srcObject = this.remoteStream;
+      }
+      audioElem.play().catch(e => console.warn('[WebRTC Audio] Force play notice:', e));
+    }
+    if (this.remoteAudioCtx && this.remoteAudioCtx.state === 'suspended') {
+      this.remoteAudioCtx.resume().catch(() => {});
+    }
+  }
+
+  // Play remote caller audio through HTMLAudioElement and optional Web Audio API booster
   playRemoteAudio(stream) {
     if (!stream) return;
     try {
@@ -903,6 +1028,12 @@ class InAppCallManager {
       if (!audioElem) {
         audioElem = document.createElement('audio');
         audioElem.id = 'remote_police_call_audio';
+        audioElem.style.position = 'fixed';
+        audioElem.style.width = '1px';
+        audioElem.style.height = '1px';
+        audioElem.style.opacity = '0.001';
+        audioElem.style.pointerEvents = 'none';
+        audioElem.style.top = '-100px';
         document.body.appendChild(audioElem);
       }
       audioElem.autoplay = true;
@@ -911,35 +1042,47 @@ class InAppCallManager {
       audioElem.setAttribute('webkit-playsinline', 'true');
       audioElem.muted = false;
 
-      const targetVolume = this.activeCall?.isSpeaker !== false ? 1.0 : 0.45;
+      const targetVolume = this.activeCall?.isSpeaker !== false ? 1.0 : 0.5;
       audioElem.volume = targetVolume;
       audioElem.srcObject = stream;
 
       const playPromise = audioElem.play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
-          console.warn('[WebRTC] HTMLAudioElement play caught, relying on Web Audio destination:', err);
+          console.warn('[WebRTC] HTMLAudioElement play deferred, registering touch/click listener:', err);
+          const resumeOnTouch = () => {
+            if (audioElem) audioElem.play().catch(() => {});
+            if (this.remoteAudioCtx && this.remoteAudioCtx.state === 'suspended') {
+              this.remoteAudioCtx.resume().catch(() => {});
+            }
+          };
+          window.addEventListener('touchstart', resumeOnTouch, { once: true, passive: true });
+          window.addEventListener('click', resumeOnTouch, { once: true, passive: true });
         });
       }
 
-      // High-Fidelity Web Audio Routing (Bypasses mobile WebView autoplay restrictions)
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        if (!this.remoteAudioCtx) this.remoteAudioCtx = new AudioCtx();
-        if (this.remoteAudioCtx.state === 'suspended') {
-          this.remoteAudioCtx.resume().catch(() => {});
+      // High-Fidelity Web Audio Routing (Acts as audio booster)
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          if (!this.remoteAudioCtx) this.remoteAudioCtx = new AudioCtx();
+          if (this.remoteAudioCtx.state === 'suspended') {
+            this.remoteAudioCtx.resume().catch(() => {});
+          }
+          if (this.remoteAudioSource) {
+            try { this.remoteAudioSource.disconnect(); } catch (e) {}
+            this.remoteAudioSource = null;
+          }
+          this.remoteAudioSource = this.remoteAudioCtx.createMediaStreamSource(stream);
+          if (!this.remoteGainNode) {
+            this.remoteGainNode = this.remoteAudioCtx.createGain();
+            this.remoteGainNode.connect(this.remoteAudioCtx.destination);
+          }
+          this.remoteGainNode.gain.setValueAtTime(targetVolume, this.remoteAudioCtx.currentTime);
+          this.remoteAudioSource.connect(this.remoteGainNode);
         }
-        if (this.remoteAudioSource) {
-          try { this.remoteAudioSource.disconnect(); } catch (e) {}
-          this.remoteAudioSource = null;
-        }
-        this.remoteAudioSource = this.remoteAudioCtx.createMediaStreamSource(stream);
-        if (!this.remoteGainNode) {
-          this.remoteGainNode = this.remoteAudioCtx.createGain();
-          this.remoteGainNode.connect(this.remoteAudioCtx.destination);
-        }
-        this.remoteGainNode.gain.setValueAtTime(targetVolume, this.remoteAudioCtx.currentTime);
-        this.remoteAudioSource.connect(this.remoteGainNode);
+      } catch (webAudioErr) {
+        console.warn('[WebRTC] Web Audio routing bypassed, relying on HTMLAudioElement:', webAudioErr);
       }
     } catch (err) {
       console.error('[WebRTC] playRemoteAudio execution error:', err);
@@ -1021,6 +1164,9 @@ class InAppCallManager {
     if (this.peerConnection) {
       this.peerConnection.close();
       this.peerConnection = null;
+    }
+    if (this.processedCandidates) {
+      this.processedCandidates.clear();
     }
     this.activeCall = null;
     this.remoteStream = null;

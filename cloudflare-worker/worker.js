@@ -302,7 +302,12 @@ export default {
           }
           callData.status = 'ringing';
           callData.timestamp = Date.now();
-          callData.candidates = callData.candidates || [];
+          const earlyStr = await getItem(`early_cand_${callData.callId}`);
+          let earlyCandidates = [];
+          if (earlyStr) {
+            try { earlyCandidates = JSON.parse(earlyStr); } catch (e) {}
+          }
+          callData.candidates = [...(callData.candidates || []), ...(Array.isArray(earlyCandidates) ? earlyCandidates : [])];
           
           await putItem(`call_${callData.callId}`, JSON.stringify(callData));
 
@@ -427,7 +432,18 @@ export default {
             });
           }
 
-          return new Response(callStr, {
+          const callObj = JSON.parse(callStr);
+          const earlyStr = await getItem(`early_cand_${callId}`);
+          if (earlyStr) {
+            try {
+              const earlyList = JSON.parse(earlyStr);
+              if (Array.isArray(earlyList) && earlyList.length > 0) {
+                callObj.candidates = [...(callObj.candidates || []), ...earlyList];
+              }
+            } catch (e) {}
+          }
+
+          return new Response(JSON.stringify(callObj), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
@@ -443,6 +459,13 @@ export default {
               callObj.candidates = callObj.candidates || [];
               callObj.candidates.push({ candidate, senderId, ts: Date.now() });
               await putItem(`call_${callId}`, JSON.stringify(callObj));
+            } else {
+              // Buffer early candidates if call_ record is still in-flight
+              const earlyStr = await getItem(`early_cand_${callId}`);
+              let earlyList = [];
+              try { earlyList = earlyStr ? JSON.parse(earlyStr) : []; } catch (e) {}
+              earlyList.push({ candidate, senderId, ts: Date.now() });
+              await putItem(`early_cand_${callId}`, JSON.stringify(earlyList));
             }
           }
           return new Response(JSON.stringify({ success: true }), {
@@ -483,6 +506,7 @@ export default {
             for (const k of clearKeys) {
               if (k) await putItem(`active_call_user_${k}`, '');
             }
+            await putItem(`early_cand_${callId}`, '');
 
             // If call was missed or rejected without being connected, create Missed Call Alert
             const isMissed = status === 'missed' || status === 'rejected' || (callObj && callObj.status === 'ringing');
