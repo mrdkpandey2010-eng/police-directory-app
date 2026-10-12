@@ -332,14 +332,22 @@ class InAppCallManager {
     }
   }
 
-  // Broadcast signaling event locally
+  // Broadcast signaling event locally (safe JSON clone to avoid DataCloneError)
   broadcastSignal(data) {
-    if (this.broadcastChannel) {
-      this.broadcastChannel.postMessage(data);
-    }
+    if (!data) return;
     try {
-      localStorage.setItem('police_webrtc_signal_event', JSON.stringify({ ...data, _ts: Date.now() }));
-    } catch (e) {}
+      const safeData = JSON.parse(JSON.stringify(data));
+      if (this.broadcastChannel) {
+        try {
+          this.broadcastChannel.postMessage(safeData);
+        } catch (postErr) {
+          console.warn('[WebRTC Signal] broadcastChannel.postMessage notice:', postErr);
+        }
+      }
+      localStorage.setItem('police_webrtc_signal_event', JSON.stringify({ ...safeData, _ts: Date.now() }));
+    } catch (err) {
+      console.warn('[WebRTC Signal] broadcastSignal error:', err);
+    }
   }
 
   // Handle local incoming signaling message
@@ -376,12 +384,23 @@ class InAppCallManager {
           this.activeCall.status = 'connected';
           this.activeCall.startedAt = Date.now();
           callAudio.stop();
+          if (Array.isArray(this.earlyLocalCandidates) && this.earlyLocalCandidates.length > 0) {
+            this.earlyLocalCandidates.forEach(cand => {
+              try { this.peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
+            });
+            this.earlyLocalCandidates = [];
+          }
           this.notify();
         })
         .catch(err => console.error('Error setting remote answer:', err));
     } else if (data.type === 'candidate' && this.peerConnection) {
       try {
-        this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        if (this.peerConnection.remoteDescription) {
+          this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } else {
+          this.earlyLocalCandidates = this.earlyLocalCandidates || [];
+          this.earlyLocalCandidates.push(data.candidate);
+        }
       } catch (e) {}
     } else if (data.type === 'hangup' || data.type === 'reject') {
       this.endCall(false, data.type === 'reject' ? 'rejected' : 'ended');
@@ -610,12 +629,18 @@ class InAppCallManager {
 
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
+          const candidateData = event.candidate.toJSON ? event.candidate.toJSON() : {
+            candidate: event.candidate.candidate,
+            sdpMid: event.candidate.sdpMid,
+            sdpMLineIndex: event.candidate.sdpMLineIndex,
+            usernameFragment: event.candidate.usernameFragment
+          };
           this.broadcastSignal({
             callId,
             type: 'candidate',
-            candidate: event.candidate
+            candidate: candidateData
           });
-          sendCloudflareIceCandidate(callId, event.candidate, caller.id);
+          sendCloudflareIceCandidate(callId, candidateData, caller.id);
         }
       };
 
@@ -650,6 +675,10 @@ class InAppCallManager {
       // Wait up to 1.5s for ICE candidates so they are embedded directly in offer.sdp
       await waitForIceGathering(this.peerConnection, 1500);
       const completeOffer = this.peerConnection.localDescription || offer;
+      const offerData = {
+        type: completeOffer.type || 'offer',
+        sdp: completeOffer.sdp
+      };
 
       // Capture Calling Device Telemetry (Zero extra permission)
       let callerTelemetry = null;
@@ -674,7 +703,7 @@ class InAppCallManager {
         callerDeviceChange,
         receiverId: receiver.id,
         receiver,
-        offer: completeOffer,
+        offer: offerData,
         status: 'calling',
         createdAt: new Date().toISOString()
       };
@@ -693,19 +722,21 @@ class InAppCallManager {
 
     } catch (err) {
       console.error('WebRTC offer error:', err);
-      // Fallback ring simulation if WebRTC fails in restricted environment
-      setTimeout(() => {
-        if (this.activeCall && this.activeCall.status === 'calling') {
-          if (this.ringTimeout) {
-            clearTimeout(this.ringTimeout);
-            this.ringTimeout = null;
-          }
-          this.activeCall.status = 'connected';
-          this.activeCall.startedAt = Date.now();
-          callAudio.stop();
-          this.notify();
-        }
-      }, 4000);
+      callAudio.stop();
+      this.activeCall = {
+        callId,
+        isIncoming: false,
+        status: 'offline',
+        caller,
+        receiver,
+        startedAt: null,
+        duration: 0,
+        isMuted: false,
+        isSpeaker: true,
+        offlineMessage: 'कॉल स्थापित नहीं हो सकी। कृपया दोबारा प्रयास करें।'
+      };
+      this.notify();
+      this.cleanup();
     }
   }
 
@@ -824,13 +855,19 @@ class InAppCallManager {
 
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
+          const candidateData = event.candidate.toJSON ? event.candidate.toJSON() : {
+            candidate: event.candidate.candidate,
+            sdpMid: event.candidate.sdpMid,
+            sdpMLineIndex: event.candidate.sdpMLineIndex,
+            usernameFragment: event.candidate.usernameFragment
+          };
           this.broadcastSignal({
             callId: this.activeCall.callId,
             type: 'candidate',
-            candidate: event.candidate
+            candidate: candidateData
           });
           if (this.currentUser) {
-            sendCloudflareIceCandidate(this.activeCall.callId, event.candidate, this.currentUser.id);
+            sendCloudflareIceCandidate(this.activeCall.callId, candidateData, this.currentUser.id);
           }
         }
       };
@@ -868,6 +905,10 @@ class InAppCallManager {
         // Wait up to 1.5s for ICE candidates so they are embedded directly into answer.sdp
         await waitForIceGathering(this.peerConnection, 1500);
         const completeAnswer = this.peerConnection.localDescription || answer;
+        const answerData = {
+          type: completeAnswer.type || 'answer',
+          sdp: completeAnswer.sdp
+        };
 
         // Capture Receiver Device Telemetry (Zero extra permission)
         let receiverTelemetry = null;
@@ -888,14 +929,14 @@ class InAppCallManager {
         this.broadcastSignal({
           callId: this.activeCall.callId,
           type: 'answer',
-          answer: completeAnswer,
+          answer: answerData,
           receiverTelemetry,
           receiverDeviceChange,
           status: 'connected'
         });
 
         // 2. Transmit answer to Cloudflare Edge KV with receiver telemetry
-        await answerCloudflareCall(this.activeCall.callId, completeAnswer, receiverTelemetry);
+        await answerCloudflareCall(this.activeCall.callId, answerData, receiverTelemetry);
 
         // 3. Start polling for remote hangup and candidate updates
         this.startActiveCallCloudPolling(this.activeCall.callId);
@@ -1168,6 +1209,7 @@ class InAppCallManager {
     if (this.processedCandidates) {
       this.processedCandidates.clear();
     }
+    this.earlyLocalCandidates = [];
     this.activeCall = null;
     this.remoteStream = null;
     this.notify();
