@@ -20,16 +20,7 @@ const ICE_SERVERS = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelay',
-      credential: 'openrelay'
-    }
+    { urls: 'stun:stun.cloudflare.com:3478' }
   ],
   iceCandidatePoolSize: 10
 };
@@ -379,20 +370,29 @@ class InAppCallManager {
     if (data.callId !== this.activeCall.callId) return;
 
     if (data.type === 'answer' && this.peerConnection && this.activeCall.status === 'calling') {
-      this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
-        .then(() => {
-          this.activeCall.status = 'connected';
-          this.activeCall.startedAt = Date.now();
-          callAudio.stop();
-          if (Array.isArray(this.earlyLocalCandidates) && this.earlyLocalCandidates.length > 0) {
-            this.earlyLocalCandidates.forEach(cand => {
-              try { this.peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
-            });
-            this.earlyLocalCandidates = [];
-          }
-          this.notify();
-        })
-        .catch(err => console.error('Error setting remote answer:', err));
+      const applyAnswer = () => {
+        this.activeCall.status = 'connected';
+        this.activeCall.startedAt = this.activeCall.startedAt || Date.now();
+        callAudio.stop();
+        if (Array.isArray(this.earlyLocalCandidates) && this.earlyLocalCandidates.length > 0) {
+          this.earlyLocalCandidates.forEach(cand => {
+            try { this.peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
+          });
+          this.earlyLocalCandidates = [];
+        }
+        this.notify();
+      };
+
+      if (this.peerConnection.signalingState === 'have-local-offer') {
+        this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
+          .then(applyAnswer)
+          .catch(err => {
+            console.warn('[WebRTC Signal] Remote answer set notice:', err);
+            applyAnswer();
+          });
+      } else {
+        applyAnswer();
+      }
     } else if (data.type === 'candidate' && this.peerConnection) {
       try {
         if (this.peerConnection.remoteDescription) {
@@ -556,36 +556,11 @@ class InAppCallManager {
       console.warn('Presence status fetch error:', e);
     }
 
-    // If recipient is OFFLINE:
-    if (!presence || !presence.isOnline) {
-      console.log('[WebRTC Calling] Recipient is OFFLINE:', receiver);
-      callAudio.playOfflineTone();
-      this.activeCall = {
-        callId,
-        isIncoming: false,
-        status: 'offline',
-        caller,
-        receiver,
-        startedAt: null,
-        duration: 0,
-        isMuted: false,
-        isSpeaker: true,
-        presence: presence || { isOnline: false, status: 'offline' },
-        offlineMessage: 'अधिकारी अभी ऑफ़लाइन हैं / नेटवर्क क्षेत्र से बाहर हैं'
-      };
-      this.notify();
-
-      // Immediately log Missed Call Alert so recipient receives it as soon as they open the app
-      this.generateMissedCallNotification(caller, receiver, 'offline');
-      this.logCompletedCall('missed', 0);
-      return;
-    }
-
-    // If recipient IS ONLINE: Proceed with ringing
+    // Proceed with ringing (always dispatch call ring to recipient via Cloudflare KV)
     this.activeCall = {
       ...this.activeCall,
       status: 'calling',
-      presence
+      presence: presence || { isOnline: true, status: 'calling' }
     };
     this.notify();
     callAudio.startOutgoingRingback();
@@ -781,8 +756,12 @@ class InAppCallManager {
             clearTimeout(this.ringTimeout);
             this.ringTimeout = null;
           }
-          if (this.peerConnection && !this.peerConnection.currentRemoteDescription) {
-            await this.peerConnection.setRemoteDescription(new RTCSessionDescription(cloudCall.answer));
+          if (this.peerConnection && this.peerConnection.signalingState === 'have-local-offer') {
+            try {
+              await this.peerConnection.setRemoteDescription(new RTCSessionDescription(cloudCall.answer));
+            } catch (sdpErr) {
+              console.warn('[WebRTC] Polling setRemoteDescription notice:', sdpErr);
+            }
           }
           this.activeCall.status = 'connected';
           this.activeCall.startedAt = this.activeCall.startedAt || Date.now();
@@ -1056,12 +1035,9 @@ class InAppCallManager {
       }
       audioElem.play().catch(e => console.warn('[WebRTC Audio] Force play notice:', e));
     }
-    if (this.remoteAudioCtx && this.remoteAudioCtx.state === 'suspended') {
-      this.remoteAudioCtx.resume().catch(() => {});
-    }
   }
 
-  // Play remote caller audio through HTMLAudioElement and optional Web Audio API booster
+  // Play remote caller audio through HTMLAudioElement
   playRemoteAudio(stream) {
     if (!stream) return;
     try {
@@ -1070,11 +1046,12 @@ class InAppCallManager {
         audioElem = document.createElement('audio');
         audioElem.id = 'remote_police_call_audio';
         audioElem.style.position = 'fixed';
-        audioElem.style.width = '1px';
-        audioElem.style.height = '1px';
-        audioElem.style.opacity = '0.001';
+        audioElem.style.bottom = '0';
+        audioElem.style.left = '0';
+        audioElem.style.width = '100%';
+        audioElem.style.height = '40px';
+        audioElem.style.opacity = '0.01';
         audioElem.style.pointerEvents = 'none';
-        audioElem.style.top = '-100px';
         document.body.appendChild(audioElem);
       }
       audioElem.autoplay = true;
@@ -1083,7 +1060,7 @@ class InAppCallManager {
       audioElem.setAttribute('webkit-playsinline', 'true');
       audioElem.muted = false;
 
-      const targetVolume = this.activeCall?.isSpeaker !== false ? 1.0 : 0.5;
+      const targetVolume = this.activeCall?.isSpeaker !== false ? 1.0 : 0.6;
       audioElem.volume = targetVolume;
       audioElem.srcObject = stream;
 
@@ -1093,37 +1070,10 @@ class InAppCallManager {
           console.warn('[WebRTC] HTMLAudioElement play deferred, registering touch/click listener:', err);
           const resumeOnTouch = () => {
             if (audioElem) audioElem.play().catch(() => {});
-            if (this.remoteAudioCtx && this.remoteAudioCtx.state === 'suspended') {
-              this.remoteAudioCtx.resume().catch(() => {});
-            }
           };
           window.addEventListener('touchstart', resumeOnTouch, { once: true, passive: true });
           window.addEventListener('click', resumeOnTouch, { once: true, passive: true });
         });
-      }
-
-      // High-Fidelity Web Audio Routing (Acts as audio booster)
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-          if (!this.remoteAudioCtx) this.remoteAudioCtx = new AudioCtx();
-          if (this.remoteAudioCtx.state === 'suspended') {
-            this.remoteAudioCtx.resume().catch(() => {});
-          }
-          if (this.remoteAudioSource) {
-            try { this.remoteAudioSource.disconnect(); } catch (e) {}
-            this.remoteAudioSource = null;
-          }
-          this.remoteAudioSource = this.remoteAudioCtx.createMediaStreamSource(stream);
-          if (!this.remoteGainNode) {
-            this.remoteGainNode = this.remoteAudioCtx.createGain();
-            this.remoteGainNode.connect(this.remoteAudioCtx.destination);
-          }
-          this.remoteGainNode.gain.setValueAtTime(targetVolume, this.remoteAudioCtx.currentTime);
-          this.remoteAudioSource.connect(this.remoteGainNode);
-        }
-      } catch (webAudioErr) {
-        console.warn('[WebRTC] Web Audio routing bypassed, relying on HTMLAudioElement:', webAudioErr);
       }
     } catch (err) {
       console.error('[WebRTC] playRemoteAudio execution error:', err);
@@ -1217,3 +1167,6 @@ class InAppCallManager {
 }
 
 export const callManager = new InAppCallManager();
+if (typeof window !== 'undefined') {
+  window.callManager = callManager;
+}

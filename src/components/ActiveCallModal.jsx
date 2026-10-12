@@ -681,12 +681,14 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
           autoPlay 
           playsInline 
           style={{ 
-            position: 'fixed', 
-            width: '1px', 
-            height: '1px', 
-            opacity: 0.001, 
-            pointerEvents: 'none', 
-            top: '-100px' 
+            position: 'absolute', 
+            bottom: '8px', 
+            left: '8px',
+            right: '8px',
+            width: 'calc(100% - 16px)', 
+            height: '24px', 
+            opacity: 0.01, 
+            pointerEvents: 'none' 
           }} 
         />
       </div>
