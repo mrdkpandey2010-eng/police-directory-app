@@ -395,25 +395,17 @@ export default function App() {
     window.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
 
-    // Check if user session already exists and is within 30 minutes of activity
+    // Restore saved user session permanently (No auto-logout)
     const savedUser = getStoredSession();
-    const lastActiveStr = localStorage.getItem('police_last_activity_time');
-    const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : 0;
-    const isSessionExpired = lastActive && (Date.now() - lastActive > 30 * 60 * 1000);
-
-    if (savedUser && !isSessionExpired) {
+    if (savedUser) {
       setCurrentUser(savedUser);
-      localStorage.setItem('police_last_activity_time', String(Date.now()));
       if (savedUser.role === 'user' || savedUser.role === 'co_admin') {
         setSelectedDistrict(savedUser.district || '');
       }
       setDisclaimerAgreed(true);
       setIsDisclaimerModalOpen(false);
     } else {
-      if (savedUser && isSessionExpired) {
-        saveSession(null);
-      }
-      // Mandatory front screen login wall
+      // Front screen login wall if no active session
       setCurrentUser(null);
     }
 
@@ -425,49 +417,6 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
     };
   }, []);
-
-  // ---------------- AUTO LOGOUT SESSION (30 MINUTES INACTIVITY) ----------------
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-    const ACTIVITY_KEY = 'police_last_activity_time';
-
-    const updateActivity = () => {
-      localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
-    };
-
-    updateActivity();
-
-    const activityEvents = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'];
-    const handleUserActivity = () => {
-      updateActivity();
-    };
-
-    activityEvents.forEach(evt => {
-      window.addEventListener(evt, handleUserActivity, { passive: true });
-    });
-
-    // Inactivity checker interval (runs every 15 seconds)
-    const checkInterval = setInterval(() => {
-      const lastActiveStr = localStorage.getItem(ACTIVITY_KEY);
-      const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : Date.now();
-      const elapsed = Date.now() - lastActive;
-
-      if (elapsed >= INACTIVITY_TIMEOUT_MS) {
-        clearInterval(checkInterval);
-        handleLogout();
-        alert('⏱️ सुरक्षा सत्र समाप्त (Session Expired):\n30 मिनट तक कोई गतिविधि न होने के कारण सुरक्षा नियमावली के अंतर्गत आपका सत्र स्वतः समाप्त (Auto Logout) कर दिया गया है।\nकृपया पुनः लॉगिन करें।');
-      }
-    }, 15000);
-
-    return () => {
-      activityEvents.forEach(evt => {
-        window.removeEventListener(evt, handleUserActivity);
-      });
-      clearInterval(checkInterval);
-    };
-  }, [currentUser]);
 
   // ---------------- FIRESTORE CONTACTS REAL-TIME SYNC (PERMANENT RETENTION) ----------------
   useEffect(() => {
