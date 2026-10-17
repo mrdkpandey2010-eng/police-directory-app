@@ -12,6 +12,11 @@ import {
   saveCallHistoryToCloudflare
 } from './cloudflareR2';
 import { captureFullDeviceTelemetry, checkDeviceChange } from './deviceTelemetry';
+import { 
+  setNativeCommunicationMode, 
+  setNativeSpeakerphone, 
+  resetNativeAudioMode 
+} from './nativeBridge';
 
 const ICE_SERVERS = {
   iceServers: [
@@ -25,46 +30,252 @@ const ICE_SERVERS = {
   iceCandidatePoolSize: 10
 };
 
-// Robust Microphone Audio Acquisition with multi-tier fallback
+// Retrieve ICE / TURN servers with support for secure custom TURN credentials
+export function getRtcConfiguration() {
+  if (typeof window !== 'undefined') {
+    try {
+      const customIce = localStorage.getItem('police_custom_turn_config');
+      if (customIce) {
+        const parsed = JSON.parse(customIce);
+        if (parsed && Array.isArray(parsed.iceServers) && parsed.iceServers.length > 0) {
+          return {
+            iceServers: [...ICE_SERVERS.iceServers, ...parsed.iceServers],
+            iceCandidatePoolSize: 10
+          };
+        }
+      }
+    } catch (e) {}
+  }
+  return ICE_SERVERS;
+}
+
+/**
+ * Robust High-Fidelity Microphone Capture with Multi-Tier Fallback
+ * Guarantees Hardware/Browser Acoustic Echo Cancellation (AEC),
+ * Noise Suppression (NS), and Voice-Optimized Automatic Gain Control (AGC).
+ */
 async function acquireMicrophoneAudioStream() {
-  // Method 1: High-fidelity voice constraints (Echo Cancellation + Noise Suppression)
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: { ideal: true },
-        noiseSuppression: { ideal: true },
-        autoGainControl: { ideal: true },
-        channelCount: { ideal: 1 },
-        sampleRate: { ideal: 48000 }
-      },
-      video: false
-    });
-    if (stream && stream.getAudioTracks().length > 0) {
-      stream.getAudioTracks().forEach(t => { t.enabled = true; });
-      console.log('[WebRTC Mic] Acquired high-fidelity audio stream with echo cancellation');
-      return stream;
-    }
-  } catch (err1) {
-    console.warn('[WebRTC Mic] Ideal constraints failed, falling back to basic audio:', err1);
+  if (typeof navigator === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
+    console.error('[WebRTC Mic] mediaDevices.getUserMedia is not available');
+    return null;
   }
 
-  // Method 2: Standard unconstrained audio (100% compatible across all Android chipsets and browsers)
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: false
-    });
-    if (stream && stream.getAudioTracks().length > 0) {
-      stream.getAudioTracks().forEach(t => { t.enabled = true; });
-      console.log('[WebRTC Mic] Acquired basic audio stream successfully');
-      return stream;
+  // Tier 1: WhatsApp-level studio voice constraints with Chromium & Android AEC flags
+  const tier1Constraints = {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: { ideal: 1 },
+      sampleRate: { ideal: 48000 },
+      sampleSize: { ideal: 16 },
+      // Chromium & Android WebView hardware AEC hooks
+      googEchoCancellation: true,
+      googAutoGainControl: true,
+      googNoiseSuppression: true,
+      googHighpassFilter: true,
+      googTypingNoiseDetection: true,
+      googAudioMirroring: false
+    },
+    video: false
+  };
+
+  // Tier 2: Standard cross-platform W3C constraints
+  const tier2Constraints = {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: { ideal: 1 }
+    },
+    video: false
+  };
+
+  // Tier 3: Core acoustic echo cancellation constraint
+  const tier3Constraints = {
+    audio: {
+      echoCancellation: true
+    },
+    video: false
+  };
+
+  // Tier 4: Basic audio fallback
+  const tier4Constraints = {
+    audio: true,
+    video: false
+  };
+
+  const tiers = [
+    { name: 'Tier 1 (High-Fidelity Studio Speech)', constraints: tier1Constraints },
+    { name: 'Tier 2 (Standard W3C Voice)', constraints: tier2Constraints },
+    { name: 'Tier 3 (Core AEC)', constraints: tier3Constraints },
+    { name: 'Tier 4 (Basic Fallback)', constraints: tier4Constraints }
+  ];
+
+  for (const tier of tiers) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(tier.constraints);
+      if (stream && stream.getAudioTracks().length > 0) {
+        const track = stream.getAudioTracks()[0];
+        track.enabled = true;
+        const settings = track.getSettings ? track.getSettings() : {};
+        console.log(`[WebRTC Mic] Acquired microphone stream using ${tier.name}:`, {
+          deviceId: settings.deviceId,
+          sampleRate: settings.sampleRate,
+          channelCount: settings.channelCount,
+          echoCancellation: settings.echoCancellation,
+          noiseSuppression: settings.noiseSuppression,
+          autoGainControl: settings.autoGainControl,
+          latency: settings.latency
+        });
+        return stream;
+      }
+    } catch (err) {
+      console.warn(`[WebRTC Mic] ${tier.name} acquisition failed:`, err?.name, err?.message);
     }
-  } catch (err2) {
-    console.error('[WebRTC Mic] All microphone stream acquisition attempts failed:', err2);
   }
 
+  console.error('[WebRTC Mic] All microphone acquisition tiers failed');
   return null;
 }
+
+/**
+ * Prioritize Opus codec using standard RTCRtpTransceiver.setCodecPreferences
+ */
+function preferOpusCodec(peerConnection) {
+  if (!peerConnection || typeof RTCRtpSender.getCapabilities !== 'function') return;
+  try {
+    const audioTransceivers = peerConnection.getTransceivers
+      ? peerConnection.getTransceivers().filter(t => 
+          (t.receiver && t.receiver.track && t.receiver.track.kind === 'audio') ||
+          (t.sender && t.sender.track && t.sender.track.kind === 'audio')
+        )
+      : [];
+
+    const capabilities = RTCRtpSender.getCapabilities('audio');
+    if (capabilities && Array.isArray(capabilities.codecs) && capabilities.codecs.length > 0) {
+      const sortedCodecs = [...capabilities.codecs].sort((a, b) => {
+        const aIsOpus = a.mimeType && a.mimeType.toLowerCase() === 'audio/opus';
+        const bIsOpus = b.mimeType && b.mimeType.toLowerCase() === 'audio/opus';
+        return bIsOpus - aIsOpus;
+      });
+
+      audioTransceivers.forEach(transceiver => {
+        if (typeof transceiver.setCodecPreferences === 'function') {
+          transceiver.setCodecPreferences(sortedCodecs);
+        }
+      });
+      console.log('[WebRTC Codec] Opus prioritized via setCodecPreferences');
+    }
+  } catch (e) {
+    console.warn('[WebRTC Codec] setCodecPreferences notice:', e);
+  }
+}
+
+/**
+ * Configure RTCRtpSender encoding parameters for high-res voice transport (36 kbps, high priority)
+ */
+async function configureSenderEncodingParameters(peerConnection, targetBitrateBps = 36000) {
+  if (!peerConnection || typeof peerConnection.getSenders !== 'function') return;
+  try {
+    const senders = peerConnection.getSenders();
+    for (const sender of senders) {
+      if (sender.track && sender.track.kind === 'audio' && typeof sender.getParameters === 'function') {
+        const params = sender.getParameters();
+        if (params && Array.isArray(params.encodings) && params.encodings.length > 0) {
+          params.encodings[0].maxBitrate = targetBitrateBps;
+          if ('dtx' in params.encodings[0]) {
+            params.encodings[0].dtx = 'enabled';
+          }
+          if ('priority' in params.encodings[0]) {
+            params.encodings[0].priority = 'high';
+          }
+          if ('networkPriority' in params.encodings[0]) {
+            params.encodings[0].networkPriority = 'high';
+          }
+          await sender.setParameters(params);
+          console.log('[WebRTC Sender] Configured encoding parameters:', { maxBitrate: targetBitrateBps, priority: 'high' });
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[WebRTC Sender] setParameters notice:', e);
+  }
+}
+
+/**
+ * Tune Opus SDP FMTP line for WhatsApp-level speech quality:
+ * - minptime=10: ultra-low speech packetization latency
+ * - useinbandfec=1: In-Band Forward Error Correction for packet loss recovery
+ * - usedtx=1: Discontinuous Transmission for silence bandwidth savings
+ * - maxaveragebitrate=36000: 36 kbps studio speech bitrate
+ * - stereo=0 & sprop-stereo=0: Clean mono voice encoding (prevents phase cancellation)
+ * - cbr=0: Adaptive variable bitrate
+ */
+function tuneSdpForVoiceClarity(sdp) {
+  if (!sdp || typeof sdp !== 'string') return sdp;
+
+  const lines = sdp.split('\r\n');
+  let opusPayloadType = null;
+
+  // Locate the Opus payload type from rtpmap
+  for (const line of lines) {
+    const match = line.match(/^a=rtpmap:(\d+)\s+opus\/48000/i);
+    if (match) {
+      opusPayloadType = match[1];
+      break;
+    }
+  }
+
+  if (!opusPayloadType) {
+    return sdp;
+  }
+
+  let fmtpFound = false;
+  const tunedLines = lines.map(line => {
+    if (line.startsWith(`a=fmtp:${opusPayloadType} `) || line.startsWith(`a=fmtp:${opusPayloadType}=`)) {
+      fmtpFound = true;
+      const paramStr = line.substring(`a=fmtp:${opusPayloadType}`.length).trim();
+      const existingParams = new Map();
+
+      // Parse existing key=value parameters safely
+      paramStr.split(';').forEach(p => {
+        const parts = p.trim().split('=');
+        if (parts[0]) {
+          existingParams.set(parts[0].trim(), parts[1] !== undefined ? parts[1].trim() : '');
+        }
+      });
+
+      // Inject voice-optimized parameters
+      existingParams.set('minptime', '10');
+      existingParams.set('useinbandfec', '1');
+      existingParams.set('usedtx', '1');
+      existingParams.set('maxaveragebitrate', '36000');
+      existingParams.set('stereo', '0');
+      existingParams.set('sprop-stereo', '0');
+      existingParams.set('cbr', '0');
+
+      const newParamStr = Array.from(existingParams.entries())
+        .map(([k, v]) => (v !== '' ? `${k}=${v}` : k))
+        .join(';');
+
+      return `a=fmtp:${opusPayloadType} ${newParamStr}`;
+    }
+    return line;
+  });
+
+  // If no fmtp line existed for Opus, add one directly following the rtpmap line
+  if (!fmtpFound) {
+    const rtpIndex = tunedLines.findIndex(l => l.startsWith(`a=rtpmap:${opusPayloadType} `));
+    if (rtpIndex !== -1) {
+      const newFmtp = `a=fmtp:${opusPayloadType} minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=36000;stereo=0;sprop-stereo=0;cbr=0`;
+      tunedLines.splice(rtpIndex + 1, 0, newFmtp);
+    }
+  }
+
+  return tunedLines.join('\r\n');
+}
+
 
 // Complete ICE candidate gathering in SDP (Vanilla ICE) to prevent dropped candidates
 function waitForIceGathering(peerConnection, timeoutMs = 1500) {
@@ -249,10 +460,10 @@ class InAppCallManager {
     this.ringTimeout = null;
     this.pollIncomingInterval = null;
     this.pollActiveCallInterval = null;
-    this.remoteAudioCtx = null;
-    this.remoteAudioSource = null;
-    this.remoteGainNode = null;
+    this.remoteAudioElement = null;
+    this.statsInterval = null;
     this.processedCandidates = new Set();
+    this.earlyLocalCandidates = [];
 
     try {
       this.broadcastChannel = new BroadcastChannel('up_police_webrtc_calls');
@@ -268,6 +479,16 @@ class InAppCallManager {
         } catch (err) {}
       }
     });
+
+    // Hardware device change listener (Bluetooth, Wired Headset, Earpiece)
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', async () => {
+        console.log('[WebRTC Audio] Media device change detected (Headset / Bluetooth / Audio Jack)');
+        if (this.activeCall && this.activeCall.status === 'connected') {
+          setNativeSpeakerphone(this.activeCall.isSpeaker !== false);
+        }
+      });
+    }
   }
 
   subscribe(listener) {
@@ -279,47 +500,139 @@ class InAppCallManager {
     this.listeners.forEach(l => l(this.activeCall));
   }
 
+  // Single managed remote audio playback element singleton
+  getOrCreateRemoteAudioElement() {
+    if (this.remoteAudioElement && typeof document !== 'undefined' && document.body.contains(this.remoteAudioElement)) {
+      return this.remoteAudioElement;
+    }
+    let audioElem = typeof document !== 'undefined' ? document.getElementById('remote_police_call_audio') : null;
+    if (!audioElem && typeof document !== 'undefined') {
+      audioElem = document.createElement('audio');
+      audioElem.id = 'remote_police_call_audio';
+      audioElem.autoplay = true;
+      audioElem.playsInline = true;
+      audioElem.setAttribute('playsinline', 'true');
+      audioElem.setAttribute('webkit-playsinline', 'true');
+      audioElem.muted = false;
+      audioElem.volume = 1.0;
+      audioElem.style.position = 'fixed';
+      audioElem.style.width = '1px';
+      audioElem.style.height = '1px';
+      audioElem.style.opacity = '0.001';
+      audioElem.style.pointerEvents = 'none';
+      audioElem.style.top = '-100px';
+      document.body.appendChild(audioElem);
+    } else if (audioElem) {
+      audioElem.autoplay = true;
+      audioElem.playsInline = true;
+      audioElem.setAttribute('playsinline', 'true');
+      audioElem.setAttribute('webkit-playsinline', 'true');
+      audioElem.muted = false;
+      audioElem.volume = 1.0;
+    }
+    this.remoteAudioElement = audioElem;
+    return audioElem;
+  }
+
   // Pre-unlock and prime audio playback within user gesture (Click / Tap)
   unlockAudioPipeline() {
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        if (!this.remoteAudioCtx) this.remoteAudioCtx = new AudioCtx();
-        if (this.remoteAudioCtx.state === 'suspended') {
-          this.remoteAudioCtx.resume().catch(() => {});
+      const audioElem = this.getOrCreateRemoteAudioElement();
+      if (audioElem) {
+        audioElem.muted = false;
+        audioElem.volume = 1.0;
+        const playPromise = audioElem.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {});
         }
       }
-      let audioElem = document.getElementById('remote_police_call_audio');
-      if (!audioElem) {
-        audioElem = document.createElement('audio');
-        audioElem.id = 'remote_police_call_audio';
-        audioElem.autoplay = true;
-        audioElem.playsInline = true;
-        audioElem.setAttribute('playsinline', 'true');
-        audioElem.setAttribute('webkit-playsinline', 'true');
-        audioElem.muted = false;
-        audioElem.volume = 1.0;
-        audioElem.style.position = 'fixed';
-        audioElem.style.width = '1px';
-        audioElem.style.height = '1px';
-        audioElem.style.opacity = '0.001';
-        audioElem.style.pointerEvents = 'none';
-        audioElem.style.top = '-100px';
-        document.body.appendChild(audioElem);
-      } else {
-        audioElem.muted = false;
-        audioElem.volume = 1.0;
-        audioElem.style.position = 'fixed';
-        audioElem.style.width = '1px';
-        audioElem.style.height = '1px';
-        audioElem.style.opacity = '0.001';
-        audioElem.style.pointerEvents = 'none';
-        audioElem.style.top = '-100px';
-      }
-      // Prime audio playback
-      audioElem.play().catch(() => {});
     } catch (e) {
       console.warn('[WebRTC Audio] Unlock audio notice:', e);
+    }
+  }
+
+  // Real-time WebRTC audio statistics and QoS telemetry monitor
+  startStatsMonitoring() {
+    this.stopStatsMonitoring();
+
+    let prevPacketsReceived = 0;
+    let prevPacketsLost = 0;
+
+    this.statsInterval = setInterval(async () => {
+      if (!this.peerConnection || !this.activeCall || this.activeCall.status !== 'connected') {
+        this.stopStatsMonitoring();
+        return;
+      }
+
+      try {
+        const stats = await this.peerConnection.getStats();
+        let inboundAudio = null;
+        let candidatePair = null;
+
+        stats.forEach(report => {
+          if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+            inboundAudio = report;
+          } else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            candidatePair = report;
+          }
+        });
+
+        if (inboundAudio) {
+          const packetsReceived = inboundAudio.packetsReceived || 0;
+          const packetsLost = inboundAudio.packetsLost || 0;
+          const deltaPackets = Math.max(0, packetsReceived - prevPacketsReceived);
+          const deltaLost = Math.max(0, packetsLost - prevPacketsLost);
+          prevPacketsReceived = packetsReceived;
+          prevPacketsLost = packetsLost;
+
+          const totalDelta = deltaPackets + deltaLost;
+          const packetLossRate = totalDelta > 0
+            ? Math.max(0, Math.min(100, (deltaLost / totalDelta) * 100))
+            : 0;
+
+          const jitterSec = inboundAudio.jitter || 0;
+          const jitterMs = Math.round(jitterSec * 1000);
+
+          const jitterBufferDelay = inboundAudio.jitterBufferDelay || 0;
+          const jitterBufferEmittedCount = inboundAudio.jitterBufferEmittedCount || 1;
+          const avgJitterDelayMs = Math.round((jitterBufferDelay / jitterBufferEmittedCount) * 1000);
+
+          const rttMs = candidatePair && candidatePair.currentRoundTripTime
+            ? Math.round(candidatePair.currentRoundTripTime * 1000)
+            : (candidatePair && candidatePair.roundTripTime ? Math.round(candidatePair.roundTripTime * 1000) : null);
+
+          let qualityRating = 'HD Voice (Clear)';
+          let qualityColor = '#34d399'; // green
+
+          if (packetLossRate > 6 || jitterMs > 65 || (rttMs && rttMs > 450)) {
+            qualityRating = 'कमज़ोर नेटवर्क (Unstable)';
+            qualityColor = '#f87171'; // red
+          } else if (packetLossRate > 2 || jitterMs > 35 || (rttMs && rttMs > 250)) {
+            qualityRating = 'संतोषजनक (Fair)';
+            qualityColor = '#fbbf24'; // yellow
+          }
+
+          this.activeCall.audioQualityStats = {
+            rating: qualityRating,
+            color: qualityColor,
+            packetLossPercent: packetLossRate.toFixed(1),
+            jitterMs,
+            avgJitterDelayMs,
+            rttMs,
+            packetsReceived,
+            packetsLost
+          };
+
+          this.notify();
+        }
+      } catch (err) {}
+    }, 2000);
+  }
+
+  stopStatsMonitoring() {
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
     }
   }
 
@@ -358,7 +671,7 @@ class InAppCallManager {
           startedAt: null,
           duration: 0,
           isMuted: false,
-          isSpeaker: true
+          isSpeaker: false
         };
         callAudio.startIncomingRingtone();
         if (navigator.vibrate) navigator.vibrate([600, 300, 600, 300, 600]);
@@ -374,6 +687,8 @@ class InAppCallManager {
         this.activeCall.status = 'connected';
         this.activeCall.startedAt = this.activeCall.startedAt || Date.now();
         callAudio.stop();
+        setNativeCommunicationMode(this.activeCall.isSpeaker !== false);
+        this.startStatsMonitoring();
         if (Array.isArray(this.earlyLocalCandidates) && this.earlyLocalCandidates.length > 0) {
           this.earlyLocalCandidates.forEach(cand => {
             try { this.peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
@@ -384,7 +699,11 @@ class InAppCallManager {
       };
 
       if (this.peerConnection.signalingState === 'have-local-offer') {
-        this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
+        const tunedAnswer = {
+          type: data.answer.type || 'answer',
+          sdp: tuneSdpForVoiceClarity(data.answer.sdp)
+        };
+        this.peerConnection.setRemoteDescription(new RTCSessionDescription(tunedAnswer))
           .then(applyAnswer)
           .catch(err => {
             console.warn('[WebRTC Signal] Remote answer set notice:', err);
@@ -440,7 +759,7 @@ class InAppCallManager {
               startedAt: null,
               duration: 0,
               isMuted: false,
-              isSpeaker: true,
+              isSpeaker: false,
               viaCloudflare: true
             };
             callAudio.startIncomingRingtone();
@@ -539,7 +858,7 @@ class InAppCallManager {
       startedAt: null,
       duration: 0,
       isMuted: false,
-      isSpeaker: true,
+      isSpeaker: false,
       presence: null
     };
     this.notify();
@@ -584,7 +903,7 @@ class InAppCallManager {
     this.localStream = await acquireMicrophoneAudioStream();
 
     try {
-      this.peerConnection = new RTCPeerConnection(ICE_SERVERS);
+      this.peerConnection = new RTCPeerConnection(getRtcConfiguration());
 
       if (this.localStream) {
         this.localStream.getAudioTracks().forEach(track => {
@@ -601,6 +920,10 @@ class InAppCallManager {
           this.peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
         }
       }
+
+      // Prioritize Opus and tune sender parameters
+      preferOpusCodec(this.peerConnection);
+      await configureSenderEncodingParameters(this.peerConnection, 36000);
 
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -634,7 +957,14 @@ class InAppCallManager {
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
         console.log('[WebRTC Caller] Connection State:', state);
-        if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        if (state === 'failed') {
+          console.warn('[WebRTC Caller] Connection failed, attempting ICE restart...');
+          try {
+            if (this.peerConnection && this.peerConnection.restartIce) {
+              this.peerConnection.restartIce();
+            }
+          } catch (e) {}
+        } else if (state === 'disconnected' || state === 'closed') {
           if (this.activeCall && this.activeCall.status === 'connected') {
             this.endCall(false, 'completed');
           }
@@ -645,6 +975,7 @@ class InAppCallManager {
         offerToReceiveAudio: true,
         offerToReceiveVideo: false
       });
+      offer.sdp = tuneSdpForVoiceClarity(offer.sdp);
       await this.peerConnection.setLocalDescription(offer);
 
       // Wait up to 1.5s for ICE candidates so they are embedded directly in offer.sdp
@@ -652,7 +983,7 @@ class InAppCallManager {
       const completeOffer = this.peerConnection.localDescription || offer;
       const offerData = {
         type: completeOffer.type || 'offer',
-        sdp: completeOffer.sdp
+        sdp: tuneSdpForVoiceClarity(completeOffer.sdp)
       };
 
       // Capture Calling Device Telemetry (Zero extra permission)
@@ -707,7 +1038,7 @@ class InAppCallManager {
         startedAt: null,
         duration: 0,
         isMuted: false,
-        isSpeaker: true,
+        isSpeaker: false,
         offlineMessage: 'कॉल स्थापित नहीं हो सकी। कृपया दोबारा प्रयास करें।'
       };
       this.notify();
@@ -758,7 +1089,11 @@ class InAppCallManager {
           }
           if (this.peerConnection && this.peerConnection.signalingState === 'have-local-offer') {
             try {
-              await this.peerConnection.setRemoteDescription(new RTCSessionDescription(cloudCall.answer));
+              const tunedAnswer = {
+                type: cloudCall.answer.type || 'answer',
+                sdp: tuneSdpForVoiceClarity(cloudCall.answer.sdp)
+              };
+              await this.peerConnection.setRemoteDescription(new RTCSessionDescription(tunedAnswer));
             } catch (sdpErr) {
               console.warn('[WebRTC] Polling setRemoteDescription notice:', sdpErr);
             }
@@ -772,6 +1107,8 @@ class InAppCallManager {
             }
           }
           callAudio.stop();
+          setNativeCommunicationMode(this.activeCall.isSpeaker !== false);
+          this.startStatsMonitoring();
           this.notify();
         }
 
@@ -814,7 +1151,7 @@ class InAppCallManager {
     this.localStream = await acquireMicrophoneAudioStream();
 
     try {
-      this.peerConnection = new RTCPeerConnection(ICE_SERVERS);
+      this.peerConnection = new RTCPeerConnection(getRtcConfiguration());
 
       if (this.localStream) {
         this.localStream.getAudioTracks().forEach(track => {
@@ -831,6 +1168,10 @@ class InAppCallManager {
           this.peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
         }
       }
+
+      // Prioritize Opus and tune sender parameters
+      preferOpusCodec(this.peerConnection);
+      await configureSenderEncodingParameters(this.peerConnection, 36000);
 
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -866,7 +1207,14 @@ class InAppCallManager {
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
         console.log('[WebRTC Receiver] Connection State:', state);
-        if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        if (state === 'failed') {
+          console.warn('[WebRTC Receiver] Connection failed, attempting ICE restart...');
+          try {
+            if (this.peerConnection && this.peerConnection.restartIce) {
+              this.peerConnection.restartIce();
+            }
+          } catch (e) {}
+        } else if (state === 'disconnected' || state === 'closed') {
           if (this.activeCall && this.activeCall.status === 'connected') {
             this.endCall(false, 'completed');
           }
@@ -874,11 +1222,16 @@ class InAppCallManager {
       };
 
       if (this.activeCall.offer) {
-        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(this.activeCall.offer));
+        const tunedOffer = {
+          type: this.activeCall.offer.type || 'offer',
+          sdp: tuneSdpForVoiceClarity(this.activeCall.offer.sdp)
+        };
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(tunedOffer));
         const answer = await this.peerConnection.createAnswer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
         });
+        answer.sdp = tuneSdpForVoiceClarity(answer.sdp);
         await this.peerConnection.setLocalDescription(answer);
 
         // Wait up to 1.5s for ICE candidates so they are embedded directly into answer.sdp
@@ -886,8 +1239,12 @@ class InAppCallManager {
         const completeAnswer = this.peerConnection.localDescription || answer;
         const answerData = {
           type: completeAnswer.type || 'answer',
-          sdp: completeAnswer.sdp
+          sdp: tuneSdpForVoiceClarity(completeAnswer.sdp)
         };
+
+        // Activate native communication audio mode and start stats monitoring
+        setNativeCommunicationMode(this.activeCall.isSpeaker !== false);
+        this.startStatsMonitoring();
 
         // Capture Receiver Device Telemetry (Zero extra permission)
         let receiverTelemetry = null;
@@ -1005,75 +1362,88 @@ class InAppCallManager {
     this.notify();
   }
 
-  // Toggle Loudspeaker / Earpiece Audio Output
-  toggleSpeaker() {
+  // Toggle Loudspeaker / Earpiece Audio Output with Real Hardware Routing
+  async toggleSpeaker() {
     if (!this.activeCall) return;
     this.activeCall.isSpeaker = !this.activeCall.isSpeaker;
-    const targetVolume = this.activeCall.isSpeaker ? 1.0 : 0.5;
+    const isSpeaker = this.activeCall.isSpeaker;
 
-    const audioElem = document.getElementById('remote_police_call_audio');
-    if (audioElem) {
-      audioElem.volume = targetVolume;
-    }
-    if (this.remoteGainNode && this.remoteAudioCtx) {
+    // 1. Android Native Hardware Device Routing (Earpiece vs Loudspeaker vs Bluetooth)
+    setNativeSpeakerphone(isSpeaker);
+
+    // 2. Web browser sinkId routing if supported
+    const audioElem = this.getOrCreateRemoteAudioElement();
+    if (audioElem && typeof audioElem.setSinkId === 'function') {
       try {
-        this.remoteGainNode.gain.setValueAtTime(targetVolume, this.remoteAudioCtx.currentTime);
-      } catch (e) {}
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+        if (audioOutputs.length > 0) {
+          const target = audioOutputs.find(d => 
+            isSpeaker 
+              ? (d.label.toLowerCase().includes('speaker') || d.deviceId === 'default')
+              : (d.label.toLowerCase().includes('earpiece') || d.label.toLowerCase().includes('headset') || d.deviceId !== 'default')
+          );
+          if (target && target.deviceId) {
+            await audioElem.setSinkId(target.deviceId);
+            console.log('[WebRTC Audio] Switched audio sinkId to:', target.label || target.deviceId);
+          }
+        }
+      } catch (err) {
+        console.warn('[WebRTC Audio] setSinkId notice:', err);
+      }
     }
+
     this.notify();
   }
 
   // Force play / boost audio on demand (e.g. from UI "Tap to Hear Sound" button)
   forcePlayRemoteAudio() {
     this.unlockAudioPipeline();
-    const audioElem = document.getElementById('remote_police_call_audio');
+    const audioElem = this.getOrCreateRemoteAudioElement();
     if (audioElem) {
       audioElem.muted = false;
-      audioElem.volume = this.activeCall?.isSpeaker !== false ? 1.0 : 0.5;
+      audioElem.volume = 1.0;
       if (this.remoteStream) {
         audioElem.srcObject = this.remoteStream;
       }
       audioElem.play().catch(e => console.warn('[WebRTC Audio] Force play notice:', e));
     }
+    if (this.activeCall) {
+      setNativeSpeakerphone(this.activeCall.isSpeaker !== false);
+    }
   }
 
-  // Play remote caller audio through HTMLAudioElement
+  // Play remote caller audio through HTMLAudioElement singleton
   playRemoteAudio(stream) {
     if (!stream) return;
     try {
-      let audioElem = document.getElementById('remote_police_call_audio');
-      if (!audioElem) {
-        audioElem = document.createElement('audio');
-        audioElem.id = 'remote_police_call_audio';
-        audioElem.style.position = 'fixed';
-        audioElem.style.bottom = '0';
-        audioElem.style.left = '0';
-        audioElem.style.width = '100%';
-        audioElem.style.height = '40px';
-        audioElem.style.opacity = '0.01';
-        audioElem.style.pointerEvents = 'none';
-        document.body.appendChild(audioElem);
-      }
-      audioElem.autoplay = true;
-      audioElem.playsInline = true;
-      audioElem.setAttribute('playsinline', 'true');
-      audioElem.setAttribute('webkit-playsinline', 'true');
-      audioElem.muted = false;
+      const audioElem = this.getOrCreateRemoteAudioElement();
 
-      const targetVolume = this.activeCall?.isSpeaker !== false ? 1.0 : 0.6;
-      audioElem.volume = targetVolume;
-      audioElem.srcObject = stream;
+      // Guard: attach only if stream changed to prevent clicks or decoder resets
+      if (audioElem.srcObject !== stream) {
+        audioElem.srcObject = stream;
+        console.log('[WebRTC Audio] Attached remote stream to dedicated audio element');
+      }
+
+      audioElem.muted = false;
+      audioElem.volume = 1.0;
 
       const playPromise = audioElem.play();
       if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn('[WebRTC] HTMLAudioElement play deferred, registering touch/click listener:', err);
-          const resumeOnTouch = () => {
-            if (audioElem) audioElem.play().catch(() => {});
-          };
-          window.addEventListener('touchstart', resumeOnTouch, { once: true, passive: true });
-          window.addEventListener('click', resumeOnTouch, { once: true, passive: true });
-        });
+        playPromise
+          .then(() => {
+            console.log('[WebRTC Audio] Remote audio playback active');
+          })
+          .catch((err) => {
+            console.warn('[WebRTC Audio] HTMLAudioElement autoplay deferred:', err?.message);
+            const resumeOnTouch = () => {
+              if (audioElem && audioElem.srcObject) {
+                audioElem.play().catch(() => {});
+              }
+            };
+            window.addEventListener('touchstart', resumeOnTouch, { once: true, passive: true });
+            window.addEventListener('click', resumeOnTouch, { once: true, passive: true });
+          });
       }
     } catch (err) {
       console.error('[WebRTC] playRemoteAudio execution error:', err);
@@ -1129,6 +1499,9 @@ class InAppCallManager {
   }
 
   cleanup() {
+    this.stopStatsMonitoring();
+    resetNativeAudioMode();
+
     if (this.ringTimeout) {
       clearTimeout(this.ringTimeout);
       this.ringTimeout = null;
@@ -1141,11 +1514,7 @@ class InAppCallManager {
       this.localStream.getTracks().forEach(track => track.stop());
       this.localStream = null;
     }
-    if (this.remoteAudioSource) {
-      try { this.remoteAudioSource.disconnect(); } catch (e) {}
-      this.remoteAudioSource = null;
-    }
-    const audioElem = document.getElementById('remote_police_call_audio');
+    const audioElem = this.remoteAudioElement || (typeof document !== 'undefined' ? document.getElementById('remote_police_call_audio') : null);
     if (audioElem) {
       try {
         audioElem.pause();

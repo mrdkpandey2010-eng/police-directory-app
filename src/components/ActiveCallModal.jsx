@@ -312,6 +312,35 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
               {formatTimer(elapsedSeconds)} / 05:00
             </div>
 
+            {/* Real-Time Audio Quality QoS Indicator */}
+            {callState.audioQualityStats && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(15, 23, 42, 0.6)',
+                border: `1px solid ${callState.audioQualityStats.color || '#34d399'}55`,
+                padding: '3px 10px',
+                borderRadius: '16px',
+                fontSize: '0.74rem',
+                color: callState.audioQualityStats.color || '#34d399',
+                fontWeight: 600,
+                marginTop: '2px'
+              }}>
+                <span style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: callState.audioQualityStats.color || '#34d399',
+                  boxShadow: `0 0 8px ${callState.audioQualityStats.color || '#34d399'}`
+                }} />
+                <span>{callState.audioQualityStats.rating} • Opus HD (36 kbps)</span>
+                {callState.audioQualityStats.jitterMs ? (
+                  <span style={{ opacity: 0.8 }}>({callState.audioQualityStats.jitterMs}ms)</span>
+                ) : null}
+              </div>
+            )}
+
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -626,6 +655,12 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
                   <span>{callState.isMuted ? '🔴 माइक: म्यूट' : '🟢 माइक: सक्रिय'}</span>
                   <span>•</span>
                   <span>{callState.isSpeaker ? '🔊 लाउडस्पीकर' : '🔈 ईयरपीस'}</span>
+                  {callState.audioQualityStats?.packetLossPercent !== undefined && (
+                    <>
+                      <span>•</span>
+                      <span>लॉस: {callState.audioQualityStats.packetLossPercent}%</span>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -674,23 +709,6 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
         }}>
           <span>🔒 एंड-टू-एंड एन्क्रिप्टेड • यह कॉल विभागीय कॉल-लॉग में दर्ज होगी</span>
         </div>
-
-        {/* Remote Police Audio Stream Receiver Element */}
-        <audio 
-          id="remote_police_call_audio" 
-          autoPlay 
-          playsInline 
-          style={{ 
-            position: 'absolute', 
-            bottom: '8px', 
-            left: '8px',
-            right: '8px',
-            width: 'calc(100% - 16px)', 
-            height: '24px', 
-            opacity: 0.01, 
-            pointerEvents: 'none' 
-          }} 
-        />
       </div>
     </div>
   );

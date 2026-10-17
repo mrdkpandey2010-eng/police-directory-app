@@ -70,3 +70,59 @@ export const setupHardwareBackButton = (handleBackNavigation, showToast) => {
     backListener.then(sub => sub.remove()).catch(() => {});
   };
 };
+
+/**
+ * Android Hardware Audio Mode & Call Device Routing
+ * Switches Android OS to MODE_IN_COMMUNICATION, engaging hardware AEC and noise cancellation.
+ */
+export const setNativeCommunicationMode = (isSpeaker = false) => {
+  if (typeof window !== 'undefined' && window.AndroidAudioRouting?.setCommunicationMode) {
+    try {
+      const res = window.AndroidAudioRouting.setCommunicationMode(isSpeaker);
+      console.log('[NativeBridge Audio] setCommunicationMode result:', res, 'speaker:', isSpeaker);
+      return res;
+    } catch (e) {
+      console.warn('[NativeBridge Audio] setCommunicationMode error:', e);
+    }
+  }
+  return false;
+};
+
+export const setNativeSpeakerphone = (isSpeaker) => {
+  if (typeof window !== 'undefined' && window.AndroidAudioRouting?.setSpeakerphone) {
+    try {
+      const res = window.AndroidAudioRouting.setSpeakerphone(isSpeaker);
+      console.log('[NativeBridge Audio] setSpeakerphone result:', res, 'speaker:', isSpeaker);
+      return res;
+    } catch (e) {
+      console.warn('[NativeBridge Audio] setSpeakerphone error:', e);
+    }
+  }
+  return false;
+};
+
+export const resetNativeAudioMode = () => {
+  if (typeof window !== 'undefined' && window.AndroidAudioRouting?.resetAudioMode) {
+    try {
+      const res = window.AndroidAudioRouting.resetAudioMode();
+      console.log('[NativeBridge Audio] resetAudioMode result:', res);
+      return res;
+    } catch (e) {
+      console.warn('[NativeBridge Audio] resetAudioMode error:', e);
+    }
+  }
+  return false;
+};
+
+export const getNativeAudioDeviceInfo = () => {
+  if (typeof window !== 'undefined' && window.AndroidAudioRouting?.getAudioDeviceInfo) {
+    try {
+      const infoStr = window.AndroidAudioRouting.getAudioDeviceInfo();
+      return JSON.parse(infoStr || '{}');
+    } catch (e) {
+      return {};
+    }
+  }
+  return null;
+};
+
