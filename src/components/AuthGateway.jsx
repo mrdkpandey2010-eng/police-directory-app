@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Shield, Lock, User, UserPlus, KeyRound, Building, ArrowRight, 
   AlertTriangle, CheckCircle2, ShieldAlert, Award, MapPin, Camera, Upload,
