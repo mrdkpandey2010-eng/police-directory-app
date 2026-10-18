@@ -10,6 +10,7 @@ export default function LoginModal({
   onClose, 
   onLoginSuccess, 
   onOpenRegister,
+  onOpenPolicy,
   contacts = [], 
   coAdmins = []
 }) {
@@ -137,12 +138,35 @@ export default function LoginModal({
         onClick={e => e.stopPropagation()} 
         style={{ maxWidth: '440px', padding: '1.35rem' }}
       >
-        <div className="modal-header" style={{ paddingBottom: '0.65rem' }}>
+        <div className="modal-header" style={{ paddingBottom: '0.45rem' }}>
           <div className="modal-title" style={{ fontSize: '1.1rem' }}>
             <Lock size={18} color="var(--khaki-primary, #c49756)" />
             <span>उत्तर प्रदेश पुलिस पोर्टल लॉगिन</span>
           </div>
           <button className="close-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        {/* Official Police Emblem Logo (Centered above text fields, crisp & responsive - Requirement 4) */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '4px 0 10px 0',
+          width: '100%'
+        }}>
+          <img 
+            src="/police-logo.png" 
+            alt="उत्तर प्रदेश पुलिस" 
+            onError={(e) => { e.currentTarget.src = '/police-icon.svg'; }}
+            style={{
+              height: 'clamp(52px, 11vh, 72px)',
+              width: 'auto',
+              maxHeight: '75px',
+              maxWidth: '180px',
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45))'
+            }}
+          />
         </div>
 
         {/* STAGE 1: PNO INPUT (MINIMAL) */}
@@ -316,6 +340,58 @@ export default function LoginModal({
             )}
           </form>
         )}
+
+        {/* Subdued Footer Informational Hyperlinks (Requirement 5) */}
+        <div style={{
+          marginTop: '1.15rem',
+          paddingTop: '0.65rem',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          width: '100%'
+        }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof onOpenPolicy === 'function') {
+                onOpenPolicy('disclaimer');
+              }
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#94a3b8',
+              fontSize: '0.72rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              textUnderlineOffset: '3px',
+              padding: '3px 6px',
+              borderRadius: '4px',
+              transition: 'color 0.15s ease, background 0.15s ease'
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'var(--khaki-light, #dfb97e)';
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = '#94a3b8';
+              e.currentTarget.style.background = 'none';
+            }}
+            onFocus={e => {
+              e.currentTarget.style.color = 'var(--khaki-light, #dfb97e)';
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+            }}
+            onBlur={e => {
+              e.currentTarget.style.color = '#94a3b8';
+              e.currentTarget.style.background = 'none';
+            }}
+            title="विभागीय नियम, गोपनीयता नीति एवं सेवा शर्तें देखें"
+          >
+            शासकीय नियम, गोपनीयता नीति एवं सेवा शर्तें
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload } from 'lucide
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
 import { ALL_UP_DISTRICTS, STANDARD_POLICE_POSTS } from '../data/mockContacts';
 import { captureFullDeviceTelemetry } from '../utils/deviceTelemetry';
+import { handleTransliterateOnSpace } from '../utils/transliteration';
 
 export default function RegistrationModal({ 
   isOpen, 
@@ -63,9 +64,29 @@ export default function RegistrationModal({
 
   if (!isOpen) return null;
 
+  // Regular input handler (Excluded fields: PNO, phone, password, email, etc.)
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Automatic Hindi transliteration on Space for applicable text fields (Name, Office/Thana, Notes)
+  const handleTransliteratedFieldChange = (e, fieldName) => {
+    const input = e.target;
+    const val = input.value;
+    const cursor = input.selectionEnd ?? val.length;
+
+    const res = handleTransliterateOnSpace(val, cursor);
+    if (res.changed) {
+      setFormData(prev => ({ ...prev, [fieldName]: res.text }));
+      requestAnimationFrame(() => {
+        if (input && typeof input.setSelectionRange === 'function') {
+          input.setSelectionRange(res.cursor, res.cursor);
+        }
+      });
+    } else {
+      setFormData(prev => ({ ...prev, [fieldName]: val }));
+    }
   };
 
   const handlePhotoUpload = async (e) => {
@@ -184,8 +205,11 @@ export default function RegistrationModal({
 
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">
-                  कर्मचारी का नाम <span className="req">*</span>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>कर्मचारी का नाम <span className="req">*</span></span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 500 }}>
+                    🔤 स्वतः हिंदी टाइपिंग (English + Space)
+                  </span>
                 </label>
                 <input
                   type="text"
@@ -193,7 +217,7 @@ export default function RegistrationModal({
                   className="form-input"
                   placeholder="उदा. अमित कुमार सिंह"
                   value={formData.name}
-                  onChange={handleChange}
+                  onChange={e => handleTransliteratedFieldChange(e, 'name')}
                   required
                 />
               </div>
@@ -246,8 +270,11 @@ export default function RegistrationModal({
               </div>
 
               <div className="form-group full-width">
-                <label className="form-label">
-                  कार्यालय / थाना (Office / Thana) <span className="req">*</span>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>कार्यालय / थाना (Office / Thana) <span className="req">*</span></span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 500 }}>
+                    🔤 स्वतः हिंदी टाइपिंग (English + Space)
+                  </span>
                 </label>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <input
@@ -256,7 +283,7 @@ export default function RegistrationModal({
                     className="form-input"
                     placeholder="उदा. थाना हजरतगंज / साइबर सेल / एसपी कार्यालय"
                     value={formData.office}
-                    onChange={handleChange}
+                    onChange={e => handleTransliteratedFieldChange(e, 'office')}
                     required
                   />
                   <select
@@ -415,14 +442,19 @@ export default function RegistrationModal({
               </div>
 
               <div className="form-group full-width">
-                <label className="form-label">पंजीकरण / अपडेट का विवरण (Notes)</label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>पंजीकरण / अपडेट का विवरण (Notes)</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 500 }}>
+                    🔤 स्वतः हिंदी टाइपिंग (English + Space)
+                  </span>
+                </label>
                 <textarea
                   name="registrationNotes"
                   className="form-textarea"
                   rows={2}
                   placeholder="उदा. नई पदस्थापना, नंबर परिवर्तन, या नया खाता"
                   value={formData.registrationNotes}
-                  onChange={handleChange}
+                  onChange={e => handleTransliteratedFieldChange(e, 'registrationNotes')}
                 />
               </div>
 

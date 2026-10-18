@@ -250,11 +250,12 @@ export default function App() {
     setTimeout(() => setToastMessage(''), 3500);
   };
 
-  // Android Native Hardware Back Button Handler Ref (Modal & Drawer Stack)
+  // Android Native Hardware Back Button & Mobile Browser Popstate Navigation (Requirement 6)
   const backHandlerRef = useRef(null);
   backHandlerRef.current = () => {
-    if (hasActiveFilters) {
-      handleResetToDefaultOffice();
+    // Top-level modals and dialogs must close first
+    if (isDisclaimerModalOpen) {
+      setIsDisclaimerModalOpen(false);
       return true;
     }
     if (isPolicyModalOpen) {
@@ -308,18 +309,76 @@ export default function App() {
     }
     if (isRegisterModalOpen) {
       setIsRegisterModalOpen(false);
+      setRegisterPrefillPno('');
       return true;
     }
     if (isLoginModalOpen) {
       setIsLoginModalOpen(false);
       return true;
     }
+    // If no modal is open, back clears search query
     if (searchQuery && searchQuery.trim() !== '') {
       setSearchQuery('');
       return true;
     }
+    // If no search query, back resets active office/station filters
+    if (hasActiveFilters) {
+      handleResetToDefaultOffice();
+      return true;
+    }
     return false;
   };
+
+  // State flag for tracking if any modal/view is open
+  const isAnyModalOpen = Boolean(
+    isDisclaimerModalOpen || isPolicyModalOpen || isEditModalOpen ||
+    isMenuDrawerOpen || isFirebaseSetupOpen || isFeedbackModalOpen ||
+    isCallHistoryModalOpen || isNotifsModalOpen || isChatModalOpen ||
+    isProfileModalOpen || isAdmin2FAModalOpen || isAdminModalOpen ||
+    isRegisterModalOpen || isLoginModalOpen
+  );
+
+  // Sync browser history state for mobile browser back button (Requirement 6)
+  const isProgrammaticBackRef = useRef(false);
+  const prevModalOpenRef = useRef(false);
+  useEffect(() => {
+    if (isAnyModalOpen && !prevModalOpenRef.current) {
+      // Modal just opened -> push history state
+      try {
+        window.history.pushState({ modalOpen: true }, '');
+      } catch (e) {
+        // Safe catch for restricted environments
+      }
+    } else if (!isAnyModalOpen && prevModalOpenRef.current) {
+      // Modal was closed programmatically or via UI button
+      if (window.history.state?.modalOpen) {
+        isProgrammaticBackRef.current = true;
+        try {
+          window.history.back();
+        } catch (e) {}
+      }
+    }
+    prevModalOpenRef.current = isAnyModalOpen;
+  }, [isAnyModalOpen]);
+
+  // Mobile browser popstate listener (Requirement 6)
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isProgrammaticBackRef.current) {
+        isProgrammaticBackRef.current = false;
+        return;
+      }
+      if (backHandlerRef.current) {
+        backHandlerRef.current();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
 
   // Load all data on mount
   useEffect(() => {
@@ -1032,10 +1091,29 @@ export default function App() {
     return matches;
   }, [contacts, searchQuery, selectedDistrict, selectedPost, selectedOffice, currentUser, userDistrictScope, displayLanguage]);
 
-  // Maximum 200 Contact Cards displayed on home screen (Section 5)
+  // 50 Contacts Per Page Pagination (Requirement 7)
+  const CONTACTS_PER_PAGE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(filteredContacts.length / CONTACTS_PER_PAGE));
+
+  // Reset to page 1 whenever filters, search, or scoping change (Requirement 7)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedDistrict, selectedOffice, selectedPost, userDistrictScope]);
+
+  // Reconcile current page if records count decreases
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
   const displayedContacts = useMemo(() => {
-    return filteredContacts.slice(0, 200);
-  }, [filteredContacts]);
+    const startIndex = (currentPage - 1) * CONTACTS_PER_PAGE;
+    return filteredContacts.slice(startIndex, startIndex + CONTACTS_PER_PAGE);
+  }, [filteredContacts, currentPage]);
+
 
   // Handler: Wizard Filters Selection (District -> Office -> Designation) (Requirements 2, 3, 4)
   const handleSelectWizardFilters = ({ district, office, post }) => {
@@ -2275,11 +2353,15 @@ export default function App() {
         </div>
       )}
 
-      {/* Contact Cards Grid (Scoped by authenticated district - Max 10 cards displayed for load reduction) */}
+      {/* Contact Cards Grid (Scoped by authenticated district - 50 contacts per page - Requirement 7) */}
       <ContactList
         displayLanguage={displayLanguage}
         contacts={displayedContacts}
         totalCount={filteredContacts.length}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        pageSize={CONTACTS_PER_PAGE}
+        onPageChange={setCurrentPage}
         currentUser={currentUser}
         permissions={phonePermissions}
         presenceMap={presenceMap}
@@ -2295,7 +2377,7 @@ export default function App() {
       />
 
       {/* Official Departmental Copyright Footer */}
-      <TermsFooter onOpenPolicy={() => handleOpenPolicy('disclaimer')} />
+      <TermsFooter />
 
       {/* Lazy-Loaded Modals Section */}
       <ErrorBoundary fallbackTitle="मॉड्यूल लोड करने में समस्या आई">
@@ -2350,6 +2432,7 @@ export default function App() {
           setIsLoginModalOpen(false);
           setIsRegisterModalOpen(true);
         }}
+        onOpenPolicy={() => handleOpenPolicy('disclaimer')}
         contacts={contacts}
         coAdmins={coAdmins}
       />

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Shield, FileText } from 'lucide-react';
+import { Shield } from 'lucide-react';
 
-export default function TermsFooter({ onOpenPolicy }) {
+export default function TermsFooter() {
   return (
     <footer style={{
       marginTop: '2rem',
@@ -16,33 +16,7 @@ export default function TermsFooter({ onOpenPolicy }) {
       alignItems: 'center',
       gap: '0.65rem'
     }}>
-      {/* Hyperlink to View Rules & Policies (नियम व नीतियां देखने के लिए) */}
-      <div>
-        <button
-          type="button"
-          onClick={onOpenPolicy}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--khaki-primary, #c49756)',
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            textDecoration: 'underline',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '5px',
-            padding: '4px 8px',
-            transition: 'color 0.2s ease'
-          }}
-          onMouseEnter={e => e.currentTarget.style.color = '#fef08a'}
-          onMouseLeave={e => e.currentTarget.style.color = 'var(--khaki-primary, #c49756)'}
-          title="शासकीय नियम, गोपनीयता नीति एवं सेवा शर्तें देखें"
-        >
-          <FileText size={14} color="var(--khaki-primary, #c49756)" />
-          <span>नियम व नीतियां देखने के लिए यहाँ क्लिक करें</span>
-        </button>
-      </div>
+
 
       {/* Official Government Emblem & Copyright Line */}
       <div style={{

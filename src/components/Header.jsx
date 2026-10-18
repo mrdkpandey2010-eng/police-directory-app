@@ -172,19 +172,19 @@ export default function Header({
           )}
         </div>
 
-        {/* Header Right Action Area: Language Selector + Profile (Requirement A) */}
-        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', position: 'relative' }}>
+        {/* Header Right Action Area: Language Selector + Profile (Requirement A & 2, 3) */}
+        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap', flexShrink: 0, position: 'relative' }}>
           
-          {/* Bilingual Language Preference Selector (Requirement A) */}
+          {/* Bilingual Language Preference Selector (Requirement 2: Compact footprint) */}
           <div 
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               background: 'rgba(0, 0, 0, 0.45)',
               border: '1px solid var(--khaki-border, rgba(196, 151, 86, 0.35))',
-              borderRadius: '7px',
-              padding: '2px',
-              gap: '2px',
+              borderRadius: '6px',
+              padding: '1.5px',
+              gap: '1px',
               flexShrink: 0
             }}
             role="group"
@@ -194,16 +194,16 @@ export default function Header({
               type="button"
               onClick={() => onLanguageChange && onLanguageChange('hi')}
               style={{
-                padding: '3px 7px',
-                fontSize: '0.72rem',
+                padding: '2px 5px',
+                fontSize: '0.66rem',
                 fontWeight: displayLanguage === 'hi' ? 700 : 500,
                 background: displayLanguage === 'hi' ? 'var(--khaki-primary, #c49756)' : 'transparent',
                 color: displayLanguage === 'hi' ? '#070e1c' : '#cbd5e1',
                 border: 'none',
-                borderRadius: '5px',
+                borderRadius: '4px',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
-                lineHeight: 1.2
+                lineHeight: 1.15
               }}
               title="हिंदी में संपर्क प्रदर्शित करें"
             >
@@ -213,46 +213,47 @@ export default function Header({
               type="button"
               onClick={() => onLanguageChange && onLanguageChange('en')}
               style={{
-                padding: '3px 7px',
-                fontSize: '0.72rem',
+                padding: '2px 5px',
+                fontSize: '0.66rem',
                 fontWeight: displayLanguage === 'en' ? 700 : 500,
                 background: displayLanguage === 'en' ? 'var(--khaki-primary, #c49756)' : 'transparent',
                 color: displayLanguage === 'en' ? '#070e1c' : '#cbd5e1',
                 border: 'none',
-                borderRadius: '5px',
+                borderRadius: '4px',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
-                lineHeight: 1.2
+                lineHeight: 1.15
               }}
               title="Display contacts in English"
             >
-              English
+              EN
             </button>
           </div>
 
           {/* User Profile Pill with Logout and Feedback options on click */}
           {isLoggedIn ? (
-            <div style={{ position: 'relative' }} ref={profileMenuRef}>
+            <div style={{ position: 'relative', flexShrink: 0 }} ref={profileMenuRef}>
               <button 
                 type="button"
                 onClick={() => setIsProfileMenuOpen(prev => !prev)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
+                  gap: '6px',
                   background: 'rgba(255, 255, 255, 0.05)',
                   border: '1px solid var(--khaki-border, rgba(196,151,86,0.35))',
-                  padding: '5px 12px',
+                  padding: '4px 8px',
                   borderRadius: '8px',
                   cursor: 'pointer',
                   color: 'inherit',
+                  flexShrink: 0,
                   transition: 'all 0.2s ease'
                 }}
                 title="प्रोफ़ाइल, फीडबैक एवं लॉगआउट मेनू"
               >
                 <div style={{
-                  width: '28px',
-                  height: '28px',
+                  width: '26px',
+                  height: '26px',
                   borderRadius: '50%',
                   overflow: 'hidden',
                   background: 'rgba(196,151,86,0.2)',
@@ -260,7 +261,7 @@ export default function Header({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '0.75rem',
+                  fontSize: '0.72rem',
                   fontWeight: 700,
                   color: 'var(--khaki-light, #dfb97e)',
                   flexShrink: 0
@@ -268,14 +269,14 @@ export default function Header({
                   {currentUser.uniformPhoto ? (
                     <img src={currentUser.uniformPhoto} alt={currentUser.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
-                    <User size={14} />
+                    <User size={13} />
                   )}
                 </div>
                 <div style={{ textAlign: 'left' }} className="hide-on-mobile">
-                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f1f5f9', lineHeight: 1.1 }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 700, color: '#f1f5f9', lineHeight: 1.1 }}>
                     {resolveBilingualField('name', currentUser, displayLanguage)}
                   </div>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)' }}>
+                  <div style={{ fontSize: '0.66rem', color: 'var(--khaki-light, #dfb97e)' }}>
                     {isAdmin 
                       ? 'Super Admin' 
                       : isCoAdmin 
@@ -283,22 +284,24 @@ export default function Header({
                         : resolveBilingualField('post', currentUser?.post, displayLanguage)}
                   </div>
                 </div>
-                <ChevronDown size={14} color="var(--khaki-primary, #c49756)" style={{ transition: 'transform 0.2s', transform: isProfileMenuOpen ? 'rotate(180deg)' : 'none' }} />
+                <ChevronDown size={13} color="var(--khaki-primary, #c49756)" style={{ transition: 'transform 0.2s', transform: isProfileMenuOpen ? 'rotate(180deg)' : 'none' }} />
               </button>
 
-              {/* Profile Dropdown Menu with Logout and Feedback (Point 2) */}
+              {/* Profile Dropdown Menu with Logout and Feedback (Requirement 3: Viewport Safe & Right-Side) */}
               {isProfileMenuOpen && (
                 <div style={{
                   position: 'absolute',
                   top: 'calc(100% + 8px)',
                   right: 0,
-                  width: '230px',
+                  width: 'min(240px, 86vw)',
+                  maxWidth: 'calc(100vw - 16px)',
                   background: 'rgba(15, 23, 42, 0.98)',
                   border: '1.5px solid var(--khaki-border, rgba(196, 151, 86, 0.4))',
                   borderRadius: '10px',
-                  boxShadow: '0 12px 30px rgba(0,0,0,0.65)',
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.85)',
                   backdropFilter: 'blur(16px)',
-                  zIndex: 1000,
+                  WebkitBackdropFilter: 'blur(16px)',
+                  zIndex: 10050,
                   overflow: 'hidden'
                 }}>
                   {/* User Info Header */}

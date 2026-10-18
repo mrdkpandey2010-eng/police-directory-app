@@ -163,8 +163,9 @@ body {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 0.35rem;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
 }
 
 /* Buttons System - Compact */
