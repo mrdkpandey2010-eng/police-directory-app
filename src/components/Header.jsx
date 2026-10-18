@@ -1,11 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Lock, MessageSquare, User, LogOut, ChevronDown, Search, Trash2, Shield 
+  Lock, MessageSquare, User, LogOut, ChevronDown, Search, Trash2, Shield, MapPin 
 } from 'lucide-react';
+import DistrictOfficeWizardPopup from './DistrictOfficeWizardPopup';
+import InlineSearchPopup from './InlineSearchPopup';
 
 export default function Header({ 
   currentUser, 
   userDistrictScope = 'my_district',
+  selectedDistrict = '',
+  selectedOffice = '',
+  selectedPost = '',
+  searchQuery = '',
+  districts = [],
+  offices = [],
+  posts = [],
+  contacts = [],
+  onSelectWizardFilters,
+  onSearchSubmit,
+  onResetToDefaultOffice,
   onSelectMyDistrict,
   onOpenFilterSidebar,
   totalApprovedCount, 
@@ -32,6 +45,10 @@ export default function Header({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
 
+  // Popups state: District/Office/Post wizard & minimal search
+  const [isDistrictPopupOpen, setIsDistrictPopupOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
   // Close dropdowns on clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -53,33 +70,99 @@ export default function Header({
     <header className="header-card" style={{ padding: '0.6rem 1rem', position: 'relative', zIndex: 100 }}>
       <div className="header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '0.5rem' }}>
 
-        {/* Employee Search (कर्मचारी खोजें) - Opens Employee Search Sidebar Directly */}
-        <button
-          type="button"
-          onClick={() => {
-            if (onOpenFilterSidebar) onOpenFilterSidebar();
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: 'rgba(196, 151, 86, 0.12)',
-            border: '1.5px solid var(--khaki-primary, #c49756)',
-            padding: '5px 12px',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            color: '#f8fafc',
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-            transition: 'all 0.2s ease'
-          }}
-          title="कर्मचारी खोजें"
-          aria-label="कर्मचारी खोजें"
-        >
-          <Search size={14} color="var(--khaki-light, #dfb97e)" />
-          <span>कर्मचारी खोजें</span>
-        </button>
+        {/* District Selector & Search Icon Area */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+          {/* 1. Compact District Selection Button (Requirements 2, 3, 4) */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsSearchOpen(false);
+              setIsDistrictPopupOpen(prev => !prev);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: isDistrictPopupOpen ? 'rgba(196, 151, 86, 0.25)' : 'rgba(196, 151, 86, 0.12)',
+              border: '1.5px solid var(--khaki-primary, #c49756)',
+              padding: '5px 11px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: '#f8fafc',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              transition: 'all 0.2s ease',
+              maxWidth: '210px'
+            }}
+            title="जनपद, थाना एवं पद फ़िल्टर"
+            aria-label="जनपद चुनें"
+          >
+            <MapPin size={14} color="var(--khaki-light, #dfb97e)" style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {selectedDistrict 
+                ? (selectedOffice ? `${selectedDistrict} • ${selectedOffice}` : selectedDistrict)
+                : (currentUser?.district || 'जनपद चुनें')}
+            </span>
+            <ChevronDown size={13} color="var(--khaki-primary, #c49756)" style={{ flexShrink: 0, transform: isDistrictPopupOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </button>
+
+          {/* 2. Compact Search Icon Beside District Selector (Requirement 5) */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsDistrictPopupOpen(false);
+              setIsSearchOpen(prev => !prev);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              background: isSearchOpen ? 'rgba(196, 151, 86, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+              border: '1.5px solid var(--khaki-border, rgba(196, 151, 86, 0.35))',
+              color: 'var(--khaki-light, #dfb97e)',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              flexShrink: 0
+            }}
+            title="कर्मचारी खोजें"
+            aria-label="सर्च करें"
+          >
+            <Search size={15} />
+          </button>
+
+          {/* 3. Anchored 3-Stage Wizard Popup (District -> Office -> Designation) */}
+          {isDistrictPopupOpen && (
+            <DistrictOfficeWizardPopup
+              districts={districts}
+              offices={offices}
+              posts={posts}
+              contacts={contacts}
+              currentUser={currentUser}
+              initialDistrict={selectedDistrict || currentUser?.district || ''}
+              onSelectComplete={(data) => {
+                if (onSelectWizardFilters) onSelectWizardFilters(data);
+                setIsDistrictPopupOpen(false);
+              }}
+              onClose={() => setIsDistrictPopupOpen(false)}
+            />
+          )}
+
+          {/* 4. Anchored Minimal Single-Input Search Popup */}
+          {isSearchOpen && (
+            <InlineSearchPopup
+              initialQuery={searchQuery}
+              onSearchSubmit={async (q) => {
+                if (onSearchSubmit) await onSearchSubmit(q);
+                setIsSearchOpen(false);
+              }}
+              onClose={() => setIsSearchOpen(false)}
+            />
+          )}
+        </div>
 
         {/* Header Right Action Area: ONLY Profile (Point 1 & 2) */}
         <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', position: 'relative' }}>

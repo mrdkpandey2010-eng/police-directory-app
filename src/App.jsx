@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
-import SearchFilters from './components/SearchFilters';
 import ContactList from './components/ContactList';
 import Header from './components/Header';
 import UniformPhotoGate from './components/UniformPhotoGate';
@@ -183,9 +182,8 @@ export default function App() {
   const [selectedPost, setSelectedPost] = useState('');
   const [selectedOffice, setSelectedOffice] = useState('');
 
-  // User District Scoping ('my_district' = only their posted district, 'all' = search across all)
+  // User District Scoping ('my_office' = own police station, 'my_district' = district, 'all' = search across all)
   const [userDistrictScope, setUserDistrictScope] = useState('my_district');
-  const [isFilterSidebarOpen, setIsFilterSidebarOpen] = useState(false);
 
   // Modals
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -240,8 +238,8 @@ export default function App() {
   // Android Native Hardware Back Button Handler Ref (Modal & Drawer Stack)
   const backHandlerRef = useRef(null);
   backHandlerRef.current = () => {
-    if (isFilterSidebarOpen) {
-      setIsFilterSidebarOpen(false);
+    if (hasActiveFilters) {
+      handleResetToDefaultOffice();
       return true;
     }
     if (isPolicyModalOpen) {
@@ -407,15 +405,33 @@ export default function App() {
     // Restore saved user session permanently (No auto-logout)
     const savedUser = getStoredSession();
     if (savedUser) {
-      setCurrentUser(savedUser);
-      if (savedUser.role === 'user' || savedUser.role === 'co_admin') {
-        setSelectedDistrict(savedUser.district || '');
+      const storedContactsList = getStoredContacts();
+      const dbOfficer = (storedContactsList || []).find(c => 
+        (c.pno && String(c.pno).toUpperCase() === String(savedUser.pno || '').toUpperCase()) || 
+        c.id === savedUser.id || 
+        (c.phone && savedUser.phone && String(c.phone).replace(/\D/g, '') === String(savedUser.phone).replace(/\D/g, ''))
+      );
+      const resolvedUser = dbOfficer ? { ...dbOfficer, ...savedUser, office: dbOfficer.office || savedUser.office || '' } : savedUser;
+      setCurrentUser(resolvedUser);
+
+      // Default Home screen: Logged-in user's own police station or office by default (Requirement 1)
+      if (resolvedUser.role === 'admin') {
+        setSelectedDistrict('');
+        setSelectedOffice('');
+        setSelectedPost('');
+        setUserDistrictScope('all');
+      } else {
+        setSelectedDistrict(resolvedUser.district || '');
+        setSelectedOffice(resolvedUser.office || '');
+        setSelectedPost('');
+        setUserDistrictScope(resolvedUser.office ? 'my_office' : 'my_district');
       }
-      const hasAcceptedTerms = (savedUser.termsAcceptedVersion >= 2) || 
-        (localStorage.getItem(`police_terms_v2_${savedUser.id}`) === 'true');
+
+      const hasAcceptedTerms = (resolvedUser.termsAcceptedVersion >= 2) || 
+        (localStorage.getItem(`police_terms_v2_${resolvedUser.id}`) === 'true');
       setIsTermsAccepted(hasAcceptedTerms);
 
-      const hasDonePerms = localStorage.getItem(`police_permissions_onboarding_${savedUser.id}`) === 'true';
+      const hasDonePerms = localStorage.getItem(`police_permissions_onboarding_${resolvedUser.id}`) === 'true';
       setIsPermissionsCompleted(hasDonePerms);
 
       setDisclaimerAgreed(true);
@@ -435,21 +451,6 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
     };
   }, []);
-
-  // Auto-open Employee Search Sidebar on first authenticated Home page initialization (Section 1)
-  const hasAutoOpenedSearchRef = useRef(false);
-
-  useEffect(() => {
-    const isAuthComplete = Boolean(currentUser && isTermsAccepted && isPermissionsCompleted);
-    if (isAuthComplete) {
-      if (!hasAutoOpenedSearchRef.current) {
-        hasAutoOpenedSearchRef.current = true;
-        setIsFilterSidebarOpen(true);
-      }
-    } else {
-      hasAutoOpenedSearchRef.current = false;
-    }
-  }, [currentUser, isTermsAccepted, isPermissionsCompleted]);
 
   // ---------------- FIRESTORE CONTACTS REAL-TIME SYNC (PERMANENT RETENTION) ----------------
   useEffect(() => {
@@ -811,14 +812,29 @@ export default function App() {
 
   // Update current user session on login
   const handleLoginSuccess = (userObj) => {
-    setCurrentUser(userObj);
-    saveSession(userObj);
+    // Cross-reference with database contacts to ensure we have the officer's assigned office and station (Requirement 1)
+    const dbOfficer = (contacts || []).find(c => 
+      (c.pno && String(c.pno).toUpperCase() === String(userObj.pno || '').toUpperCase()) || 
+      c.id === userObj.id || 
+      (c.phone && userObj.phone && String(c.phone).replace(/\D/g, '') === String(userObj.phone).replace(/\D/g, ''))
+    );
+    const resolvedUser = dbOfficer ? { ...dbOfficer, ...userObj, office: dbOfficer.office || userObj.office || '' } : userObj;
+
+    setCurrentUser(resolvedUser);
+    saveSession(resolvedUser);
     localStorage.setItem('police_last_activity_time', String(Date.now()));
-    if (userObj.role === 'user' || userObj.role === 'co_admin') {
-      setUserDistrictScope('my_district');
-      setSelectedDistrict(userObj.district || '');
-    } else {
+
+    // Default Home screen: Logged-in user's own police station or office by default (Requirement 1)
+    if (resolvedUser.role === 'admin') {
       setSelectedDistrict('');
+      setSelectedOffice('');
+      setSelectedPost('');
+      setUserDistrictScope('all');
+    } else {
+      setSelectedDistrict(resolvedUser.district || '');
+      setSelectedOffice(resolvedUser.office || '');
+      setSelectedPost('');
+      setUserDistrictScope(resolvedUser.office ? 'my_office' : 'my_district');
     }
 
     const hasAcceptedTerms = (userObj.termsAcceptedVersion >= 2) || 
@@ -926,42 +942,53 @@ export default function App() {
   const filteredContacts = useMemo(() => {
     if (!currentUser) return [];
 
-    return contacts.filter(c => {
+    const matches = contacts.filter(c => {
       // Non-approved, inactive, or blocked entries are hidden from caller directory
       const isCardActive = c.status === 'approved' || c.status === 'active';
       if (!isCardActive) return false;
 
-      // Co-Admin and Regular Employee User:
-      // If in "केवल मेरा जनपद" mode, strictly show their district
+      // 1. Role Scoping: Regular User & Co-Admin strictly cannot access other districts
       if (currentUser?.role === 'user' || currentUser?.role === 'co_admin') {
-        if (userDistrictScope === 'my_district') {
-          const userDist = (currentUser.district || '').trim().toLowerCase();
-          const contactDist = (c.district || '').trim().toLowerCase();
-          if (userDist && contactDist !== userDist) return false;
-        }
+        const userDist = (currentUser.district || '').trim().toLowerCase();
+        const contactDist = (c.district || '').trim().toLowerCase();
+        if (userDist && contactDist !== userDist) return false;
       }
 
-      // Explicit District Filter dropdown
+      // 2. Default Home Screen: Logged-in user's own police station or office (Requirement 1)
+      if (userDistrictScope === 'my_office') {
+        const userDist = (currentUser.district || '').trim().toLowerCase();
+        const userOff = (currentUser.office || '').trim().toLowerCase();
+        const contactDist = (c.district || '').trim().toLowerCase();
+        const contactOff = (c.office || '').trim().toLowerCase();
+
+        if (userDist && contactDist !== userDist) return false;
+        if (userOff && contactOff !== userOff) return false;
+      }
+
+      // 3. Explicit District Filter
       if (selectedDistrict && (c.district || '').trim().toLowerCase() !== selectedDistrict.trim().toLowerCase()) {
         return false;
       }
 
-      // Post Filter
-      if (selectedPost && c.post !== selectedPost) {
+      // 4. Explicit Office / Thana Filter
+      if (selectedOffice && (c.office || '').trim().toLowerCase() !== selectedOffice.trim().toLowerCase()) {
         return false;
       }
 
-      // Office Filter
-      if (selectedOffice && c.office !== selectedOffice) {
+      // 5. Explicit Post / Rank Filter
+      if (selectedPost && (c.post || '').trim().toLowerCase() !== selectedPost.trim().toLowerCase()) {
         return false;
       }
 
-      // Free Text Search matching
+      // 6. Free Text Search matching (PNO, mobile, name, office, police station, district, post)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
+        const cleanQueryDigits = q.replace(/\D/g, '');
+        const cleanPhoneDigits = (c.phone || '').replace(/\D/g, '');
+
         const matchesName = (c.name || '').toLowerCase().includes(q);
         const matchesPno = (c.pno || '').toLowerCase().includes(q);
-        const matchesPhone = (c.phone || '').includes(q);
+        const matchesPhone = (cleanQueryDigits.length >= 3 && cleanPhoneDigits.includes(cleanQueryDigits)) || (c.phone || '').toLowerCase().includes(q);
         const matchesDistrict = (c.district || '').toLowerCase().includes(q);
         const matchesPost = (c.post || '').toLowerCase().includes(q);
         const matchesOffice = (c.office || '').toLowerCase().includes(q);
@@ -974,7 +1001,7 @@ export default function App() {
       return true;
     });
 
-    // Deterministic ordering for results (Section 5)
+    // Deterministic ordering for results (Section 5: name in Hindi locale, then PNO)
     matches.sort((a, b) => {
       const nameComp = (a.name || '').localeCompare(b.name || '', 'hi');
       if (nameComp !== 0) return nameComp;
@@ -989,13 +1016,47 @@ export default function App() {
     return filteredContacts.slice(0, 200);
   }, [filteredContacts]);
 
-  // Handler: Execute Search from Sidebar
-  const handleExecuteSearch = ({ query, district, post, office }) => {
-    setSearchQuery(query || '');
+  // Handler: Wizard Filters Selection (District -> Office -> Designation) (Requirements 2, 3, 4)
+  const handleSelectWizardFilters = ({ district, office, post }) => {
+    setSearchQuery('');
     setSelectedDistrict(district || '');
-    setSelectedPost(post || '');
     setSelectedOffice(office || '');
-    setUserDistrictScope(district ? 'all' : 'my_district');
+    setSelectedPost(post || '');
+    setUserDistrictScope('all');
+  };
+
+  // Handler: Inline Compact Search Submit (Requirement 5)
+  const handleSearchSubmit = async (query) => {
+    const trimmed = (query || '').trim();
+    if (!trimmed) return;
+    setSearchQuery(trimmed);
+    if (currentUser?.role === 'user' || currentUser?.role === 'co_admin') {
+      setSelectedDistrict(currentUser.district || '');
+      setSelectedOffice('');
+      setSelectedPost('');
+      setUserDistrictScope('my_district');
+    } else {
+      setSelectedDistrict('');
+      setSelectedOffice('');
+      setSelectedPost('');
+      setUserDistrictScope('all');
+    }
+  };
+
+  // Handler: Reset to Logged-in User's Default Office View (Requirement 1)
+  const handleResetToDefaultOffice = () => {
+    setSearchQuery('');
+    if (currentUser?.role === 'admin') {
+      setSelectedDistrict('');
+      setSelectedOffice('');
+      setSelectedPost('');
+      setUserDistrictScope('all');
+    } else {
+      setSelectedDistrict(currentUser?.district || '');
+      setSelectedOffice(currentUser?.office || '');
+      setSelectedPost('');
+      setUserDistrictScope(currentUser?.office ? 'my_office' : 'my_district');
+    }
   };
 
   // Handler: Self Registration
@@ -1710,31 +1771,19 @@ export default function App() {
   };
 
   const handleResetFilters = () => {
-    setSearchQuery('');
-    if ((currentUser?.role === 'user' || currentUser?.role === 'co_admin') && userDistrictScope === 'my_district') {
-      setSelectedDistrict(currentUser.district || '');
-    } else {
-      setSelectedDistrict('');
-    }
-    setSelectedPost('');
-    setSelectedOffice('');
+    handleResetToDefaultOffice();
   };
 
   const handleSelectMyDistrict = () => {
     setUserDistrictScope('my_district');
     setSelectedDistrict(currentUser?.district || '');
-    setSelectedPost('');
     setSelectedOffice('');
+    setSelectedPost('');
     setSearchQuery('');
-    setIsFilterSidebarOpen(false);
-  };
-
-  const handleOpenFilterSidebar = () => {
-    setUserDistrictScope('all');
-    setIsFilterSidebarOpen(true);
   };
 
   const handleNavigateHome = () => {
+    handleResetToDefaultOffice();
     setIsChatModalOpen(false);
     setActiveChatId(null);
     setIsNotifsModalOpen(false);
@@ -1757,7 +1806,7 @@ export default function App() {
     searchQuery || 
     (selectedDistrict && (currentUser?.role === 'admin' || userDistrictScope === 'all' || selectedDistrict !== currentUser?.district)) || 
     selectedPost || 
-    selectedOffice
+    (selectedOffice && (userDistrictScope === 'all' || selectedOffice !== (currentUser?.office || '')))
   );
 
   // Scoped pending counts
@@ -1900,8 +1949,18 @@ export default function App() {
       <Header
         currentUser={currentUser}
         userDistrictScope={userDistrictScope}
+        selectedDistrict={selectedDistrict}
+        selectedOffice={selectedOffice}
+        selectedPost={selectedPost}
+        searchQuery={searchQuery}
+        districts={districts}
+        offices={offices}
+        posts={posts}
+        contacts={contacts}
+        onSelectWizardFilters={handleSelectWizardFilters}
+        onSearchSubmit={handleSearchSubmit}
+        onResetToDefaultOffice={handleResetToDefaultOffice}
         onSelectMyDistrict={handleSelectMyDistrict}
-        onOpenFilterSidebar={handleOpenFilterSidebar}
         totalApprovedCount={approvedCount}
         pendingCount={pendingCount}
         notifCount={officialNotifCount}
@@ -2127,21 +2186,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Multi-Criteria Search & Filter Left Sidebar Drawer (Requirement 2 & 3) */}
-      <SearchFilters
-        isOpen={isFilterSidebarOpen}
-        onClose={() => setIsFilterSidebarOpen(false)}
-        searchQuery={searchQuery}
-        selectedDistrict={selectedDistrict}
-        selectedPost={selectedPost}
-        selectedOffice={selectedOffice}
-        onExecuteSearch={handleExecuteSearch}
-        districts={districts}
-        posts={posts}
-        offices={offices}
-        currentUser={currentUser}
-      />
-
       {/* Active Filter Strip on Main Screen */}
       {hasActiveFilters && (
         <div style={{
@@ -2161,40 +2205,27 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <span style={{ color: 'var(--khaki-light, #dfb97e)', fontWeight: 700 }}>सक्रिय फ़िल्टर:</span>
             {selectedDistrict && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>ज़िला: {selectedDistrict}</span>}
+            {selectedOffice && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>थाना/कार्यालय: {selectedOffice}</span>}
             {selectedPost && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>पद: {selectedPost}</span>}
-            {selectedOffice && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>थाना: {selectedOffice}</span>}
             {searchQuery && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>सर्च: "{searchQuery}"</span>}
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button 
               type="button" 
-              onClick={() => setIsFilterSidebarOpen(true)}
+              onClick={handleResetToDefaultOffice}
               style={{
-                background: 'transparent',
+                background: 'rgba(196, 151, 86, 0.15)',
                 border: '1px solid var(--khaki-primary, #c49756)',
                 color: 'var(--khaki-light, #dfb97e)',
-                borderRadius: '4px',
-                padding: '2px 8px',
-                fontSize: '0.72rem',
+                borderRadius: '6px',
+                padding: '3px 10px',
+                fontSize: '0.74rem',
+                fontWeight: 600,
                 cursor: 'pointer'
               }}
+              title="डिफ़ॉल्ट कार्यालय के संपर्क देखें"
             >
-              फ़िल्टर बदलें
-            </button>
-            <button 
-              type="button" 
-              onClick={handleResetFilters}
-              style={{
-                background: 'transparent',
-                border: '1px solid rgba(248,113,113,0.5)',
-                color: '#f87171',
-                borderRadius: '4px',
-                padding: '2px 8px',
-                fontSize: '0.72rem',
-                cursor: 'pointer'
-              }}
-            >
-              ✕ साफ़ करें
+              ✕ डिफ़ॉल्ट पर वापस जाएं
             </button>
           </div>
         </div>
