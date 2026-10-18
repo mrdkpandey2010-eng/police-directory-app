@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="shieldBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#071329"/>
+      <stop offset="50%" stop-color="#0f224a"/>
+      <stop offset="100%" stop-color="#040b17"/>
+    </linearGradient>
+    <linearGradient id="goldBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f5e0a3"/>
+      <stop offset="35%" stop-color="#c49756"/>
+      <stop offset="70%" stop-color="#996a29"/>
+      <stop offset="100%" stop-color="#dfb97e"/>
+    </linearGradient>
+    <linearGradient id="starGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff1c5"/>
+      <stop offset="100%" stop-color="#c49756"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Outer Background Circle for PWA App Icon -->
+  <rect width="512" height="512" rx="110" fill="#070e1c"/>
+  
+  <!-- Outer Gold Shield Border -->
+  <path d="M256 42 C360 42 432 72 432 178 C432 328 328 424 256 468 C184 424 80 328 80 178 C80 72 152 42 256 42 Z" 
+        fill="url(#goldBorder)" filter="url(#shadow)"/>
+
+  <!-- Inner Dark Blue Shield Body -->
+  <path d="M256 56 C348 56 414 84 414 182 C414 318 320 406 256 448 C192 406 98 318 98 182 C98 84 164 56 256 56 Z" 
+        fill="url(#shieldBg)"/>
+
+  <!-- Inner Gold Accent Rim -->
+  <path d="M256 68 C338 68 398 94 398 186 C398 308 312 388 256 428 C200 388 114 308 114 186 C114 94 174 68 256 68 Z" 
+        fill="none" stroke="url(#goldBorder)" stroke-width="3" stroke-opacity="0.4"/>
+
+  <!-- Central Emblem: Police Star (8-pointed) -->
+  <g transform="translate(256, 215)">
+    <!-- Star Points -->
+    <path d="M0 -90 L26 -30 L85 -36 L40 10 L64 68 L8 36 L-8 36 L-64 68 L-40 10 L-85 -36 L-26 -30 Z" 
+          fill="url(#starGold)" filter="url(#shadow)"/>
+    
+    <!-- Central Shield within Star -->
+    <circle cx="0" cy="0" r="38" fill="#991b1b" stroke="url(#goldBorder)" stroke-width="4"/>
+    
+    <!-- Police Ashoka Pillar Lion Core Outline -->
+    <path d="M-10 -16 L10 -16 L14 -6 L8 12 L0 18 L-8 12 L-14 -6 Z" fill="#f5e0a3"/>
+    <circle cx="0" cy="-6" r="4" fill="#0f224a"/>
+    <rect x="-8" y="10" width="16" height="3" fill="#f5e0a3"/>
+  </g>
+
+  <!-- UP Police Text Banner Ribbon -->
+  <g transform="translate(256, 355)">
+    <rect x="-140" y="-18" width="280" height="36" rx="8" fill="#1e293b" stroke="url(#goldBorder)" stroke-width="2"/>
+    <text x="0" y="7" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="20" fill="#fef08a" text-anchor="middle" letter-spacing="3">
+      UP POLICE
+    </text>
+  </g>
+  
+  <!-- Hindi Title -->
+  <text x="256" y="415" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="16" fill="#dfb97e" text-anchor="middle" opacity="0.95">
+    उत्तर प्रदेश पुलिस
+  </text>
+</svg>
