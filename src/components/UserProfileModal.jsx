@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { 
   X, User, Phone, MapPin, Building2, KeyRound, Save, AlertCircle, 
-  CheckCircle2, ShieldCheck, Camera, Upload, ArrowRightLeft, Clock, Send,
-  MessageSquare, LogOut
+  CheckCircle2, ShieldCheck, Camera, Upload, ArrowRightLeft, Clock, Send
 } from 'lucide-react';
 import { OFFICES } from '../data/mockContacts';
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
@@ -160,8 +159,18 @@ export default function UserProfileModal({
   const hasPendingTransfer = Boolean(user.districtTransfer);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay" style={{ zIndex: 100060, paddingBottom: '20px' }} onClick={onClose}>
+      <div 
+        className="modal-content" 
+        style={{ 
+          maxWidth: '620px', 
+          width: '100%', 
+          maxHeight: 'min(90vh, 760px)', 
+          overflowY: 'auto', 
+          zIndex: 100061 
+        }} 
+        onClick={e => e.stopPropagation()}
+      >
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div style={{
@@ -672,65 +681,6 @@ export default function UserProfileModal({
           </form>
         )}
 
-        {/* Footer Actions: Suggestions & Feedback and Secure Logout (Point 2) */}
-        <div style={{
-          marginTop: '1.25rem',
-          paddingTop: '0.85rem',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '0.75rem',
-          flexWrap: 'wrap'
-        }}>
-          {onOpenFeedback && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                onClose();
-                onOpenFeedback();
-              }}
-              style={{
-                fontSize: '0.8rem',
-                padding: '6px 14px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                border: '1px solid var(--khaki-border, rgba(196,151,86,0.3))'
-              }}
-              title="विभागीय सुधार एवं तकनीकी सुझाव प्रेषित करें"
-            >
-              <MessageSquare size={15} color="var(--khaki-primary, #c49756)" />
-              <span>सुझाव व फीडबैक</span>
-            </button>
-          )}
-
-          {onLogout && (
-            <button
-              type="button"
-              className="btn btn-danger"
-              onClick={() => {
-                if (window.confirm('क्या आप निश्चित रूप से उत्तर प्रदेश पुलिस पोर्टल से सुरक्षित लॉगआउट (Logout) करना चाहते हैं?')) {
-                  onClose();
-                  onLogout();
-                }
-              }}
-              style={{
-                fontSize: '0.8rem',
-                padding: '6px 14px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginLeft: 'auto'
-              }}
-              title="पोर्टल सत्र समाप्त कर सुरक्षित लॉगआउट करें"
-            >
-              <LogOut size={15} />
-              <span>सुरक्षित लॉगआउट (Logout)</span>
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );
