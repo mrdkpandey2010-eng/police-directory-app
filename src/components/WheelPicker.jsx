@@ -215,15 +215,15 @@ export default function WheelPicker({
         }}
       />
 
-      {/* Top & Bottom Vignette Shadow Gradients for 3D Depth */}
+      {/* Top & Bottom Vignette Shadow Gradients for 3D Depth (Gentle 18px edge fade so all 5 items remain clearly visible) */}
       <div
         style={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
-          height: `${paddingY}px`,
-          background: 'linear-gradient(180deg, rgba(10, 20, 40, 0.94) 0%, rgba(10, 20, 40, 0.5) 70%, transparent 100%)',
+          height: '18px',
+          background: 'linear-gradient(180deg, rgba(10, 20, 40, 0.92) 0%, transparent 100%)',
           pointerEvents: 'none',
           zIndex: 4
         }}
@@ -234,8 +234,8 @@ export default function WheelPicker({
           bottom: 0,
           left: 0,
           right: 0,
-          height: `${paddingY}px`,
-          background: 'linear-gradient(0deg, rgba(7, 16, 34, 0.94) 0%, rgba(7, 16, 34, 0.5) 70%, transparent 100%)',
+          height: '18px',
+          background: 'linear-gradient(0deg, rgba(7, 16, 34, 0.92) 0%, transparent 100%)',
           pointerEvents: 'none',
           zIndex: 4
         }}
@@ -270,10 +270,16 @@ export default function WheelPicker({
           const diff = Math.abs(index - activeIndex);
           const isSelected = diff === 0;
 
-          // 3D Cylinder Curve Calculations
-          const rotateAngle = Math.min(50, Math.max(-50, (index - activeIndex) * -16));
-          const scale = isSelected ? 1.08 : Math.max(0.78, 1 - diff * 0.1);
-          const opacity = isSelected ? 1 : Math.max(0.25, 0.85 - diff * 0.28);
+          // 3D Cylinder Curve Calculations (Ensuring at least 5 items are prominently visible and legible)
+          const rotateAngle = Math.min(45, Math.max(-45, (index - activeIndex) * -14));
+          const scale = isSelected ? 1.08 : Math.max(0.86, 1 - diff * 0.06);
+          const opacity = isSelected 
+            ? 1 
+            : diff === 1 
+            ? 0.84 
+            : diff === 2 
+            ? 0.70 
+            : Math.max(0.2, 0.45 - (diff - 2) * 0.15);
 
           return (
             <div

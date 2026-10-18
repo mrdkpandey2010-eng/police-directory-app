@@ -1,12 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MapPin, Building2, Award, ArrowLeft, X, Search, ChevronRight, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import WheelPicker from './WheelPicker';
 import { ALL_UP_DISTRICTS } from '../data/mockContacts';
 
+/**
+ * DistrictOfficeWizardPopup
+ * Minimal, compact wheel scroller popup for District and Police Station selection.
+ * Features:
+ * - At least 5 visible districts/stations in the wheel picker.
+ * - Zero search inputs, zero headlines, zero instructions.
+ * - Arrow icon button only (no text button).
+ * - Displays only Thanas for the district in minimal space.
+ */
 export default function DistrictOfficeWizardPopup({
   districts = [],
   offices = [],
-  posts = [],
   contacts = [],
   currentUser = null,
   initialDistrict = '',
@@ -15,11 +23,10 @@ export default function DistrictOfficeWizardPopup({
 }) {
   const popupRef = useRef(null);
 
-  // 3-Stage Flow: 'district' -> 'office' -> 'post' (Preserving designation flow per Section 2 & 4)
+  // 2 Stages: 'district' -> 'office' (displays only Thanas in minimal space)
   const [stage, setStage] = useState('district');
   const [selectedDist, setSelectedDist] = useState(initialDistrict || '');
   const [selectedOff, setSelectedOff] = useState('');
-  const [filterText, setFilterText] = useState('');
 
   // Close on Escape or click outside
   useEffect(() => {
@@ -43,7 +50,7 @@ export default function DistrictOfficeWizardPopup({
     };
   }, [onClose]);
 
-  // Stage 1: Authorized Districts list (Scoped legitimately, Section 3)
+  // Stage 1: Authorized Districts list (Scoped legitimately, all 75 UP districts for authorized users)
   const authorizedDistricts = useMemo(() => {
     let list = Array.isArray(districts) && districts.length > 0 ? districts : ALL_UP_DISTRICTS;
     list = list.filter(d => {
@@ -79,30 +86,20 @@ export default function DistrictOfficeWizardPopup({
     return list;
   }, [districts, currentUser]);
 
-  // Safe diagnostic log (Section 3)
+  // Safe diagnostic log
   useEffect(() => {
     console.log(`[District Wheel Selector] Loaded ${authorizedDistricts.length} authorized districts for role: ${currentUser?.role || 'guest'}`);
   }, [authorizedDistricts.length, currentUser?.role]);
 
-  // Filtered districts by user search typing
-  const displayedDistricts = useMemo(() => {
-    if (!filterText.trim()) return authorizedDistricts;
-    const q = filterText.toLowerCase().trim();
-    return authorizedDistricts.filter(d => {
-      const name = typeof d === 'object' ? d.name : d;
-      return name.toLowerCase().includes(q);
-    });
-  }, [authorizedDistricts, filterText]);
-
-  // Initialize selected district to first available or initialDistrict
+  // Initialize selected district
   useEffect(() => {
-    if (!selectedDist && displayedDistricts.length > 0) {
-      const first = typeof displayedDistricts[0] === 'object' ? displayedDistricts[0].name : displayedDistricts[0];
+    if (!selectedDist && authorizedDistricts.length > 0) {
+      const first = typeof authorizedDistricts[0] === 'object' ? authorizedDistricts[0].name : authorizedDistricts[0];
       setSelectedDist(first);
     }
-  }, [displayedDistricts, selectedDist]);
+  }, [authorizedDistricts, selectedDist]);
 
-  // Stage 2: Available Offices in selected District
+  // Stage 2: Available Thanas / Offices in selected District
   const availableOffices = useMemo(() => {
     if (!selectedDist) return [];
 
@@ -148,81 +145,35 @@ export default function DistrictOfficeWizardPopup({
     }
 
     const sorted = Array.from(officeSet).sort((a, b) => a.localeCompare(b, 'hi'));
-    return sorted;
+    return ['सभी थाने / कार्यालय (All Stations)', ...sorted];
   }, [offices, contacts, selectedDist]);
-
-  const displayedOffices = useMemo(() => {
-    if (!filterText.trim()) return availableOffices;
-    const q = filterText.toLowerCase().trim();
-    return availableOffices.filter(o => o.toLowerCase().includes(q));
-  }, [availableOffices, filterText]);
 
   // Initialize selected office when entering office stage or when district changes
   useEffect(() => {
-    if (displayedOffices.length > 0) {
-      if (!selectedOff || !displayedOffices.includes(selectedOff)) {
-        setSelectedOff(displayedOffices[0]);
+    if (availableOffices.length > 0) {
+      if (!selectedOff || !availableOffices.includes(selectedOff)) {
+        setSelectedOff(availableOffices[0]);
       }
     }
-  }, [displayedOffices, selectedOff]);
+  }, [availableOffices, selectedOff]);
 
-  // Stage 3: Available Designations/Ranks (for selected office)
-  const availablePosts = useMemo(() => {
-    const list = Array.isArray(posts) ? posts : [];
-    const cleanMaster = list.filter(p => p && p !== 'सभी पद (All Posts)' && p !== 'सभी पद');
-
-    // Find designations specifically present in this office
-    const officePosts = new Set();
-    if (selectedDist && selectedOff && Array.isArray(contacts)) {
-      contacts.forEach(c => {
-        if (
-          (c.district || '').trim().toLowerCase() === selectedDist.trim().toLowerCase() &&
-          (c.office || '').trim().toLowerCase() === selectedOff.trim().toLowerCase() &&
-          c.post
-        ) {
-          officePosts.add(c.post.trim());
-        }
-      });
-    }
-
-    // Combine office-specific posts first, then the rest of master posts
-    const combined = Array.from(new Set([...officePosts, ...cleanMaster]));
-    return ['सभी पद (All Posts)', ...combined];
-  }, [posts, contacts, selectedDist, selectedOff]);
-
-  const displayedPosts = useMemo(() => {
-    if (!filterText.trim()) return availablePosts;
-    const q = filterText.toLowerCase().trim();
-    return availablePosts.filter(p => p.toLowerCase().includes(q));
-  }, [availablePosts, filterText]);
-
-  // Handle District Wheel Confirm -> Advance to Office stage
+  // Handle District Advance -> Move to Police Stations stage
   const handleConfirmDistrict = () => {
-    if (!selectedDist && displayedDistricts.length > 0) {
-      const first = typeof displayedDistricts[0] === 'object' ? displayedDistricts[0].name : displayedDistricts[0];
+    if (!selectedDist && authorizedDistricts.length > 0) {
+      const first = typeof authorizedDistricts[0] === 'object' ? authorizedDistricts[0].name : authorizedDistricts[0];
       setSelectedDist(first);
     }
-    setFilterText('');
     setStage('office');
   };
 
-  // Handle Office Wheel Confirm -> Advance to Post stage
+  // Handle Office Selection -> Immediately filter directory and close popup
   const handleConfirmOffice = () => {
-    if (!selectedOff && displayedOffices.length > 0) {
-      setSelectedOff(displayedOffices[0]);
-    }
-    setFilterText('');
-    setStage('post');
-  };
-
-  // Handle Post click -> Complete Wizard & Close!
-  const handleSelectPost = (pst) => {
-    const finalPost = pst.includes('सभी पद') ? '' : pst;
+    const finalOffice = (!selectedOff || selectedOff.includes('सभी')) ? '' : selectedOff;
     if (onSelectComplete) {
       onSelectComplete({
         district: selectedDist,
-        office: selectedOff,
-        post: finalPost
+        office: finalOffice,
+        post: ''
       });
     }
     if (onClose) {
@@ -237,8 +188,7 @@ export default function DistrictOfficeWizardPopup({
         position: 'absolute',
         top: 'calc(100% + 8px)',
         left: 0,
-        width: 'min(318px, 92vw)',
-        maxHeight: '430px',
+        width: 'min(270px, 90vw)',
         background: 'linear-gradient(180deg, #0e1e3b 0%, #071022 100%)',
         border: '1.5px solid var(--khaki-primary, #c49756)',
         borderRadius: '12px',
@@ -249,74 +199,41 @@ export default function DistrictOfficeWizardPopup({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        animation: 'fadeIn 0.18s ease-out'
+        animation: 'fadeIn 0.18s ease-out',
+        padding: '6px 8px 10px 8px'
       }}
       onClick={e => e.stopPropagation()}
     >
-      {/* Header bar showing stage navigation */}
+      {/* Top minimal control bar (Close & Back icons only - NO headlines, titles, instructions, or search inputs) */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 12px',
-        borderBottom: '1px solid rgba(196, 151, 86, 0.25)',
-        background: 'rgba(196, 151, 86, 0.08)'
+        justifyContent: stage === 'office' ? 'space-between' : 'flex-end',
+        padding: '2px 4px 4px 4px',
+        minHeight: '26px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-          {stage === 'office' && (
-            <button
-              type="button"
-              onClick={() => { setStage('district'); setFilterText(''); }}
-              style={{
-                background: 'rgba(255,255,255,0.08)',
-                border: 'none',
-                color: 'var(--khaki-light, #dfb97e)',
-                borderRadius: '6px',
-                padding: '4px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center'
-              }}
-              title="जनपद व्हील पर वापस जाएं"
-              aria-label="पीछे जाएं"
-            >
-              <ArrowLeft size={14} />
-            </button>
-          )}
-          {stage === 'post' && (
-            <button
-              type="button"
-              onClick={() => { setStage('office'); setFilterText(''); }}
-              style={{
-                background: 'rgba(255,255,255,0.08)',
-                border: 'none',
-                color: 'var(--khaki-light, #dfb97e)',
-                borderRadius: '6px',
-                padding: '4px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center'
-              }}
-              title="थाना व्हील पर वापस जाएं"
-              aria-label="पीछे जाएं"
-            >
-              <ArrowLeft size={14} />
-            </button>
-          )}
-
-          <div style={{
-            fontSize: '0.82rem',
-            fontWeight: 800,
-            color: '#f8fafc',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}>
-            {stage === 'district' && `1. जनपद व्हील (${authorizedDistricts.length} जनपद)`}
-            {stage === 'office' && `2. ${selectedDist} • थाना व्हील`}
-            {stage === 'post' && `3. ${selectedOff} • पद/रैंक`}
-          </div>
-        </div>
+        {stage === 'office' && (
+          <button
+            type="button"
+            onClick={() => setStage('district')}
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              border: 'none',
+              color: 'var(--khaki-light, #dfb97e)',
+              borderRadius: '6px',
+              padding: '4px 6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.15s ease'
+            }}
+            title="जनपद व्हील पर वापस जाएं"
+            aria-label="पीछे जाएं"
+          >
+            <ArrowLeft size={16} />
+          </button>
+        )}
 
         <button
           type="button"
@@ -329,76 +246,24 @@ export default function DistrictOfficeWizardPopup({
             padding: '4px',
             display: 'flex',
             alignItems: 'center',
-            borderRadius: '4px'
+            justifyContent: 'center',
+            borderRadius: '4px',
+            transition: 'color 0.15s ease'
           }}
           aria-label="बंद करें"
           title="बंद करें"
+          onMouseEnter={e => e.currentTarget.style.color = '#ffffff'}
+          onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
         >
           <X size={16} />
         </button>
       </div>
 
-      {/* Inline Quick Filter/Search input inside popup */}
-      <div style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          background: 'rgba(15, 23, 42, 0.8)',
-          border: '1px solid rgba(196, 151, 86, 0.3)',
-          borderRadius: '6px',
-          padding: '4px 8px'
-        }}>
-          <Search size={13} color="var(--khaki-light, #dfb97e)" />
-          <input
-            type="text"
-            placeholder={
-              stage === 'district' ? 'जनपद खोजें (उदा. वाराणसी, आगरा...)' :
-              stage === 'office' ? 'थाना/कार्यालय खोजें...' :
-              'पद / रैंक खोजें...'
-            }
-            value={filterText}
-            onChange={(e) => setFilterText(e.target.value)}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: '#f8fafc',
-              fontSize: '0.78rem'
-            }}
-          />
-          {filterText && (
-            <button
-              type="button"
-              onClick={() => setFilterText('')}
-              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}
-            >
-              <X size={12} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* STAGE 1: DISTRICT WHEEL SCROLLER (Section 1) */}
+      {/* STAGE 1: DISTRICT WHEEL SCROLLER (At least 5 districts visible, zero headlines/search/instructions) */}
       {stage === 'district' && (
-        <div style={{ display: 'flex', flexDirection: 'column', padding: '6px 8px 10px 8px' }}>
-          <div style={{
-            fontSize: '0.7rem',
-            color: 'var(--khaki-light, #dfb97e)',
-            textAlign: 'center',
-            marginBottom: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '4px'
-          }}>
-            <MapPin size={11} color="var(--khaki-primary, #c49756)" />
-            <span>व्हील को स्क्रॉल कर जनपद चुनें</span>
-          </div>
-
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
           <WheelPicker
-            items={displayedDistricts}
+            items={authorizedDistricts}
             selectedValue={selectedDist}
             onValueChange={(val) => {
               const name = typeof val === 'object' ? val.name : val;
@@ -410,54 +275,41 @@ export default function DistrictOfficeWizardPopup({
             placeholder="कोई जनपद उपलब्ध नहीं"
           />
 
-          {/* Action button to lock in district and proceed to office stage */}
-          <button
-            type="button"
-            onClick={handleConfirmDistrict}
-            style={{
-              marginTop: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              background: 'linear-gradient(135deg, #c49756, #8e6833)',
-              border: 'none',
-              borderRadius: '8px',
-              padding: '8px',
-              color: '#081022',
-              fontWeight: 800,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(196, 151, 86, 0.3)',
-              transition: 'transform 0.15s ease'
-            }}
-            title={`${selectedDist} के थाने/कार्यालय देखें`}
-          >
-            <span>{selectedDist || 'जनपद'} के थाने चुनें</span>
-            <ChevronRight size={15} />
-          </button>
+          {/* Compact Arrow Icon Button Only (No text, minimal space) */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
+            <button
+              type="button"
+              onClick={handleConfirmDistrict}
+              style={{
+                width: '38px',
+                height: '38px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'linear-gradient(135deg, #c49756, #8e6833)',
+                border: 'none',
+                borderRadius: '50%',
+                color: '#081022',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(196, 151, 86, 0.45)',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+              }}
+              title={`${selectedDist} के थाने देखें`}
+              aria-label="थाने देखें"
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <ArrowRight size={18} strokeWidth={2.6} />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* STAGE 2: POLICE STATION / OFFICE WHEEL SCROLLER (Section 2) */}
+      {/* STAGE 2: POLICE STATIONS ONLY (In minimum possible space, zero headlines/search/instructions) */}
       {stage === 'office' && (
-        <div style={{ display: 'flex', flexDirection: 'column', padding: '6px 8px 10px 8px' }}>
-          <div style={{
-            fontSize: '0.7rem',
-            color: 'var(--khaki-light, #dfb97e)',
-            textAlign: 'center',
-            marginBottom: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '4px'
-          }}>
-            <Building2 size={11} color="var(--khaki-primary, #c49756)" />
-            <span>{selectedDist} के थाने/कार्यालय हेतु व्हील स्क्रॉल करें</span>
-          </div>
-
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
           <WheelPicker
-            items={displayedOffices}
+            items={availableOffices}
             selectedValue={selectedOff}
             onValueChange={(val) => {
               const name = typeof val === 'object' ? val.name : val;
@@ -469,81 +321,33 @@ export default function DistrictOfficeWizardPopup({
             placeholder="इस जनपद में कोई थाना नहीं मिला"
           />
 
-          {/* Action button to lock in office and proceed to designation stage */}
-          <button
-            type="button"
-            onClick={handleConfirmOffice}
-            style={{
-              marginTop: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              background: 'linear-gradient(135deg, #c49756, #8e6833)',
-              border: 'none',
-              borderRadius: '8px',
-              padding: '8px',
-              color: '#081022',
-              fontWeight: 800,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(196, 151, 86, 0.3)',
-              transition: 'transform 0.15s ease'
-            }}
-            title={`${selectedOff} के पद/रैंक देखें`}
-          >
-            <span>{selectedOff || 'थाना'} के पद चुनें</span>
-            <ChevronRight size={15} />
-          </button>
-        </div>
-      )}
-
-      {/* STAGE 3: DESIGNATIONS / RANKS (Section 4 - Unmodified Flow & Layout) */}
-      {stage === 'post' && (
-        <div style={{
-          overflowY: 'auto',
-          maxHeight: '290px',
-          padding: '6px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '3px'
-        }}>
-          {displayedPosts.length > 0 ? (
-            displayedPosts.map((pst, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleSelectPost(pst)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '8px 10px',
-                  background: 'transparent',
-                  border: '1px solid transparent',
-                  borderRadius: '6px',
-                  color: '#f8fafc',
-                  fontSize: '0.8rem',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'background 0.15s ease'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(196, 151, 86, 0.15)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Award size={13} color="var(--khaki-primary, #c49756)" />
-                  <span>{pst}</span>
-                </div>
-                <ChevronRight size={13} color="#94a3b8" />
-              </button>
-            ))
-          ) : (
-            <div style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '0.78rem' }}>
-              कोई पद नहीं मिला
-            </div>
-          )}
+          {/* Compact Arrow Icon Button Only (Applies filter and displays contacts) */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
+            <button
+              type="button"
+              onClick={handleConfirmOffice}
+              style={{
+                width: '38px',
+                height: '38px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'linear-gradient(135deg, #c49756, #8e6833)',
+                border: 'none',
+                borderRadius: '50%',
+                color: '#081022',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(196, 151, 86, 0.45)',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+              }}
+              title="थाने के संपर्क देखें"
+              aria-label="संपर्क देखें"
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <ArrowRight size={18} strokeWidth={2.6} />
+            </button>
+          </div>
         </div>
       )}
     </div>
