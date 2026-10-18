@@ -160,12 +160,20 @@ body {
   font-weight: 500;
 }
 
+.header-top {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-wrap: nowrap !important;
+  width: 100% !important;
+}
+
 .header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-wrap: nowrap;
-  flex-shrink: 0;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.35rem !important;
+  flex-wrap: nowrap !important;
+  flex-shrink: 0 !important;
 }
 
 /* Buttons System - Compact */

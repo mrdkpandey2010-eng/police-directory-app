@@ -253,6 +253,13 @@ export default function App() {
   // Android Native Hardware Back Button & Mobile Browser Popstate Navigation (Requirement 6)
   const backHandlerRef = useRef(null);
   backHandlerRef.current = () => {
+    // 0. Floating popups in header (District wizard, inline search, profile menu)
+    if (window.__police_header_popup_open) {
+      window.dispatchEvent(new CustomEvent('police_app_close_popups'));
+      window.__police_header_popup_open = false;
+      return true;
+    }
+
     // Top-level modals and dialogs must close first
     if (isDisclaimerModalOpen) {
       setIsDisclaimerModalOpen(false);
@@ -316,60 +323,69 @@ export default function App() {
       setIsLoginModalOpen(false);
       return true;
     }
+
+    // AuthGateway sub-stages (when logged out, navigate back to PNO box)
+    if (window.__police_auth_stage && window.__police_auth_stage !== 'pno_entry') {
+      window.dispatchEvent(new CustomEvent('police_app_auth_back'));
+      window.__police_auth_stage = 'pno_entry';
+      return true;
+    }
+
     // If no modal is open, back clears search query
     if (searchQuery && searchQuery.trim() !== '') {
       setSearchQuery('');
       return true;
     }
+
     // If no search query, back resets active office/station filters
     if (hasActiveFilters) {
       handleResetToDefaultOffice();
       return true;
     }
+
+    // If pagination is beyond page 1, return to page 1
+    if (currentPage > 1) {
+      setCurrentPage(1);
+      return true;
+    }
+
     return false;
   };
 
-  // State flag for tracking if any modal/view is open
-  const isAnyModalOpen = Boolean(
-    isDisclaimerModalOpen || isPolicyModalOpen || isEditModalOpen ||
-    isMenuDrawerOpen || isFirebaseSetupOpen || isFeedbackModalOpen ||
-    isCallHistoryModalOpen || isNotifsModalOpen || isChatModalOpen ||
-    isProfileModalOpen || isAdmin2FAModalOpen || isAdminModalOpen ||
-    isRegisterModalOpen || isLoginModalOpen
-  );
+  // Mobile Browser Popstate & Navigation Interception (Requirement 4: Never exit unexpectedly)
+  const lastBackPressTimeRef = useRef(0);
 
-  // Sync browser history state for mobile browser back button (Requirement 6)
-  const isProgrammaticBackRef = useRef(false);
-  const prevModalOpenRef = useRef(false);
   useEffect(() => {
-    if (isAnyModalOpen && !prevModalOpenRef.current) {
-      // Modal just opened -> push history state
-      try {
-        window.history.pushState({ modalOpen: true }, '');
-      } catch (e) {
-        // Safe catch for restricted environments
-      }
-    } else if (!isAnyModalOpen && prevModalOpenRef.current) {
-      // Modal was closed programmatically or via UI button
-      if (window.history.state?.modalOpen) {
-        isProgrammaticBackRef.current = true;
-        try {
-          window.history.back();
-        } catch (e) {}
-      }
+    try {
+      window.history.replaceState({ appState: 'home' }, '');
+      window.history.pushState({ appState: 'app_view' }, '');
+    } catch (e) {
+      // Safe catch for constrained webview
     }
-    prevModalOpenRef.current = isAnyModalOpen;
-  }, [isAnyModalOpen]);
 
-  // Mobile browser popstate listener (Requirement 6)
-  useEffect(() => {
     const handlePopState = () => {
-      if (isProgrammaticBackRef.current) {
-        isProgrammaticBackRef.current = false;
-        return;
-      }
-      if (backHandlerRef.current) {
-        backHandlerRef.current();
+      // Execute hierarchical app back handler
+      const handled = backHandlerRef.current ? backHandlerRef.current() : false;
+
+      if (handled) {
+        // Navigated back to previous subview/modal/Home successfully
+        // Re-push history entry so subsequent mobile back presses continue to be intercepted
+        try {
+          window.history.pushState({ appState: 'app_view' }, '');
+        } catch (e) {}
+      } else {
+        // User is at root Home page (no modals, no search, no filters)
+        const now = Date.now();
+        if (now - lastBackPressTimeRef.current < 2500) {
+          // Double back press on root Home allows leaving the app
+          window.history.back();
+        } else {
+          lastBackPressTimeRef.current = now;
+          showToast('ऐप से बाहर जाने के लिए एक बार और बैक दबाएं');
+          try {
+            window.history.pushState({ appState: 'app_view' }, '');
+          } catch (e) {}
+        }
       }
     };
 

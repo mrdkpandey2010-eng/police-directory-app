@@ -146,25 +146,27 @@ export default function LoginModal({
           <button className="close-btn" onClick={onClose}><X size={18} /></button>
         </div>
 
-        {/* Official Police Emblem Logo (Centered above text fields, crisp & responsive - Requirement 4) */}
+        {/* Official Police Emblem Badge (Centered above text fields, crisp & properly proportioned) */}
         <div style={{
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          padding: '4px 0 10px 0',
+          padding: '6px 0 10px 0',
           width: '100%'
         }}>
           <img 
-            src="/police-logo.png" 
-            alt="उत्तर प्रदेश पुलिस" 
-            onError={(e) => { e.currentTarget.src = '/police-icon.svg'; }}
+            src="/police-badge.png" 
+            alt="उत्तर प्रदेश पुलिस डायरेक्टरी" 
+            onError={(e) => { e.currentTarget.src = '/police-logo.png'; }}
             style={{
-              height: 'clamp(52px, 11vh, 72px)',
+              height: 'clamp(76px, 14vh, 98px)',
               width: 'auto',
-              maxHeight: '75px',
-              maxWidth: '180px',
+              maxHeight: '105px',
+              maxWidth: '120px',
               objectFit: 'contain',
-              filter: 'drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45))'
+              borderRadius: '12px',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.55)',
+              filter: 'drop-shadow(0 4px 12px rgba(196, 151, 86, 0.25))'
             }}
           />
         </div>
@@ -341,16 +343,23 @@ export default function LoginModal({
           </form>
         )}
 
-        {/* Subdued Footer Informational Hyperlinks (Requirement 5) */}
-        <div style={{
-          marginTop: '1.15rem',
-          paddingTop: '0.65rem',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          width: '100%'
-        }}>
+        {/* Subdued Footer Informational Hyperlinks (Discreet/Subdued until mouse hover or touch) */}
+        <div 
+          style={{
+            marginTop: '1.25rem',
+            paddingTop: '0.65rem',
+            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            width: '100%',
+            opacity: 0.38,
+            transition: 'opacity 0.25s ease'
+          }}
+          onMouseEnter={e => e.currentTarget.style.opacity = '0.95'}
+          onMouseLeave={e => e.currentTarget.style.opacity = '0.38'}
+          onTouchStart={e => e.currentTarget.style.opacity = '0.95'}
+        >
           <button
             type="button"
             onClick={() => {
@@ -368,24 +377,7 @@ export default function LoginModal({
               textDecoration: 'underline',
               textUnderlineOffset: '3px',
               padding: '3px 6px',
-              borderRadius: '4px',
-              transition: 'color 0.15s ease, background 0.15s ease'
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.color = 'var(--khaki-light, #dfb97e)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.color = '#94a3b8';
-              e.currentTarget.style.background = 'none';
-            }}
-            onFocus={e => {
-              e.currentTarget.style.color = 'var(--khaki-light, #dfb97e)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-            }}
-            onBlur={e => {
-              e.currentTarget.style.color = '#94a3b8';
-              e.currentTarget.style.background = 'none';
+              borderRadius: '4px'
             }}
             title="विभागीय नियम, गोपनीयता नीति एवं सेवा शर्तें देखें"
           >

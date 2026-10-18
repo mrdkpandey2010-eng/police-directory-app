@@ -24,6 +24,24 @@ export default function AuthGateway({
   // Current screen stage: 'pno_entry' | 'password_entry' | 'register_entry' | 'reg_success'
   const [stage, setStage] = useState('pno_entry');
 
+  // Sync auth stage to window for mobile back button handling
+  useEffect(() => {
+    window.__police_auth_stage = stage;
+  }, [stage]);
+
+  useEffect(() => {
+    const handleAuthBack = () => {
+      if (stage !== 'pno_entry') {
+        setStage('pno_entry');
+        setPnoError('');
+        setLoginError('');
+        setRegError('');
+      }
+    };
+    window.addEventListener('police_app_auth_back', handleAuthBack);
+    return () => window.removeEventListener('police_app_auth_back', handleAuthBack);
+  }, [stage]);
+
   // Stage 1: PNO Entry
   const [pnoInput, setPnoInput] = useState('');
   const [isVerifyingPno, setIsVerifyingPno] = useState(false);
@@ -332,6 +350,33 @@ export default function AuthGateway({
             }
       }>
 
+        {/* Official Police Emblem Badge (Centered above text fields, crisp & properly proportioned) */}
+        {(stage === 'pno_entry' || stage === 'password_entry') && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '0 0 1rem 0',
+            width: '100%'
+          }}>
+            <img 
+              src="/police-badge.png" 
+              alt="उत्तर प्रदेश पुलिस डायरेक्टरी" 
+              onError={(e) => { e.currentTarget.src = '/police-logo.png'; }}
+              style={{
+                height: 'clamp(80px, 14vh, 105px)',
+                width: 'auto',
+                maxHeight: '110px',
+                maxWidth: '125px',
+                objectFit: 'contain',
+                borderRadius: '12px',
+                boxShadow: '0 4px 18px rgba(0, 0, 0, 0.55)',
+                filter: 'drop-shadow(0 4px 12px rgba(196, 151, 86, 0.25))'
+              }}
+            />
+          </div>
+        )}
+
         {/* ============================================================== */}
         {/* STAGE 1: ENTER PNO (EXTREMELY MINIMAL - INPUT + ARROW ONLY)    */}
         {/* ============================================================== */}
@@ -504,6 +549,48 @@ export default function AuthGateway({
               </div>
             )}
           </form>
+        )}
+
+        {/* Subdued Footer Informational Hyperlinks (Discreet/Subdued until mouse hover or touch) */}
+        {(stage === 'pno_entry' || stage === 'password_entry') && (
+          <div 
+            style={{
+              marginTop: '1.5rem',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+              opacity: 0.38,
+              transition: 'opacity 0.25s ease'
+            }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '0.95'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '0.38'}
+            onTouchStart={e => e.currentTarget.style.opacity = '0.95'}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof onOpenPolicy === 'function') {
+                  onOpenPolicy('disclaimer');
+                }
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                fontSize: '0.72rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                textUnderlineOffset: '3px',
+                padding: '3px 6px',
+                borderRadius: '4px'
+              }}
+              title="शासकीय नियम, गोपनीयता नीति एवं सेवा शर्तें देखें"
+            >
+              शासकीय नियम, गोपनीयता नीति एवं सेवा शर्तें
+            </button>
+          </div>
         )}
 
         {/* ============================================================== */}

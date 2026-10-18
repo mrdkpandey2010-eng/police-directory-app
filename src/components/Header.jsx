@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Lock, MessageSquare, User, LogOut, ChevronDown, Search, Trash2, Shield, MapPin 
+  Lock, MessageSquare, User, LogOut, ChevronDown, Search, Trash2, Shield, MapPin, Globe 
 } from 'lucide-react';
 import DistrictOfficeWizardPopup from './DistrictOfficeWizardPopup';
 import InlineSearchPopup from './InlineSearchPopup';
@@ -69,13 +69,29 @@ export default function Header({
     };
   }, [isProfileMenuOpen]);
 
+  // Sync header popup open state for hardware/mobile back button
+  const anyHeaderPopupOpen = Boolean(isDistrictPopupOpen || isSearchOpen || isProfileMenuOpen);
+  useEffect(() => {
+    window.__police_header_popup_open = anyHeaderPopupOpen;
+  }, [anyHeaderPopupOpen]);
+
+  useEffect(() => {
+    const handleClosePopups = () => {
+      setIsDistrictPopupOpen(false);
+      setIsSearchOpen(false);
+      setIsProfileMenuOpen(false);
+    };
+    window.addEventListener('police_app_close_popups', handleClosePopups);
+    return () => window.removeEventListener('police_app_close_popups', handleClosePopups);
+  }, []);
+
   return (
-    <header className="header-card" style={{ padding: '0.6rem 1rem', position: 'relative', zIndex: 100 }}>
-      <div className="header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '0.5rem' }}>
+    <header className="header-card" style={{ padding: '0.6rem 0.85rem', position: 'relative', zIndex: 100 }}>
+      <div className="header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '6px', flexWrap: 'nowrap' }}>
 
         {/* District Selector & Search Icon Area */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
-          {/* 1. Compact District Selection Button (Requirements 2, 3, 4) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'relative', minWidth: 0, flexShrink: 1 }}>
+          {/* 1. Compact District Selection Button */}
           <button
             type="button"
             onClick={() => {
@@ -85,10 +101,10 @@ export default function Header({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
+              gap: '5px',
               background: isDistrictPopupOpen ? 'rgba(196, 151, 86, 0.25)' : 'rgba(196, 151, 86, 0.12)',
               border: '1.5px solid var(--khaki-primary, #c49756)',
-              padding: '5px 11px',
+              padding: '5px 8px',
               borderRadius: '8px',
               cursor: 'pointer',
               color: '#f8fafc',
@@ -96,13 +112,15 @@ export default function Header({
               fontWeight: 700,
               boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
               transition: 'all 0.2s ease',
-              maxWidth: '210px'
+              maxWidth: 'clamp(100px, 32vw, 190px)',
+              minWidth: 0,
+              flexShrink: 1
             }}
             title="जनपद, थाना एवं पद फ़िल्टर"
             aria-label="जनपद चुनें"
           >
-            <MapPin size={14} color="var(--khaki-light, #dfb97e)" style={{ flexShrink: 0 }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <MapPin size={13} color="var(--khaki-light, #dfb97e)" style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
               {selectedDistrict 
                 ? (selectedOffice 
                     ? `${resolveBilingualField('district', selectedDistrict, displayLanguage)} • ${resolveBilingualField('office', selectedOffice, displayLanguage)}` 
@@ -111,10 +129,10 @@ export default function Header({
                     ? resolveBilingualField('district', currentUser.district, displayLanguage) 
                     : (displayLanguage === 'en' ? 'Select District' : 'जनपद चुनें'))}
             </span>
-            <ChevronDown size={13} color="var(--khaki-primary, #c49756)" style={{ flexShrink: 0, transform: isDistrictPopupOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            <ChevronDown size={12} color="var(--khaki-primary, #c49756)" style={{ flexShrink: 0, transform: isDistrictPopupOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
           </button>
 
-          {/* 2. Compact Search Icon Beside District Selector (Requirement 5) */}
+          {/* 2. Compact Search Icon Beside District Selector */}
           <button
             type="button"
             onClick={() => {
@@ -172,63 +190,37 @@ export default function Header({
           )}
         </div>
 
-        {/* Header Right Action Area: Language Selector + Profile (Requirement A & 2, 3) */}
-        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap', flexShrink: 0, position: 'relative' }}>
+        {/* Header Right Action Area: Language Icon Button + Profile (Never wrap, strictly single line) */}
+        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap', flexShrink: 0, position: 'relative' }}>
           
-          {/* Bilingual Language Preference Selector (Requirement 2: Compact footprint) */}
-          <div 
+          {/* Bilingual Language Icon Toggle Button (Requirement 1: Saves maximum horizontal space) */}
+          <button
+            type="button"
+            onClick={() => onLanguageChange && onLanguageChange(displayLanguage === 'hi' ? 'en' : 'hi')}
             style={{
-              display: 'inline-flex',
+              display: 'flex',
               alignItems: 'center',
-              background: 'rgba(0, 0, 0, 0.45)',
-              border: '1px solid var(--khaki-border, rgba(196, 151, 86, 0.35))',
-              borderRadius: '6px',
-              padding: '1.5px',
-              gap: '1px',
-              flexShrink: 0
+              justifyContent: 'center',
+              gap: '4px',
+              height: '32px',
+              padding: '0 8px',
+              background: 'rgba(196, 151, 86, 0.15)',
+              border: '1.5px solid var(--khaki-border, rgba(196, 151, 86, 0.4))',
+              borderRadius: '8px',
+              color: 'var(--khaki-light, #dfb97e)',
+              cursor: 'pointer',
+              flexShrink: 0,
+              fontSize: '0.74rem',
+              fontWeight: 800,
+              transition: 'all 0.2s ease',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
             }}
-            role="group"
-            aria-label="भाषा चयन / Select Language"
+            title={displayLanguage === 'hi' ? 'अंग्रेजी में बदलें (Switch to English)' : 'हिंदी में बदलें (Switch to Hindi)'}
+            aria-label="भाषा बदलें / Toggle Language"
           >
-            <button
-              type="button"
-              onClick={() => onLanguageChange && onLanguageChange('hi')}
-              style={{
-                padding: '2px 5px',
-                fontSize: '0.66rem',
-                fontWeight: displayLanguage === 'hi' ? 700 : 500,
-                background: displayLanguage === 'hi' ? 'var(--khaki-primary, #c49756)' : 'transparent',
-                color: displayLanguage === 'hi' ? '#070e1c' : '#cbd5e1',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                lineHeight: 1.15
-              }}
-              title="हिंदी में संपर्क प्रदर्शित करें"
-            >
-              हिंदी
-            </button>
-            <button
-              type="button"
-              onClick={() => onLanguageChange && onLanguageChange('en')}
-              style={{
-                padding: '2px 5px',
-                fontSize: '0.66rem',
-                fontWeight: displayLanguage === 'en' ? 700 : 500,
-                background: displayLanguage === 'en' ? 'var(--khaki-primary, #c49756)' : 'transparent',
-                color: displayLanguage === 'en' ? '#070e1c' : '#cbd5e1',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                lineHeight: 1.15
-              }}
-              title="Display contacts in English"
-            >
-              EN
-            </button>
-          </div>
+            <Globe size={15} color="var(--khaki-light, #dfb97e)" />
+            <span>{displayLanguage === 'hi' ? 'EN' : 'हिं'}</span>
+          </button>
 
           {/* User Profile Pill with Logout and Feedback options on click */}
           {isLoggedIn ? (
@@ -295,7 +287,7 @@ export default function Header({
                   right: 0,
                   width: 'min(240px, 86vw)',
                   maxWidth: 'calc(100vw - 16px)',
-                  background: 'rgba(15, 23, 42, 0.98)',
+                  background: '#0c1527',
                   border: '1.5px solid var(--khaki-border, rgba(196, 151, 86, 0.4))',
                   borderRadius: '10px',
                   boxShadow: '0 12px 30px rgba(0,0,0,0.85)',
