@@ -53,7 +53,7 @@ export default function ContactList({
             padding: '3px 8px',
             fontWeight: 600
           }}>
-            ⚡ तीव्र गति हेतु अधिकतम 10 कार्मिक प्रदर्शित (विशिष्ट कार्मिक हेतु फ़िल्टर/खोज का उपयोग करें)
+            ⚡ अधिकतम 200 कार्मिक प्रदर्शित (कुल {effectiveTotal} में से)
           </span>
         )}
       </div>

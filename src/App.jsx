@@ -240,6 +240,10 @@ export default function App() {
   // Android Native Hardware Back Button Handler Ref (Modal & Drawer Stack)
   const backHandlerRef = useRef(null);
   backHandlerRef.current = () => {
+    if (isFilterSidebarOpen) {
+      setIsFilterSidebarOpen(false);
+      return true;
+    }
     if (isPolicyModalOpen) {
       setIsPolicyModalOpen(false);
       return true;
@@ -431,6 +435,21 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
     };
   }, []);
+
+  // Auto-open Employee Search Sidebar on first authenticated Home page initialization (Section 1)
+  const hasAutoOpenedSearchRef = useRef(false);
+
+  useEffect(() => {
+    const isAuthComplete = Boolean(currentUser && isTermsAccepted && isPermissionsCompleted);
+    if (isAuthComplete) {
+      if (!hasAutoOpenedSearchRef.current) {
+        hasAutoOpenedSearchRef.current = true;
+        setIsFilterSidebarOpen(true);
+      }
+    } else {
+      hasAutoOpenedSearchRef.current = false;
+    }
+  }, [currentUser, isTermsAccepted, isPermissionsCompleted]);
 
   // ---------------- FIRESTORE CONTACTS REAL-TIME SYNC (PERMANENT RETENTION) ----------------
   useEffect(() => {
@@ -954,12 +973,30 @@ export default function App() {
 
       return true;
     });
+
+    // Deterministic ordering for results (Section 5)
+    matches.sort((a, b) => {
+      const nameComp = (a.name || '').localeCompare(b.name || '', 'hi');
+      if (nameComp !== 0) return nameComp;
+      return (a.pno || '').localeCompare(b.pno || '');
+    });
+
+    return matches;
   }, [contacts, searchQuery, selectedDistrict, selectedPost, selectedOffice, currentUser, userDistrictScope]);
 
-  // Maximum 10 Contact Cards displayed on home screen to reduce DOM load (Point 6)
+  // Maximum 200 Contact Cards displayed on home screen (Section 5)
   const displayedContacts = useMemo(() => {
-    return filteredContacts.slice(0, 10);
+    return filteredContacts.slice(0, 200);
   }, [filteredContacts]);
+
+  // Handler: Execute Search from Sidebar
+  const handleExecuteSearch = ({ query, district, post, office }) => {
+    setSearchQuery(query || '');
+    setSelectedDistrict(district || '');
+    setSelectedPost(post || '');
+    setSelectedOffice(office || '');
+    setUserDistrictScope(district ? 'all' : 'my_district');
+  };
 
   // Handler: Self Registration
   const handleRegistrationSubmit = async (formData) => {
@@ -2095,18 +2132,14 @@ export default function App() {
         isOpen={isFilterSidebarOpen}
         onClose={() => setIsFilterSidebarOpen(false)}
         searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
         selectedDistrict={selectedDistrict}
-        setSelectedDistrict={setSelectedDistrict}
         selectedPost={selectedPost}
-        setSelectedPost={setSelectedPost}
         selectedOffice={selectedOffice}
-        setSelectedOffice={setSelectedOffice}
+        onExecuteSearch={handleExecuteSearch}
         districts={districts}
         posts={posts}
         offices={offices}
-        onResetFilters={handleResetFilters}
-        hasActiveFilters={hasActiveFilters}
+        currentUser={currentUser}
       />
 
       {/* Active Filter Strip on Main Screen */}

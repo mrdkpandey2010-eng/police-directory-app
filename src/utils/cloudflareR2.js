@@ -1380,5 +1380,169 @@ export const recordTermsAcceptanceAuth = async (userId, termsVersion = 2) => {
   return true;
 };
 
+// ---------------- EMPLOYEE SEARCH SIDEBAR API (Max 200 & Mandatory Validation) ----------------
+export const searchEmployeesApi = async ({
+  query = '',
+  district = '',
+  post = '',
+  office = '',
+  currentUser = null,
+  localContacts = []
+}) => {
+  const cleanQuery = (query || '').trim();
+  const cleanDist = (district || '').trim();
+  const cleanPost = (post || '').trim();
+  const cleanOffice = (office || '').trim();
+
+  // Mandatory Validation (Section 4):
+  // When search query is empty, user must select all three: District, Rank/designation, and Office/police station
+  if (!cleanQuery) {
+    const missingDistrict = !cleanDist || cleanDist === 'सभी ज़िले' || cleanDist === 'सभी ज़िले (All Districts)';
+    const missingPost = !cleanPost || cleanPost === 'सभी पद';
+    const missingOffice = !cleanOffice || cleanOffice.includes('सभी');
+
+    if (missingDistrict || missingPost || missingOffice) {
+      return {
+        success: false,
+        error: 'सर्च क्वेरी रिक्त होने पर जनपद, पद एवं थाना तीनों फ़िल्टर अनिवार्य हैं।',
+        employees: [],
+        total: 0
+      };
+    }
+  }
+
+  // Authorization Check: Co-Admin district scope
+  if (currentUser?.role === 'co_admin' && currentUser.district) {
+    if (cleanDist && cleanDist.toLowerCase() !== currentUser.district.toLowerCase()) {
+      return {
+        success: false,
+        error: 'अनाधिकृत जनपद पहुंच: Co-Admin केवल अपने आवंटित जनपद के कार्मिक खोज सकते हैं।',
+        employees: [],
+        total: 0
+      };
+    }
+  }
+
+  // Try Remote Cloudflare Worker Search API
+  const baseUrl = getWorkerBaseUrl();
+  if (baseUrl) {
+    try {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch(`${baseUrl}/api/employees/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': getAdminApiKey()
+        },
+        body: JSON.stringify({
+          query: cleanQuery,
+          district: cleanDist,
+          post: cleanPost,
+          office: cleanOffice,
+          userRole: currentUser?.role || 'user',
+          userDistrict: currentUser?.district || ''
+        }),
+        signal: ctrl.signal
+      });
+      clearTimeout(timeout);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return {
+          success: true,
+          employees: (data.employees || []).slice(0, 200),
+          count: Math.min((data.employees || []).length, 200),
+          total: data.total || (data.employees || []).length,
+          hasMore: (data.total > 200) || Boolean(data.hasMore)
+        };
+      }
+      if (res.status === 400 || res.status === 403) {
+        return {
+          success: false,
+          error: data.error || 'अमान्य सर्च मापदंड।',
+          employees: [],
+          total: 0
+        };
+      }
+    } catch (err) {
+      console.warn('[Employee Search] Remote worker query failed, using local database:', err?.message || err);
+    }
+  }
+
+  // Local Database Search (Exact same validation, permissions, and 200-record maximum)
+  const effectiveContacts = (Array.isArray(localContacts) && localContacts.length > 0)
+    ? localContacts
+    : getStoredContacts();
+
+  const matches = (effectiveContacts || []).filter(c => {
+    const isCardActive = c.status === 'approved' || c.status === 'active';
+    if (!isCardActive) return false;
+
+    // Co-Admin restricted to district
+    if (currentUser?.role === 'co_admin' && currentUser.district) {
+      if ((c.district || '').trim().toLowerCase() !== currentUser.district.toLowerCase()) {
+        return false;
+      }
+    }
+
+    // District filter
+    if (cleanDist && cleanDist !== 'सभी ज़िले' && cleanDist !== 'सभी ज़िले (All Districts)') {
+      if ((c.district || '').trim().toLowerCase() !== cleanDist.toLowerCase()) {
+        return false;
+      }
+    }
+
+    // Post filter
+    if (cleanPost && cleanPost !== 'सभी पद') {
+      if ((c.post || '').trim() !== cleanPost) {
+        return false;
+      }
+    }
+
+    // Office filter
+    if (cleanOffice && !cleanOffice.includes('सभी')) {
+      if ((c.office || '').trim() !== cleanOffice) {
+        return false;
+      }
+    }
+
+    // Free text query
+    if (cleanQuery) {
+      const q = cleanQuery.toLowerCase();
+      const matchesName = (c.name || '').toLowerCase().includes(q);
+      const matchesPno = (c.pno || '').toLowerCase().includes(q);
+      const matchesPhone = (c.phone || '').includes(q);
+      const matchesDistrict = (c.district || '').toLowerCase().includes(q);
+      const matchesPost = (c.post || '').toLowerCase().includes(q);
+      const matchesOffice = (c.office || '').toLowerCase().includes(q);
+
+      if (!matchesName && !matchesPno && !matchesPhone && !matchesDistrict && !matchesPost && !matchesOffice) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  // Deterministic sort: name, then PNO
+  matches.sort((a, b) => {
+    const nameComp = (a.name || '').localeCompare(b.name || '', 'hi');
+    if (nameComp !== 0) return nameComp;
+    return (a.pno || '').localeCompare(b.pno || '');
+  });
+
+  const total = matches.length;
+  const bounded = matches.slice(0, 200);
+
+  return {
+    success: true,
+    employees: bounded,
+    count: bounded.length,
+    total: total,
+    hasMore: total > 200
+  };
+};
+
+
 
 

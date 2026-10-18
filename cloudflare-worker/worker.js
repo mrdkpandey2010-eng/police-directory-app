@@ -81,7 +81,7 @@ export default {
     const adminKey = env.ADMIN_API_KEY || 'police_admin_2026';
     const reqKey = request.headers.get('x-api-key') || url.searchParams.get('key');
     const isWriteMethod = request.method === 'POST' || request.method === 'PUT' || request.method === 'DELETE';
-    const isPublicWritePath = path.startsWith('/api/auth') || path === '/api/register' || path === '/api/feedback' || path.startsWith('/api/calls') || path.startsWith('/api/presence');
+    const isPublicWritePath = path.startsWith('/api/auth') || path === '/api/register' || path === '/api/feedback' || path.startsWith('/api/calls') || path.startsWith('/api/presence') || path === '/api/employees/search';
 
     if (isWriteMethod && !isPublicWritePath && reqKey !== adminKey) {
       return new Response(JSON.stringify({ 
@@ -520,6 +520,145 @@ export default {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+      }
+
+      // 2b. Employee Search: /api/employees/search (Max 200 & Mandatory Validation)
+      if (path === '/api/employees/search') {
+        let query = '';
+        let district = '';
+        let post = '';
+        let office = '';
+        let userRole = 'user';
+        let userDistrict = '';
+
+        if (request.method === 'GET') {
+          query = url.searchParams.get('query') || url.searchParams.get('q') || '';
+          district = url.searchParams.get('district') || '';
+          post = url.searchParams.get('post') || url.searchParams.get('rank') || '';
+          office = url.searchParams.get('office') || url.searchParams.get('station') || '';
+          userRole = url.searchParams.get('userRole') || 'user';
+          userDistrict = url.searchParams.get('userDistrict') || '';
+        } else if (request.method === 'POST') {
+          try {
+            const body = await request.json();
+            query = body.query || body.q || '';
+            district = body.district || '';
+            post = body.post || body.rank || '';
+            office = body.office || body.station || '';
+            userRole = body.userRole || 'user';
+            userDistrict = body.userDistrict || '';
+          } catch (e) {}
+        }
+
+        const cleanQuery = (query || '').trim();
+        const cleanDist = (district || '').trim();
+        const cleanPost = (post || '').trim();
+        const cleanOffice = (office || '').trim();
+
+        // Section 4: Mandatory Validation Rules
+        // When the search input is empty, the user must select all three
+        if (!cleanQuery) {
+          const missingDistrict = !cleanDist || cleanDist === 'सभी ज़िले' || cleanDist === 'सभी ज़िले (All Districts)';
+          const missingPost = !cleanPost || cleanPost === 'सभी पद';
+          const missingOffice = !cleanOffice || cleanOffice.includes('सभी');
+
+          if (missingDistrict || missingPost || missingOffice) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: 'सर्च क्वेरी रिक्त होने पर जनपद, पद एवं थाना तीनों फ़िल्टर अनिवार्य हैं।',
+              employees: [],
+              total: 0
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+
+        // Section 3 & 8: Access Control / Authorization
+        if (userRole === 'co_admin' && userDistrict) {
+          if (cleanDist && cleanDist.toLowerCase() !== userDistrict.toLowerCase()) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: 'अनाधिकृत जनपद पहुंच: Co-Admin केवल अपने आवंटित जनपद के कार्मिक खोज सकते हैं।',
+              employees: [],
+              total: 0
+            }), {
+              status: 403,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+
+        const contactsStr = await getItem('police_contacts.json');
+        let contactsList = [];
+        try { contactsList = contactsStr ? JSON.parse(contactsStr) : []; } catch (e) {}
+
+        const matches = (contactsList || []).filter(c => {
+          const isCardActive = c.status === 'approved' || c.status === 'active';
+          if (!isCardActive) return false;
+
+          if (userRole === 'co_admin' && userDistrict) {
+            if ((c.district || '').trim().toLowerCase() !== userDistrict.toLowerCase()) {
+              return false;
+            }
+          }
+
+          if (cleanDist && cleanDist !== 'सभी ज़िले' && cleanDist !== 'सभी ज़िले (All Districts)') {
+            if ((c.district || '').trim().toLowerCase() !== cleanDist.toLowerCase()) {
+              return false;
+            }
+          }
+
+          if (cleanPost && cleanPost !== 'सभी पद') {
+            if ((c.post || '').trim() !== cleanPost) {
+              return false;
+            }
+          }
+
+          if (cleanOffice && !cleanOffice.includes('सभी')) {
+            if ((c.office || '').trim() !== cleanOffice) {
+              return false;
+            }
+          }
+
+          if (cleanQuery) {
+            const q = cleanQuery.toLowerCase();
+            const matchesName = (c.name || '').toLowerCase().includes(q);
+            const matchesPno = (c.pno || '').toLowerCase().includes(q);
+            const matchesPhone = (c.phone || '').includes(q);
+            const matchesDistrict = (c.district || '').toLowerCase().includes(q);
+            const matchesPost = (c.post || '').toLowerCase().includes(q);
+            const matchesOffice = (c.office || '').toLowerCase().includes(q);
+
+            if (!matchesName && !matchesPno && !matchesPhone && !matchesDistrict && !matchesPost && !matchesOffice) {
+              return false;
+            }
+          }
+
+          return true;
+        });
+
+        // Deterministic sort: name, then PNO
+        matches.sort((a, b) => {
+          const nameComp = (a.name || '').localeCompare(b.name || '', 'hi');
+          if (nameComp !== 0) return nameComp;
+          return (a.pno || '').localeCompare(b.pno || '');
+        });
+
+        // Section 5: Maximum 200 records
+        const total = matches.length;
+        const bounded = matches.slice(0, 200);
+
+        return new Response(JSON.stringify({
+          success: true,
+          employees: bounded,
+          count: bounded.length,
+          total: total,
+          hasMore: total > 200
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
       }
 
       // 3. Master Config: /api/master

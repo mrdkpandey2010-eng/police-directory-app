@@ -1,42 +1,74 @@
-import React, { useMemo } from 'react';
-import { Search, MapPin, Award, Building2, X, Filter, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, X, ArrowRight, RefreshCw } from 'lucide-react';
 
 export default function SearchFilters({
   isOpen = false,
   onClose,
-  searchQuery,
-  setSearchQuery,
-  selectedDistrict,
-  setSelectedDistrict,
-  selectedPost,
-  setSelectedPost,
-  selectedOffice,
-  setSelectedOffice,
+  searchQuery = '',
+  selectedDistrict = '',
+  selectedPost = '',
+  selectedOffice = '',
+  onExecuteSearch,
   districts = [],
   posts = [],
   offices = [],
-  onResetFilters,
-  hasActiveFilters
+  currentUser = null
 }) {
-  // Filter offices list by the selected district
+  // Local draft filter states
+  const [query, setQuery] = useState(searchQuery || '');
+  const [district, setDistrict] = useState(selectedDistrict || '');
+  const [post, setPost] = useState(selectedPost || '');
+  const [office, setOffice] = useState(selectedOffice || '');
+  const [validationError, setValidationError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sync with incoming props when opening
+  useEffect(() => {
+    if (isOpen) {
+      setQuery(searchQuery || '');
+      setDistrict(selectedDistrict || '');
+      setPost(selectedPost || '');
+      setOffice(selectedOffice || '');
+      setValidationError('');
+      setIsSubmitting(false);
+    }
+  }, [isOpen, searchQuery, selectedDistrict, selectedPost, selectedOffice]);
+
+  // Authorized Districts (Role Scoping: Co-Admin restricted to their district, Admin all, Regular officer all authorized)
+  const authorizedDistricts = useMemo(() => {
+    let list = Array.isArray(districts) ? districts : [];
+    list = list.filter(d => d && d !== 'सभी ज़िले (All Districts)' && d !== 'सभी ज़िले');
+
+    if (!currentUser) return list;
+    if (currentUser.role === 'admin') return list;
+    if (currentUser.role === 'co_admin' && currentUser.district) {
+      return [currentUser.district];
+    }
+    if (currentUser.allowedDistricts && Array.isArray(currentUser.allowedDistricts) && currentUser.allowedDistricts.length > 0) {
+      return currentUser.allowedDistricts;
+    }
+    return list;
+  }, [districts, currentUser]);
+
+  // Dependent Offices (Filtered by selected District)
   const availableOffices = useMemo(() => {
     if (!Array.isArray(offices)) return [];
 
     let filtered = offices.filter(o => {
       const name = typeof o === 'string' ? o : o.name;
-      return name && !name.includes('सभी कार्यालय/थाने');
+      return name && !name.includes('सभी कार्यालय/थाने') && !name.includes('सभी');
     });
 
-    if (selectedDistrict && selectedDistrict !== 'सभी ज़िले (All Districts)' && selectedDistrict !== 'सभी ज़िले') {
+    const activeDist = district || (currentUser?.role === 'co_admin' ? currentUser?.district : '');
+    if (activeDist) {
       filtered = filtered.filter(o => {
         if (typeof o === 'object' && o.district) {
-          return o.district === selectedDistrict;
+          return o.district.trim().toLowerCase() === activeDist.trim().toLowerCase();
         }
         return false;
       });
     }
 
-    // Keep unique office names
     const seen = new Set();
     const unique = [];
     for (const item of filtered) {
@@ -44,47 +76,91 @@ export default function SearchFilters({
       if (name && !seen.has(name)) {
         seen.add(name);
         unique.push({
-          id: typeof item === 'object' ? item.id : name,
+          id: typeof item === 'object' ? (item.id || name) : name,
           name: name,
           district: typeof item === 'object' ? item.district : ''
         });
       }
     }
     return unique;
-  }, [offices, selectedDistrict]);
+  }, [offices, district, currentUser]);
 
-  // Handle District Change: if currently selected office is not in new district, reset office
+  // Handle District change & reset dependent office if incompatible
   const handleDistrictChange = (newDistrict) => {
-    setSelectedDistrict(newDistrict);
-    if (newDistrict && selectedOffice) {
+    setDistrict(newDistrict);
+    setValidationError('');
+    if (newDistrict && office) {
       const existsInNewDistrict = offices.some(o => {
         const name = typeof o === 'string' ? o : o.name;
         const dist = typeof o === 'object' ? o.district : null;
-        return name === selectedOffice && (!dist || dist === newDistrict);
+        return name === office && (!dist || dist.trim().toLowerCase() === newDistrict.trim().toLowerCase());
       });
       if (!existsInNewDistrict) {
-        setSelectedOffice('');
+        setOffice('');
       }
     }
   };
 
-  // Handle Post Change
   const handlePostChange = (newPost) => {
-    setSelectedPost(newPost);
+    setPost(newPost);
+    setValidationError('');
   };
 
-  // Handle Office Change: When final/all columns selected -> auto-close drawer (Requirement 2 & 3)
   const handleOfficeChange = (newOffice) => {
-    setSelectedOffice(newOffice);
-    if (newOffice) {
-      // Auto-hide sidebar after brief moment for smooth UX
-      setTimeout(() => {
-        if (onClose) onClose();
-      }, 350);
+    setOffice(newOffice);
+    setValidationError('');
+  };
+
+  const handleQueryChange = (newQuery) => {
+    setQuery(newQuery);
+    if (newQuery.trim().length > 0) {
+      setValidationError('');
+    }
+  };
+
+  // Mandatory Validation & Search Trigger
+  const handleSearchSubmit = () => {
+    const cleanQ = (query || '').trim();
+    const cleanDist = (district || '').trim();
+    const cleanPost = (post || '').trim();
+    const cleanOff = (office || '').trim();
+
+    // When the employee search field is empty:
+    // User must select all three: District, Rank/designation, and Office/police station
+    if (!cleanQ) {
+      const missingDistrict = !cleanDist || cleanDist === 'सभी ज़िले' || cleanDist === 'सभी ज़िले (All Districts)';
+      const missingPost = !cleanPost || cleanPost === 'सभी पद';
+      const missingOffice = !cleanOff || cleanOff.includes('सभी');
+
+      if (missingDistrict || missingPost || missingOffice) {
+        setValidationError('सर्च खाली होने पर जनपद, पद एवं थाना तीनों अनिवार्य हैं।');
+        return;
+      }
+    }
+
+    setValidationError('');
+    setIsSubmitting(true);
+
+    if (onExecuteSearch) {
+      onExecuteSearch({
+        query: cleanQ,
+        district: cleanDist,
+        post: cleanPost,
+        office: cleanOff
+      });
+    }
+
+    if (onClose) {
+      onClose();
     }
   };
 
   if (!isOpen) return null;
+
+  const isQueryEmpty = !(query && query.trim().length > 0);
+  const isDistrictMissing = isQueryEmpty && (!district || district === 'सभी ज़िले' || district === 'सभी ज़िले (All Districts)');
+  const isPostMissing = isQueryEmpty && (!post || post === 'सभी पद');
+  const isOfficeMissing = isQueryEmpty && (!office || office.includes('सभी'));
 
   return (
     <div 
@@ -96,6 +172,7 @@ export default function SearchFilters({
         bottom: 0,
         background: 'rgba(2, 6, 23, 0.75)',
         backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
         zIndex: 10060,
         display: 'flex',
         justifyContent: 'flex-start',
@@ -105,234 +182,226 @@ export default function SearchFilters({
     >
       <div 
         style={{
-          width: '100%',
-          maxWidth: '380px',
+          width: 'min(320px, 86vw)',
           height: '100%',
           background: 'linear-gradient(180deg, #0e1e3b 0%, #071022 100%)',
           borderRight: '2px solid var(--khaki-primary, #c49756)',
           boxShadow: '6px 0 35px rgba(0,0,0,0.75)',
           display: 'flex',
           flexDirection: 'column',
-          overflowY: 'auto',
-          padding: '1.25rem 1rem 2.5rem 1rem',
-          gap: '1.1rem',
-          animation: 'slideInLeft 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+          padding: '1.25rem 1rem 2rem 1rem',
+          gap: '14px',
+          animation: 'slideInLeft 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+          overflowY: 'auto'
         }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Drawer Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: '1px solid rgba(196,151,86,0.25)',
-          paddingBottom: '0.85rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'rgba(196,151,86,0.15)',
-              border: '1px solid var(--khaki-primary, #c49756)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <Filter size={17} color="var(--khaki-primary, #c49756)" />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#f8fafc', lineHeight: 1.2 }}>
-                कर्मचारी खोजें एवं फ़िल्टर
-              </div>
-              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '2px' }}>
-                उत्तर प्रदेश पुलिस अधिकृत निर्देशिका
-              </div>
-            </div>
-          </div>
+        {/* 1. Close Icon */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
           <button 
             type="button" 
             onClick={onClose}
             style={{
               background: 'rgba(255,255,255,0.06)',
               border: '1px solid rgba(255,255,255,0.15)',
-              borderRadius: '6px',
-              color: '#cbd5e1',
-              padding: '6px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-            title="बंद करें"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* 1. Instant Free-Text Search Input */}
-        <div className="search-input-wrapper" style={{ margin: 0 }}>
-          <Search className="search-icon" size={18} />
-          <input
-            type="text"
-            className="main-search-input"
-            placeholder="नाम, मोबाइल नंबर, PNO, ज़िला या थाना..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                if (onClose) onClose();
-              }
-            }}
-            autoFocus
-          />
-          {searchQuery && (
-            <button 
-              className="clear-search-btn" 
-              onClick={() => setSearchQuery('')}
-              title="सर्च साफ़ करें"
-            >
-              <X size={16} />
-            </button>
-          )}
-        </div>
-
-        {/* Multi-Criteria Select Filters in Left Sidebar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-          {/* 2. District Filter */}
-          <div className="filter-group">
-            <label className="filter-label">
-              <MapPin size={14} />
-              ज़िला फ़िल्टर (District)
-            </label>
-            <select 
-              className="filter-select"
-              value={selectedDistrict}
-              onChange={(e) => handleDistrictChange(e.target.value)}
-            >
-              {districts.map((d, i) => (
-                <option key={i} value={i === 0 ? '' : d}>{d}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* 3. Post / Designation Filter */}
-          <div className="filter-group">
-            <label className="filter-label">
-              <Award size={14} />
-              पद फ़िल्टर (Designation)
-            </label>
-            <select 
-              className="filter-select"
-              value={selectedPost}
-              onChange={(e) => handlePostChange(e.target.value)}
-            >
-              {posts.map((p, i) => (
-                <option key={i} value={i === 0 ? '' : p}>{p}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* 4. Office / Thana Filter (Final Column -> Auto-close) */}
-          <div className="filter-group">
-            <label className="filter-label">
-              <Building2 size={14} />
-              कार्यालय / थाना (Office/Thana) {selectedDistrict ? `• ${selectedDistrict}` : ''}
-            </label>
-            <select 
-              className="filter-select"
-              value={selectedOffice}
-              onChange={(e) => handleOfficeChange(e.target.value)}
-            >
-              <option value="">
-                {selectedDistrict 
-                  ? `सभी संबंधित थाने/कार्यालय (${selectedDistrict} - कुल ${availableOffices.length})` 
-                  : 'सभी कार्यालय/थाने (पहले ज़िला चुनें)'}
-              </option>
-              {availableOffices.map((o) => (
-                <option key={o.id} value={o.name}>{o.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Active Filter Pills inside drawer */}
-        {hasActiveFilters && (
-          <div style={{
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '8px',
-            padding: '10px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px'
-          }}>
-            <div style={{ fontSize: '0.78rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 700 }}>
-              सक्रिय चयन:
-            </div>
-            <div className="active-filter-pills" style={{ flexWrap: 'wrap', gap: '6px' }}>
-              {selectedDistrict && (
-                <span className="pill">
-                  ज़िला: {selectedDistrict}
-                  <X size={12} className="pill-remove" onClick={() => handleDistrictChange('')} />
-                </span>
-              )}
-              {selectedPost && (
-                <span className="pill">
-                  पद: {selectedPost}
-                  <X size={12} className="pill-remove" onClick={() => setSelectedPost('')} />
-                </span>
-              )}
-              {selectedOffice && (
-                <span className="pill">
-                  थाना: {selectedOffice}
-                  <X size={12} className="pill-remove" onClick={() => setSelectedOffice('')} />
-                </span>
-              )}
-              {searchQuery && (
-                <span className="pill">
-                  सर्च: "{searchQuery}"
-                  <X size={12} className="pill-remove" onClick={() => setSearchQuery('')} />
-                </span>
-              )}
-            </div>
-
-            <button 
-              className="btn btn-secondary"
-              onClick={onResetFilters}
-              style={{ padding: '0.45rem 0.75rem', fontSize: '0.78rem', width: '100%', marginTop: '4px' }}
-            >
-              <Filter size={13} />
-              सभी फ़िल्टर साफ़ करें
-            </button>
-          </div>
-        )}
-
-        {/* Primary Action Button: Apply & Close (स्वतः पुनः छिपना / बंद होना) */}
-        <div style={{ marginTop: 'auto', paddingTop: '1rem' }}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{
-              width: '100%',
-              padding: '0.65rem 1rem',
-              fontSize: '0.85rem',
-              fontWeight: 800,
-              background: 'linear-gradient(135deg, #c49756, #8e6833)',
-              color: '#081022',
-              border: 'none',
               borderRadius: '8px',
+              color: '#cbd5e1',
+              width: '32px',
+              height: '32px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
-              boxShadow: '0 4px 12px rgba(196,151,86,0.35)'
+              transition: 'background 0.15s ease'
             }}
-            onClick={onClose}
+            aria-label="बंद करें"
+            title="बंद करें"
           >
-            <CheckCircle2 size={16} />
-            <span>परिणाम देखें / फ़िल्टर लागू करें</span>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* 2. Employee Search Input */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: 'rgba(15, 23, 42, 0.85)',
+          border: '1.5px solid rgba(196, 151, 86, 0.4)',
+          borderRadius: '8px',
+          padding: '0 10px',
+          height: '42px',
+          boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
+        }}>
+          <Search size={16} color="var(--khaki-light, #dfb97e)" style={{ flexShrink: 0, marginRight: '8px' }} />
+          <input
+            type="text"
+            placeholder="कर्मचारी खोजें (नाम, PNO, मोबाइल...)"
+            value={query}
+            onChange={(e) => handleQueryChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSearchSubmit();
+              }
+            }}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: '#f8fafc',
+              fontSize: '0.85rem'
+            }}
+            aria-label="कर्मचारी खोजें"
+            autoFocus
+          />
+          {query && (
+            <button 
+              type="button"
+              onClick={() => handleQueryChange('')}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                padding: '2px',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+              aria-label="सर्च साफ़ करें"
+              title="सर्च साफ़ करें"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* 3. District Selection / Filter */}
+        <select 
+          value={district}
+          onChange={(e) => handleDistrictChange(e.target.value)}
+          aria-label="जनपद चुनें"
+          style={{
+            width: '100%',
+            height: '42px',
+            background: 'rgba(15, 23, 42, 0.85)',
+            border: validationError && isDistrictMissing ? '1.5px solid #ef4444' : '1.5px solid rgba(196, 151, 86, 0.4)',
+            borderRadius: '8px',
+            color: district ? '#f8fafc' : '#94a3b8',
+            padding: '0 10px',
+            fontSize: '0.85rem',
+            outline: 'none',
+            cursor: 'pointer'
+          }}
+        >
+          <option value="" style={{ background: '#0e1e3b', color: '#94a3b8' }}>जनपद चुनें</option>
+          {authorizedDistricts.map((d, i) => (
+            <option key={i} value={d} style={{ background: '#0e1e3b', color: '#f8fafc' }}>
+              {d}
+            </option>
+          ))}
+        </select>
+
+        {/* 4. Rank / Designation Selection / Filter */}
+        <select 
+          value={post}
+          onChange={(e) => handlePostChange(e.target.value)}
+          aria-label="पद / रैंक चुनें"
+          style={{
+            width: '100%',
+            height: '42px',
+            background: 'rgba(15, 23, 42, 0.85)',
+            border: validationError && isPostMissing ? '1.5px solid #ef4444' : '1.5px solid rgba(196, 151, 86, 0.4)',
+            borderRadius: '8px',
+            color: post ? '#f8fafc' : '#94a3b8',
+            padding: '0 10px',
+            fontSize: '0.85rem',
+            outline: 'none',
+            cursor: 'pointer'
+          }}
+        >
+          <option value="" style={{ background: '#0e1e3b', color: '#94a3b8' }}>पद / रैंक चुनें</option>
+          {posts.filter(p => p && p !== 'सभी पद').map((p, i) => (
+            <option key={i} value={p} style={{ background: '#0e1e3b', color: '#f8fafc' }}>
+              {p}
+            </option>
+          ))}
+        </select>
+
+        {/* 5. Office / Police Station Selection / Filter */}
+        <select 
+          value={office}
+          onChange={(e) => handleOfficeChange(e.target.value)}
+          aria-label="कार्यालय / थाना चुनें"
+          style={{
+            width: '100%',
+            height: '42px',
+            background: 'rgba(15, 23, 42, 0.85)',
+            border: validationError && isOfficeMissing ? '1.5px solid #ef4444' : '1.5px solid rgba(196, 151, 86, 0.4)',
+            borderRadius: '8px',
+            color: office ? '#f8fafc' : '#94a3b8',
+            padding: '0 10px',
+            fontSize: '0.85rem',
+            outline: 'none',
+            cursor: 'pointer'
+          }}
+        >
+          <option value="" style={{ background: '#0e1e3b', color: '#94a3b8' }}>कार्यालय / थाना चुनें</option>
+          {availableOffices.map((o) => (
+            <option key={o.id} value={o.name} style={{ background: '#0e1e3b', color: '#f8fafc' }}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+
+        {/* Subtle Inline Validation Indication */}
+        {validationError && (
+          <div style={{
+            color: '#f87171',
+            fontSize: '0.74rem',
+            fontWeight: 600,
+            textAlign: 'center',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.25)',
+            borderRadius: '6px',
+            padding: '6px 8px',
+            lineHeight: 1.3
+          }}>
+            {validationError}
+          </div>
+        )}
+
+        {/* 6. Compact Arrow-Icon Results Button */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '6px' }}>
+          <button
+            type="button"
+            onClick={handleSearchSubmit}
+            disabled={isSubmitting}
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #c49756, #8e6833)',
+              border: 'none',
+              color: '#081022',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              boxShadow: '0 4px 14px rgba(196,151,86,0.35)',
+              transition: 'transform 0.15s ease, opacity 0.15s ease',
+              opacity: isSubmitting ? 0.7 : 1
+            }}
+            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.06)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+            aria-label="परिणाम देखें"
+            title="परिणाम देखें"
+          >
+            {isSubmitting ? (
+              <RefreshCw size={18} color="#081022" className="animate-spin" />
+            ) : (
+              <ArrowRight size={20} color="#081022" />
+            )}
           </button>
         </div>
 
