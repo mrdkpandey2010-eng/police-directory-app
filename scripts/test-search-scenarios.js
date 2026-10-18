@@ -213,8 +213,8 @@ function filterDirectoryContacts({
   return matches;
 }
 
-// Wheel Picker drum snapping simulation (mimicking WheelPicker.jsx physics & 5 visible items)
-function simulateWheelPicker({ items = [], selectedValue = '', scrollOffsetPx = 0, itemHeight = 38 }) {
+// Wheel Picker drum snapping simulation (mimicking WheelPicker.jsx physics & up to 11 visible items)
+function simulateWheelPicker({ items = [], selectedValue = '', scrollOffsetPx = 0, itemHeight = 34 }) {
   if (items.length === 0) return { selectedIndex: -1, selectedItem: null };
   
   // Calculate target index from vertical scroll position
@@ -222,22 +222,31 @@ function simulateWheelPicker({ items = [], selectedValue = '', scrollOffsetPx = 
   const clampedIndex = Math.max(0, Math.min(items.length - 1, rawIndex));
   const selectedItem = items[clampedIndex];
 
-  // 3D calculation simulation ensuring at least 5 visible items
+  // 3D calculation simulation ensuring up to 11 visible items
   const visibleItems = items.map((item, idx) => {
     const diff = Math.abs(idx - clampedIndex);
     const isSelected = diff === 0;
-    const rotateAngle = Math.min(45, Math.max(-45, (idx - clampedIndex) * -14));
-    const scale = isSelected ? 1.08 : Math.max(0.86, 1 - diff * 0.06);
+    const rotateAngle = Math.min(42, Math.max(-42, (idx - clampedIndex) * -7.5));
+    const scale = isSelected 
+      ? 1.08 
+      : diff === 1 ? 0.98
+      : diff === 2 ? 0.94
+      : diff === 3 ? 0.89
+      : diff === 4 ? 0.84
+      : diff === 5 ? 0.80
+      : 0.74;
+
     const opacity = isSelected 
       ? 1 
-      : diff === 1 
-      ? 0.84 
-      : diff === 2 
-      ? 0.70 
-      : Math.max(0.2, 0.45 - (diff - 2) * 0.15);
+      : diff === 1 ? 0.92 
+      : diff === 2 ? 0.84 
+      : diff === 3 ? 0.74
+      : diff === 4 ? 0.62
+      : diff === 5 ? 0.48
+      : Math.max(0.18, 0.35 - (diff - 5) * 0.1);
 
-    // Is this item within the 5 visible slots (-2, -1, 0, +1, +2)?
-    const isVisibleInWindow = diff <= 2;
+    // Is this item within the 11 visible slots (-5 to +5)?
+    const isVisibleInWindow = diff <= 5;
 
     return {
       item,
@@ -393,18 +402,18 @@ async function runAllVerificationScenarios() {
   console.assert(wizardRegular.diagnosticLog.includes('75 authorized districts'), 'Scenario 4 Failed: Diagnostic log missing');
   console.log(`Scenario 4: [PASS] Diagnostic log verified: "${wizardRegular.diagnosticLog}".`);
 
-  // Scenario 5: At least 5 Visible Districts in Wheel Picker with legible opacity
+  // Scenario 5: Up to 11 Visible Items in Wheel Picker across District, Thana, and Post stages
   const drumSim = simulateWheelPicker({
     items: ALL_75_UP_DISTRICTS,
-    scrollOffsetPx: 38 * 55, // scrolled to लखनऊ
-    itemHeight: 38
+    scrollOffsetPx: 34 * 55, // scrolled to लखनऊ
+    itemHeight: 34
   });
 
-  console.assert(drumSim.visibleCountInWindow === 5, 'Scenario 5 Failed: Exactly 5 items must be visible in window');
+  console.assert(drumSim.visibleCountInWindow === 11, `Scenario 5 Failed: Expected 11 visible items, got ${drumSim.visibleCountInWindow}`);
   console.assert(drumSim.visibleItems[drumSim.selectedIndex].isSelected === true, 'Center item selected');
-  console.assert(drumSim.visibleItems[drumSim.selectedIndex - 2].opacity >= 0.68, 'Scenario 5 Failed: 2nd item above must have >= 0.68 opacity');
-  console.assert(drumSim.visibleItems[drumSim.selectedIndex + 2].opacity >= 0.68, 'Scenario 5 Failed: 2nd item below must have >= 0.68 opacity');
-  console.log(`Scenario 5: [PASS] At least 5 districts clearly visible in wheel with legible opacity (Center: ${drumSim.selectedItem}, Outer pair opacity >= 0.70).`);
+  console.assert(drumSim.visibleItems[drumSim.selectedIndex - 5].opacity >= 0.45, 'Scenario 5 Failed: 5th item above must have >= 0.45 opacity');
+  console.assert(drumSim.visibleItems[drumSim.selectedIndex + 5].opacity >= 0.45, 'Scenario 5 Failed: 5th item below must have >= 0.45 opacity');
+  console.log(`Scenario 5: [PASS] Maximum 11 items clearly visible in wheel scroll list across District, Thana, and Post (Center: ${drumSim.selectedItem}, Outer pair opacity >= 0.48).`);
 
   // Scenario 6: Police Station Wheel Picker in Minimal Space (Thanas only, with standard fallbacks)
   const wizardAgra = simulateWizardStages({

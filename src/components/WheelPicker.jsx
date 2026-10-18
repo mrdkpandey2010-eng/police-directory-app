@@ -14,8 +14,8 @@ export default function WheelPicker({
   items = [],
   selectedValue = '',
   onValueChange,
-  itemHeight = 38,
-  visibleCount = 5,
+  itemHeight = 34,
+  visibleCount = 11,
   placeholder = 'कोई विकल्प उपलब्ध नहीं',
   ariaLabel = 'विकल्प चुनें'
 }) {
@@ -270,16 +270,25 @@ export default function WheelPicker({
           const diff = Math.abs(index - activeIndex);
           const isSelected = diff === 0;
 
-          // 3D Cylinder Curve Calculations (Ensuring at least 5 items are prominently visible and legible)
-          const rotateAngle = Math.min(45, Math.max(-45, (index - activeIndex) * -14));
-          const scale = isSelected ? 1.08 : Math.max(0.86, 1 - diff * 0.06);
+          // 3D Cylinder Curve Calculations (Ensuring up to 11 items are prominently visible and legible)
+          const rotateAngle = Math.min(42, Math.max(-42, (index - activeIndex) * -7.5));
+          const scale = isSelected 
+            ? 1.08 
+            : diff === 1 ? 0.98
+            : diff === 2 ? 0.94
+            : diff === 3 ? 0.89
+            : diff === 4 ? 0.84
+            : diff === 5 ? 0.80
+            : 0.74;
+
           const opacity = isSelected 
             ? 1 
-            : diff === 1 
-            ? 0.84 
-            : diff === 2 
-            ? 0.70 
-            : Math.max(0.2, 0.45 - (diff - 2) * 0.15);
+            : diff === 1 ? 0.92 
+            : diff === 2 ? 0.84 
+            : diff === 3 ? 0.74
+            : diff === 4 ? 0.62
+            : diff === 5 ? 0.48
+            : Math.max(0.18, 0.35 - (diff - 5) * 0.1);
 
           return (
             <div
@@ -296,7 +305,7 @@ export default function WheelPicker({
                 justifyContent: 'center',
                 cursor: 'pointer',
                 textAlign: 'center',
-                padding: '0 12px',
+                padding: '0 10px',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -307,7 +316,7 @@ export default function WheelPicker({
                 opacity,
                 color: isSelected ? '#ffffff' : '#94a3b8',
                 fontWeight: isSelected ? 800 : 500,
-                fontSize: isSelected ? '0.92rem' : '0.82rem',
+                fontSize: isSelected ? '0.88rem' : '0.78rem',
                 textShadow: isSelected ? '0 1px 8px rgba(196, 151, 86, 0.6)' : 'none'
               }}
             >

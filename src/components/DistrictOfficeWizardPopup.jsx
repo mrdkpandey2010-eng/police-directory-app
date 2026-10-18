@@ -236,7 +236,8 @@ export default function DistrictOfficeWizardPopup({
         position: 'absolute',
         top: 'calc(100% + 8px)',
         left: 0,
-        width: 'min(270px, 90vw)',
+        width: 'min(300px, 92vw)',
+        maxHeight: 'min(480px, 86vh)',
         background: 'linear-gradient(180deg, #0e1e3b 0%, #071022 100%)',
         border: '1.5px solid var(--khaki-primary, #c49756)',
         borderRadius: '12px',
@@ -330,7 +331,7 @@ export default function DistrictOfficeWizardPopup({
         </button>
       </div>
 
-      {/* STAGE 1: DISTRICT WHEEL SCROLLER (जनपद व्हील - at least 5 visible, arrow icon button) */}
+      {/* STAGE 1: DISTRICT WHEEL SCROLLER (जनपद व्हील - up to 11 visible items, arrow icon button) */}
       {stage === 'district' && (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <WheelPicker
@@ -340,8 +341,8 @@ export default function DistrictOfficeWizardPopup({
               const name = typeof val === 'object' ? val.name : val;
               setSelectedDist(name);
             }}
-            itemHeight={38}
-            visibleCount={5}
+            itemHeight={34}
+            visibleCount={11}
             ariaLabel="जनपद व्हील स्क्रोलर"
             placeholder="कोई जनपद उपलब्ध नहीं"
           />
@@ -376,7 +377,7 @@ export default function DistrictOfficeWizardPopup({
         </div>
       )}
 
-      {/* STAGE 2: POLICE STATIONS WHEEL SCROLLER (थाना व्हील - at least 5 visible, arrow icon button) */}
+      {/* STAGE 2: POLICE STATIONS WHEEL SCROLLER (थाना व्हील - up to 11 visible items, arrow icon button) */}
       {stage === 'office' && (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <WheelPicker
@@ -386,8 +387,8 @@ export default function DistrictOfficeWizardPopup({
               const name = typeof val === 'object' ? val.name : val;
               setSelectedOff(name);
             }}
-            itemHeight={38}
-            visibleCount={5}
+            itemHeight={34}
+            visibleCount={11}
             ariaLabel="थाना/कार्यालय व्हील स्क्रोलर"
             placeholder="इस जनपद में कोई थाना नहीं मिला"
           />
@@ -422,7 +423,7 @@ export default function DistrictOfficeWizardPopup({
         </div>
       )}
 
-      {/* STAGE 3: DESIGNATIONS / RANKS WHEEL SCROLLER (पद/रैंक व्हील - at least 5 visible, arrow icon button) */}
+      {/* STAGE 3: DESIGNATIONS / RANKS WHEEL SCROLLER (पद/रैंक व्हील - up to 11 visible items, arrow icon button) */}
       {stage === 'post' && (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <WheelPicker
@@ -432,8 +433,8 @@ export default function DistrictOfficeWizardPopup({
               const name = typeof val === 'object' ? val.name : val;
               setSelectedPost(name);
             }}
-            itemHeight={38}
-            visibleCount={5}
+            itemHeight={34}
+            visibleCount={11}
             ariaLabel="पद/रैंक व्हील स्क्रोलर"
             placeholder="कोई पद उपलब्ध नहीं"
           />
