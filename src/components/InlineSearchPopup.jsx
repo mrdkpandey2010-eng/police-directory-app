@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight, RefreshCw, X } from 'lucide-react';
+import { handleTransliterateOnSpace, transliterateText } from '../utils/transliteration';
 
 export default function InlineSearchPopup({
   initialQuery = '',
@@ -42,17 +43,60 @@ export default function InlineSearchPopup({
     }
   }, []);
 
+  // Real-time automatic Hindi transliteration on Space for search input
+  const handleQueryChange = (e) => {
+    const input = e.target;
+    const val = input.value;
+    const cursor = (input.selectionEnd !== null && input.selectionEnd !== undefined) ? input.selectionEnd : val.length;
+
+    // Numeric and PNO queries (e.g. 948120 or PNO-12345) should remain untouched
+    const isIdentifier = /^\s*(pno|\d)/i.test(val);
+
+    if (!isIdentifier) {
+      const res = handleTransliterateOnSpace(val, cursor);
+      if (res.changed) {
+        setQuery(res.text);
+        if (hasError) setHasError(false);
+        requestAnimationFrame(() => {
+          if (input && typeof input.setSelectionRange === 'function') {
+            input.setSelectionRange(res.cursor, res.cursor);
+          }
+        });
+        return;
+      }
+    }
+
+    setQuery(val);
+    if (hasError) setHasError(false);
+  };
+
+  // Convert on blur if user finished typing an English word without space
+  const handleQueryBlur = () => {
+    if (query && !/\d/.test(query) && !/^\s*pno/i.test(query)) {
+      const converted = transliterateText(query);
+      if (converted !== query) {
+        setQuery(converted);
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     if (isSubmitting) return;
 
-    const trimmed = (query || '').trim();
+    let trimmed = (query || '').trim();
 
     // If query is empty, do not execute unrestricted search
     if (!trimmed) {
       setHasError(true);
       setTimeout(() => setHasError(false), 2000);
       return;
+    }
+
+    // Auto-transliterate on submit if word search without digits (e.g. user typed "amit" without space)
+    if (!/\d/.test(trimmed) && !/^\s*pno/i.test(trimmed)) {
+      trimmed = transliterateText(trimmed);
+      setQuery(trimmed);
     }
 
     setIsSubmitting(true);
@@ -71,6 +115,7 @@ export default function InlineSearchPopup({
       setIsSubmitting(false);
     }
   };
+
 
   return (
     <div
@@ -109,12 +154,10 @@ export default function InlineSearchPopup({
         <input
           ref={inputRef}
           type="text"
-          placeholder="PNO, मोबाइल, नाम, थाना..."
+          placeholder="PNO, मोबाइल, नाम, थाना (English+Space)..."
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            if (hasError) setHasError(false);
-          }}
+          onChange={handleQueryChange}
+          onBlur={handleQueryBlur}
           disabled={isSubmitting}
           style={{
             flex: 1,

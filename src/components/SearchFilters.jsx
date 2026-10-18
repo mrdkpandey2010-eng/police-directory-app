@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, X, ArrowRight, RefreshCw } from 'lucide-react';
+import { handleTransliterateOnSpace, transliterateText } from '../utils/transliteration';
 
 export default function SearchFilters({
   isOpen = false,
@@ -111,19 +112,53 @@ export default function SearchFilters({
     setValidationError('');
   };
 
-  const handleQueryChange = (newQuery) => {
-    setQuery(newQuery);
-    if (newQuery.trim().length > 0) {
+  const handleQueryChange = (e) => {
+    // Support either event or string
+    const val = typeof e === 'object' && e?.target ? e.target.value : e;
+    const input = typeof e === 'object' && e?.target ? e.target : null;
+    const cursor = (input && input.selectionEnd !== null && input.selectionEnd !== undefined) ? input.selectionEnd : (val ? val.length : 0);
+
+    const isIdentifier = /^\s*(pno|\d)/i.test(val);
+    if (!isIdentifier && input) {
+      const res = handleTransliterateOnSpace(val, cursor);
+      if (res.changed) {
+        setQuery(res.text);
+        if (res.text.trim().length > 0) setValidationError('');
+        requestAnimationFrame(() => {
+          if (input && typeof input.setSelectionRange === 'function') {
+            input.setSelectionRange(res.cursor, res.cursor);
+          }
+        });
+        return;
+      }
+    }
+
+    setQuery(val);
+    if (val.trim().length > 0) {
       setValidationError('');
+    }
+  };
+
+  const handleQueryBlur = () => {
+    if (query && !/\d/.test(query) && !/^\s*pno/i.test(query)) {
+      const converted = transliterateText(query);
+      if (converted !== query) {
+        setQuery(converted);
+      }
     }
   };
 
   // Mandatory Validation & Search Trigger
   const handleSearchSubmit = () => {
-    const cleanQ = (query || '').trim();
+    let cleanQ = (query || '').trim();
+    if (cleanQ && !/\d/.test(cleanQ) && !/^\s*pno/i.test(cleanQ)) {
+      cleanQ = transliterateText(cleanQ);
+      setQuery(cleanQ);
+    }
     const cleanDist = (district || '').trim();
     const cleanPost = (post || '').trim();
     const cleanOff = (office || '').trim();
+
 
     // When the employee search field is empty:
     // User must select all three: District, Rank/designation, and Office/police station
@@ -237,7 +272,8 @@ export default function SearchFilters({
             type="text"
             placeholder="कर्मचारी खोजें (नाम, PNO, मोबाइल...)"
             value={query}
-            onChange={(e) => handleQueryChange(e.target.value)}
+            onChange={handleQueryChange}
+            onBlur={handleQueryInputBlur}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
