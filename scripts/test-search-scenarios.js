@@ -309,11 +309,23 @@ function simulateWizardStages({
   const finalOfficesList = ['सभी थाने / कार्यालय (All Stations)', ...availableOffices];
   const selectedOff = finalOfficesList[1] || finalOfficesList[0];
 
+  // Stage 3: Available Posts in selected district and thana
+  const postSet = new Set();
+  contacts.forEach(c => {
+    if (c.district === selectedDistName && c.office === selectedOff && c.post) {
+      postSet.add(c.post.trim());
+    }
+  });
+  const availablePosts = ['सभी पद (All Posts)', ...Array.from(postSet)];
+  const selectedPost = availablePosts[1] || availablePosts[0];
+
   return {
     stage1Districts: authorizedDistricts,
     stage2Offices: finalOfficesList,
+    stage3Posts: availablePosts,
     selectedDist: selectedDistName,
     selectedOff,
+    selectedPost,
     diagnosticLog
   };
 }
@@ -488,17 +500,17 @@ async function runAllVerificationScenarios() {
   console.assert(displayedContacts.length === 200, 'Scenario 11 Failed: Must display maximum 200 records');
   console.log(`Scenario 11: [PASS] Total matching = ${allHazratganj.length}, but display is strictly capped at 200 records.`);
 
-  // Scenario 12: Thana Selection directly filters Directory Contacts
-  const thanaSelection = filterDirectoryContacts({
+  // Scenario 12: Stage 3 Designation (पद) Wheel Selection in Exact Sequence & Style
+  const stage3Selection = filterDirectoryContacts({
     contacts,
     currentUser: regularOfficer,
     userDistrictScope: 'all',
     selectedDistrict: 'लखनऊ',
-    selectedOffice: 'थाना हजरतगंज'
+    selectedOffice: 'थाना हजरतगंज',
+    selectedPost: 'प्रभारी निरीक्षक (Inspector In-Charge)'
   });
-  console.assert(thanaSelection.length >= 2, 'Scenario 12 Failed: Hazratganj contacts');
-  console.assert(thanaSelection.every(c => c.office === 'थाना हजरतगंज'), 'Scenario 12 Failed: Office matches');
-  console.log('Scenario 12: [PASS] Thana Selection directly filters Home screen Directory without redundant designation step.');
+  console.assert(stage3Selection.length === 1 && stage3Selection[0].name === 'विक्रम राठौर', 'Scenario 12 Failed: Vikram Rathore');
+  console.log('Scenario 12: [PASS] Stage 3 Designation (पद) Wheel Selection functions accurately in exact sequence (District -> Thana -> Post).');
 
   // Scenario 13 & 14: Contact actions & old sidebar removal
   console.log('Scenario 13: [PASS] Contact cards retain in-app calling, regular call, messaging, and profile actions.');
