@@ -5,8 +5,10 @@ import {
 } from 'lucide-react';
 import { OFFICES } from '../data/mockContacts';
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
+import { handleTransliterateOnSpace, transliterateText } from '../utils/transliteration';
 
 export default function UserProfileModal({ 
+
   user, 
   isOpen, 
   onClose, 
@@ -95,6 +97,36 @@ export default function UserProfileModal({
     }
   };
 
+  const handleOfficeTransliterateChange = (e) => {
+    const input = e.target;
+    const val = input.value;
+    const cursor = (input.selectionEnd !== null && input.selectionEnd !== undefined) ? input.selectionEnd : val.length;
+
+    const res = handleTransliterateOnSpace(val, cursor);
+    if (res.changed) {
+      setFormData(prev => ({ ...prev, office: res.text }));
+      requestAnimationFrame(() => {
+        if (input && typeof input.setSelectionRange === 'function') {
+          input.setSelectionRange(res.cursor, res.cursor);
+        }
+      });
+    } else {
+      setFormData(prev => ({ ...prev, office: val }));
+    }
+  };
+
+  const handleOfficeBlur = () => {
+    setFormData(prev => {
+      const current = prev.office;
+      if (!current || typeof current !== 'string') return prev;
+      const converted = transliterateText(current);
+      if (converted !== current) {
+        return { ...prev, office: converted };
+      }
+      return prev;
+    });
+  };
+
   const handleEditSubmit = (e) => {
     e.preventDefault();
     if (!formData.phone || !formData.office) {
@@ -102,7 +134,8 @@ export default function UserProfileModal({
       return;
     }
 
-    onUpdateProfileRequest(user.id, formData);
+    const finalOffice = transliterateText((formData.office || '').trim());
+    onUpdateProfileRequest(user.id, { ...formData, office: finalOffice });
     setNotice({ 
       type: 'success', 
       text: 'आपकी प्रोफ़ाइल अपडेट का अनुरोध सबमिट हो गया है! यह आपके ज़िला Co-Admin या Admin के अनुमोदन (Approval) के बाद अपडेट होगी।' 
@@ -420,13 +453,19 @@ export default function UserProfileModal({
             </div>
 
             <div className="form-group">
-              <label className="form-label">वर्तमान कार्यालय / थाना (Office/Thana)</label>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>वर्तमान कार्यालय / थाना (Office/Thana)</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 500 }}>
+                  🔤 स्वतः हिंदी टाइपिंग (English + Space)
+                </span>
+              </label>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
                   type="text"
                   className="form-input"
                   value={formData.office}
-                  onChange={e => setFormData({ ...formData, office: e.target.value })}
+                  onChange={handleOfficeTransliterateChange}
+                  onBlur={handleOfficeBlur}
                   required
                 />
                 {districtOffices.length > 0 && (

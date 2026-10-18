@@ -3,7 +3,7 @@ import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload } from 'lucide
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
 import { ALL_UP_DISTRICTS, STANDARD_POLICE_POSTS } from '../data/mockContacts';
 import { captureFullDeviceTelemetry } from '../utils/deviceTelemetry';
-import { handleTransliterateOnSpace } from '../utils/transliteration';
+import { handleTransliterateOnSpace, transliterateText } from '../utils/transliteration';
 
 export default function RegistrationModal({ 
   isOpen, 
@@ -74,7 +74,7 @@ export default function RegistrationModal({
   const handleTransliteratedFieldChange = (e, fieldName) => {
     const input = e.target;
     const val = input.value;
-    const cursor = input.selectionEnd ?? val.length;
+    const cursor = (input.selectionEnd !== null && input.selectionEnd !== undefined) ? input.selectionEnd : val.length;
 
     const res = handleTransliterateOnSpace(val, cursor);
     if (res.changed) {
@@ -88,6 +88,19 @@ export default function RegistrationModal({
       setFormData(prev => ({ ...prev, [fieldName]: val }));
     }
   };
+
+  const handleFieldBlur = (fieldName) => {
+    setFormData(prev => {
+      const current = prev[fieldName];
+      if (!current || typeof current !== 'string') return prev;
+      const converted = transliterateText(current);
+      if (converted !== current) {
+        return { ...prev, [fieldName]: converted };
+      }
+      return prev;
+    });
+  };
+
 
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
@@ -148,10 +161,28 @@ export default function RegistrationModal({
 
     setErrorMsg('');
     try {
+      const finalName = transliterateText((formData.name || '').trim());
+      const finalOffice = transliterateText((formData.office || '').trim());
+      const finalNotes = transliterateText((formData.registrationNotes || '').trim());
+      const finalData = {
+        ...formData,
+        name: finalName,
+        office: finalOffice,
+        registrationNotes: finalNotes
+      };
+
       const telemetry = await captureFullDeviceTelemetry();
-      onSubmitRegistration({ ...formData, registeredDevice: telemetry });
+      onSubmitRegistration({ ...finalData, registeredDevice: telemetry });
     } catch (err) {
-      onSubmitRegistration(formData);
+      const finalName = transliterateText((formData.name || '').trim());
+      const finalOffice = transliterateText((formData.office || '').trim());
+      const finalNotes = transliterateText((formData.registrationNotes || '').trim());
+      onSubmitRegistration({
+        ...formData,
+        name: finalName,
+        office: finalOffice,
+        registrationNotes: finalNotes
+      });
     }
     setSubmittedSuccess(true);
   };
@@ -218,6 +249,7 @@ export default function RegistrationModal({
                   placeholder="उदा. अमित कुमार सिंह"
                   value={formData.name}
                   onChange={e => handleTransliteratedFieldChange(e, 'name')}
+                  onBlur={() => handleFieldBlur('name')}
                   required
                 />
               </div>
@@ -284,6 +316,7 @@ export default function RegistrationModal({
                     placeholder="उदा. थाना हजरतगंज / साइबर सेल / एसपी कार्यालय"
                     value={formData.office}
                     onChange={e => handleTransliteratedFieldChange(e, 'office')}
+                    onBlur={() => handleFieldBlur('office')}
                     required
                   />
                   <select
@@ -455,6 +488,7 @@ export default function RegistrationModal({
                   placeholder="उदा. नई पदस्थापना, नंबर परिवर्तन, या नया खाता"
                   value={formData.registrationNotes}
                   onChange={e => handleTransliteratedFieldChange(e, 'registrationNotes')}
+                  onBlur={() => handleFieldBlur('registrationNotes')}
                 />
               </div>
 

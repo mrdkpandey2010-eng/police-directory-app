@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Edit3, Save } from 'lucide-react';
 
+import { handleTransliterateOnSpace, transliterateText } from '../utils/transliteration';
+
 export default function EditContactModal({ 
   contact, 
   isOpen, 
@@ -55,11 +57,47 @@ export default function EditContactModal({
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleTransliterateChange = (e, fieldName) => {
+    const input = e.target;
+    const val = input.value;
+    const cursor = (input.selectionEnd !== null && input.selectionEnd !== undefined) ? input.selectionEnd : val.length;
+
+    const res = handleTransliterateOnSpace(val, cursor);
+    if (res.changed) {
+      setFormData(prev => ({ ...prev, [fieldName]: res.text }));
+      requestAnimationFrame(() => {
+        if (input && typeof input.setSelectionRange === 'function') {
+          input.setSelectionRange(res.cursor, res.cursor);
+        }
+      });
+    } else {
+      setFormData(prev => ({ ...prev, [fieldName]: val }));
+    }
+  };
+
+  const handleFieldBlur = (fieldName) => {
+    setFormData(prev => {
+      const current = prev[fieldName];
+      if (!current || typeof current !== 'string') return prev;
+      const converted = transliterateText(current);
+      if (converted !== current) {
+        return { ...prev, [fieldName]: converted };
+      }
+      return prev;
+    });
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave(formData);
+    const finalData = {
+      ...formData,
+      name: transliterateText((formData.name || '').trim()),
+      office: transliterateText((formData.office || '').trim())
+    };
+    onSave(finalData);
     onClose();
   };
+
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -77,13 +115,19 @@ export default function EditContactModal({
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div className="form-grid">
             <div className="form-group">
-              <label className="form-label">अधिकारी का नाम</label>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>अधिकारी का नाम</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 500 }}>
+                  🔤 स्वतः हिंदी टाइपिंग (English + Space)
+                </span>
+              </label>
               <input
                 type="text"
                 name="name"
                 className="form-input"
                 value={formData.name}
-                onChange={handleChange}
+                onChange={e => handleTransliterateChange(e, 'name')}
+                onBlur={() => handleFieldBlur('name')}
                 required
               />
             </div>
@@ -129,14 +173,20 @@ export default function EditContactModal({
             </div>
 
             <div className="form-group full-width">
-              <label className="form-label">कार्यालय / थाना (Office/Thana)</label>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>कार्यालय / थाना (Office/Thana)</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 500 }}>
+                  🔤 स्वतः हिंदी टाइपिंग (English + Space)
+                </span>
+              </label>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
                   type="text"
                   name="office"
                   className="form-input"
                   value={formData.office}
-                  onChange={handleChange}
+                  onChange={e => handleTransliterateChange(e, 'office')}
+                  onBlur={() => handleFieldBlur('office')}
                   required
                 />
                 <select

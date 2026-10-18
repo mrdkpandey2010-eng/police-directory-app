@@ -7,8 +7,10 @@ import {
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
 import { ALL_UP_DISTRICTS, STANDARD_POLICE_POSTS } from '../data/mockContacts';
 import { lookupPnoAuth, verifyCredentialsAuth } from '../utils/cloudflareR2';
+import { handleTransliterateOnSpace, transliterateText } from '../utils/transliteration';
 
 export default function AuthGateway({ 
+
   onLoginSuccess, 
   onRegisterSubmit,
   contacts = [], 
@@ -75,6 +77,37 @@ export default function AuthGateway({
       return !dist || dist === regForm.district;
     }).map(o => typeof o === 'string' ? o : o.name);
   }, [offices, regForm.district]);
+
+  // Automatic Hindi transliteration on Space / Blur for Registration fields (Name, Office)
+  const handleRegTransliterateChange = (e, fieldName) => {
+    const input = e.target;
+    const val = input.value;
+    const cursor = (input.selectionEnd !== null && input.selectionEnd !== undefined) ? input.selectionEnd : val.length;
+
+    const res = handleTransliterateOnSpace(val, cursor);
+    if (res.changed) {
+      setRegForm(prev => ({ ...prev, [fieldName]: res.text }));
+      requestAnimationFrame(() => {
+        if (input && typeof input.setSelectionRange === 'function') {
+          input.setSelectionRange(res.cursor, res.cursor);
+        }
+      });
+    } else {
+      setRegForm(prev => ({ ...prev, [fieldName]: val }));
+    }
+  };
+
+  const handleRegFieldBlur = (fieldName) => {
+    setRegForm(prev => {
+      const current = prev[fieldName];
+      if (!current || typeof current !== 'string') return prev;
+      const converted = transliterateText(current);
+      if (converted !== current) {
+        return { ...prev, [fieldName]: converted };
+      }
+      return prev;
+    });
+  };
 
   // ---------------- STEP 1: PNO VERIFICATION ----------------
   const handlePnoSubmit = async (e) => {
@@ -248,9 +281,14 @@ export default function AuthGateway({
       return;
     }
 
-    // Always enforce regular officer role with pending status
+    // Always enforce regular officer role with pending status and ensure Hindi Devanagari text
+    const finalName = transliterateText((regForm.name || '').trim());
+    const finalOffice = transliterateText((regForm.office || '').trim());
+
     const submissionData = {
       ...regForm,
+      name: finalName,
+      office: finalOffice,
       role: 'user',
       status: 'pending'
     };
@@ -544,13 +582,19 @@ export default function AuthGateway({
 
               {/* Full Name */}
               <div className="form-group">
-                <label className="form-label">अधिकारी/कर्मचारी का नाम *</label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>अधिकारी/कर्मचारी का नाम *</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 500 }}>
+                    🔤 स्वतः हिंदी टाइपिंग (English + Space)
+                  </span>
+                </label>
                 <input
                   type="text"
                   className="form-input"
                   placeholder="उदा. अमित कुमार सिंह"
                   value={regForm.name}
-                  onChange={(e) => setRegForm({ ...regForm, name: e.target.value })}
+                  onChange={(e) => handleRegTransliterateChange(e, 'name')}
+                  onBlur={() => handleRegFieldBlur('name')}
                   required
                 />
               </div>
@@ -587,7 +631,12 @@ export default function AuthGateway({
 
               {/* Thana / Office */}
               <div className="form-group">
-                <label className="form-label">थाना / कार्यालय (Office/Thana) *</label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>थाना / कार्यालय (Office/Thana) *</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 500 }}>
+                    🔤 स्वतः हिंदी टाइपिंग (English + Space)
+                  </span>
+                </label>
                 {districtOffices.length > 0 ? (
                   <select
                     className="form-select"
@@ -606,7 +655,8 @@ export default function AuthGateway({
                     className="form-input"
                     placeholder="उदा. थाना कोतवाली / पुलिस लाइन"
                     value={regForm.office}
-                    onChange={(e) => setRegForm({ ...regForm, office: e.target.value })}
+                    onChange={(e) => handleRegTransliterateChange(e, 'office')}
+                    onBlur={() => handleRegFieldBlur('office')}
                     required
                   />
                 )}

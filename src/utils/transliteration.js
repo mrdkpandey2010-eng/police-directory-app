@@ -419,14 +419,14 @@ export function handleTransliterateOnSpace(text, selectionEnd) {
   if (!text) return { text, cursor: selectionEnd, changed: false };
 
   // We check the portion up to the cursor
-  const left = text.slice(0, selectionEnd);
-  const right = text.slice(selectionEnd);
+  const cursorSafe = (selectionEnd !== undefined && selectionEnd !== null) ? selectionEnd : text.length;
+  const left = text.slice(0, cursorSafe);
+  const right = text.slice(cursorSafe);
 
-  // Trigger only when user just typed a space (ends with space)
-  // and there is an English word immediately preceding the space
-  const match = left.match(/([a-zA-Z]+)(\s+)$/);
+  // Trigger when user typed space, non-breaking space, or punctuation after an English word
+  const match = left.match(/([a-zA-Z]+)([\s\u00A0.,;]+)$/);
   if (!match) {
-    return { text, cursor: selectionEnd, changed: false };
+    return { text, cursor: cursorSafe, changed: false };
   }
 
   const rawWord = match[1];
@@ -435,7 +435,7 @@ export function handleTransliterateOnSpace(text, selectionEnd) {
   // Convert English/Hinglish word to Hindi
   const hindiWord = phoneticTransliterateWord(rawWord);
   if (hindiWord === rawWord) {
-    return { text, cursor: selectionEnd, changed: false };
+    return { text, cursor: cursorSafe, changed: false };
   }
 
   // Replace word before cursor
@@ -456,13 +456,15 @@ export function handleTransliterateOnSpace(text, selectionEnd) {
  */
 export const transliterateWord = phoneticTransliterateWord;
 
+/**
+ * Transliterates all English words in a string to Hindi Devanagari,
+ * preserving existing Devanagari, punctuation, numbers, and spacing.
+ */
 export function transliterateText(text) {
-  if (!text) return text;
-  return text.split(/(\s+)/).map(token => {
-    if (/^[a-zA-Z]+$/.test(token)) {
-      return phoneticTransliterateWord(token);
-    }
-    return token;
-  }).join('');
+  if (!text || typeof text !== 'string') return text;
+  return text.replace(/[a-zA-Z]+/g, (match) => {
+    return phoneticTransliterateWord(match);
+  });
 }
+
 
