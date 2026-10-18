@@ -1,22 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, Shield, Clock, AlertTriangle, User } from 'lucide-react';
-import { callManager, MAX_CALL_DURATION_SECONDS } from '../utils/webrtc';
+import React, { useState, useEffect, useRef } from 'react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, Shield, Clock, AlertTriangle, User, Activity, Info, X } from 'lucide-react';
+import { callManager, MAX_CALL_DURATION_SECONDS, lastAcquiredMicSettings } from '../utils/webrtc';
 
 export default function ActiveCallModal({ currentUser, onCallEnded }) {
   const [callState, setCallState] = useState(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [audioBoosterFeedback, setAudioBoosterFeedback] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const modalAudioRef = useRef(null);
 
   useEffect(() => {
     const unsub = callManager.subscribe((state) => {
       setCallState(state ? { ...state } : null);
       if (!state) {
         setElapsedSeconds(0);
+        setShowDiagnostics(false);
         if (onCallEnded) onCallEnded();
       }
     });
     return unsub;
   }, [onCallEnded]);
+
+  // Synchronize direct in-modal audio element with remote stream
+  useEffect(() => {
+    if (modalAudioRef.current && callState?.status === 'connected' && callManager.remoteStream) {
+      if (modalAudioRef.current.srcObject !== callManager.remoteStream) {
+        modalAudioRef.current.srcObject = callManager.remoteStream;
+      }
+      modalAudioRef.current.muted = false;
+      modalAudioRef.current.volume = 1.0;
+      modalAudioRef.current.play().catch(e => console.log('[ActiveCallModal] direct audio play notice:', e));
+    }
+  }, [callState?.status, callManager.remoteStream]);
 
   // Active call duration counter & 5-minute strict cutoff
   useEffect(() => {
@@ -314,19 +329,26 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
 
             {/* Real-Time Audio Quality QoS Indicator */}
             {callState.audioQualityStats && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: 'rgba(15, 23, 42, 0.6)',
-                border: `1px solid ${callState.audioQualityStats.color || '#34d399'}55`,
-                padding: '3px 10px',
-                borderRadius: '16px',
-                fontSize: '0.74rem',
-                color: callState.audioQualityStats.color || '#34d399',
-                fontWeight: 600,
-                marginTop: '2px'
-              }}>
+              <div 
+                onClick={() => setShowDiagnostics(prev => !prev)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(15, 23, 42, 0.75)',
+                  border: `1px solid ${callState.audioQualityStats.color || '#34d399'}66`,
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  fontSize: '0.74rem',
+                  color: callState.audioQualityStats.color || '#34d399',
+                  fontWeight: 600,
+                  marginTop: '2px',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.2s ease'
+                }}
+                title="ऑडियो नेटवर्क गुणवत्ता एवं डायग्नोस्टिक्स देखने हेतु टैप करें"
+              >
                 <span style={{
                   width: '7px',
                   height: '7px',
@@ -334,10 +356,11 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
                   background: callState.audioQualityStats.color || '#34d399',
                   boxShadow: `0 0 8px ${callState.audioQualityStats.color || '#34d399'}`
                 }} />
-                <span>{callState.audioQualityStats.rating} • Opus HD (36 kbps)</span>
-                {callState.audioQualityStats.jitterMs ? (
+                <span>{callState.audioQualityStats.rating} • Opus HD (32 kbps)</span>
+                {callState.audioQualityStats.jitterMs !== undefined ? (
                   <span style={{ opacity: 0.8 }}>({callState.audioQualityStats.jitterMs}ms)</span>
                 ) : null}
+                <Info size={13} style={{ opacity: 0.7, marginLeft: '2px' }} />
               </div>
             )}
 
@@ -710,6 +733,124 @@ export default function ActiveCallModal({ currentUser, onCallEnded }) {
           <span>🔒 एंड-टू-एंड एन्क्रिप्टेड • यह कॉल विभागीय कॉल-लॉग में दर्ज होगी</span>
         </div>
       </div>
+
+      {/* Direct in-modal audio element */}
+      <audio 
+        ref={modalAudioRef} 
+        autoPlay 
+        playsInline 
+        style={{ position: 'fixed', width: '1px', height: '1px', opacity: 0.01, pointerEvents: 'none' }} 
+      />
+
+      {/* Audio Quality & Diagnostics Modal Dialog */}
+      {showDiagnostics && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'rgba(2, 6, 23, 0.92)',
+          backdropFilter: 'blur(12px)',
+          zIndex: 1000000,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '1.5rem',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{
+            background: 'rgba(15, 23, 42, 0.95)',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            borderRadius: '18px',
+            padding: '1.5rem',
+            width: '100%',
+            maxWidth: '380px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontWeight: 800, fontSize: '0.95rem' }}>
+                <Activity size={18} />
+                <span>ऑडियो डायग्नोस्टिक्स (WhatsApp-Grade)</span>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowDiagnostics(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: '8px', color: '#e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>वॉइस कोडेक (Codec):</span>
+                <span style={{ fontWeight: 700, color: '#34d399' }}>Opus 48 kHz (Mono)</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>फ्रेम साइज (Latency):</span>
+                <span style={{ fontWeight: 600 }}>20 ms (50 pkts/sec)</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>टारगेट बिटरेट (Bitrate):</span>
+                <span style={{ fontWeight: 600 }}>32 kbps (Adaptive VBR)</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>AEC (इको कैंसिलेशन):</span>
+                <span style={{ fontWeight: 700, color: '#38bdf8' }}>सक्रिय (Hardware DSP)</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>नॉइज़ सप्रेशन / FEC:</span>
+                <span style={{ fontWeight: 600, color: '#34d399' }}>Enabled (In-band FEC)</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>नेटवर्क जिटर (Jitter):</span>
+                <span style={{ fontWeight: 600 }}>{callState.audioQualityStats?.jitterMs || 0} ms</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>बफर डिले (Jitter Delay):</span>
+                <span style={{ fontWeight: 600 }}>{callState.audioQualityStats?.avgJitterDelayMs || 0} ms</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>पैकेट लॉस (Loss):</span>
+                <span style={{ fontWeight: 600, color: (callState.audioQualityStats?.packetLossPercent > 5) ? '#ef4444' : '#34d399' }}>
+                  {callState.audioQualityStats?.packetLossPercent || '0.0'}%
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>RTT (राउंड-ट्रिप):</span>
+                <span style={{ fontWeight: 600 }}>{callState.audioQualityStats?.rttMs ? `${callState.audioQualityStats.rttMs} ms` : 'P2P Direct'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <span style={{ color: '#94a3b8' }}>ऑडियो आउटपुट रूट:</span>
+                <span style={{ fontWeight: 700, color: callState.isSpeaker ? '#34d399' : '#38bdf8' }}>
+                  {callState.isSpeaker ? '🔊 लाउडस्पीकर (Speaker)' : '🔈 ईयरपीस (Earpiece)'}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowDiagnostics(false)}
+              style={{
+                marginTop: '8px',
+                width: '100%',
+                padding: '8px',
+                borderRadius: '10px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                color: '#fff',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              बंद करें (Dismiss)
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

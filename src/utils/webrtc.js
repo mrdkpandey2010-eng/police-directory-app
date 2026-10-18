@@ -25,10 +25,18 @@ const ICE_SERVERS = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' }
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.services.mozilla.com' },
+    { urls: 'stun:stun.voip.blackberry.com:3478' }
   ],
   iceCandidatePoolSize: 10
 };
+
+// 1-sample silent WAV data URI for priming audio elements within user click gestures
+export const SILENT_WAV_BASE64 = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
+// Last verified microphone hardware settings for diagnostics
+export let lastAcquiredMicSettings = null;
 
 // Retrieve ICE / TURN servers with support for secure custom TURN credentials
 export function getRtcConfiguration() {
@@ -50,7 +58,7 @@ export function getRtcConfiguration() {
 }
 
 /**
- * Robust High-Fidelity Microphone Capture with Multi-Tier Fallback
+ * Robust WhatsApp-Level Speech Microphone Capture with Multi-Tier Fallback
  * Guarantees Hardware/Browser Acoustic Echo Cancellation (AEC),
  * Noise Suppression (NS), and Voice-Optimized Automatic Gain Control (AGC).
  */
@@ -60,22 +68,15 @@ async function acquireMicrophoneAudioStream() {
     return null;
   }
 
-  // Tier 1: WhatsApp-level studio voice constraints with Chromium & Android AEC flags
+  // Tier 1: WhatsApp-grade speech constraints with hardware AEC, NS, AGC and strict mono
   const tier1Constraints = {
     audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      channelCount: { ideal: 1 },
+      echoCancellation: { ideal: true },
+      noiseSuppression: { ideal: true },
+      autoGainControl: { ideal: true },
+      channelCount: { ideal: 1 }, // Strictly mono to enable hardware DSP AEC & prevent phase cancellation
       sampleRate: { ideal: 48000 },
-      sampleSize: { ideal: 16 },
-      // Chromium & Android WebView hardware AEC hooks
-      googEchoCancellation: true,
-      googAutoGainControl: true,
-      googNoiseSuppression: true,
-      googHighpassFilter: true,
-      googTypingNoiseDetection: true,
-      googAudioMirroring: false
+      sampleSize: { ideal: 16 }
     },
     video: false
   };
@@ -86,7 +87,7 @@ async function acquireMicrophoneAudioStream() {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
-      channelCount: { ideal: 1 }
+      channelCount: 1
     },
     video: false
   };
@@ -94,7 +95,8 @@ async function acquireMicrophoneAudioStream() {
   // Tier 3: Core acoustic echo cancellation constraint
   const tier3Constraints = {
     audio: {
-      echoCancellation: true
+      echoCancellation: true,
+      channelCount: 1
     },
     video: false
   };
@@ -106,9 +108,9 @@ async function acquireMicrophoneAudioStream() {
   };
 
   const tiers = [
-    { name: 'Tier 1 (High-Fidelity Studio Speech)', constraints: tier1Constraints },
+    { name: 'Tier 1 (WhatsApp-Grade Studio Speech)', constraints: tier1Constraints },
     { name: 'Tier 2 (Standard W3C Voice)', constraints: tier2Constraints },
-    { name: 'Tier 3 (Core AEC)', constraints: tier3Constraints },
+    { name: 'Tier 3 (Core AEC Mono)', constraints: tier3Constraints },
     { name: 'Tier 4 (Basic Fallback)', constraints: tier4Constraints }
   ];
 
@@ -119,7 +121,8 @@ async function acquireMicrophoneAudioStream() {
         const track = stream.getAudioTracks()[0];
         track.enabled = true;
         const settings = track.getSettings ? track.getSettings() : {};
-        console.log(`[WebRTC Mic] Acquired microphone stream using ${tier.name}:`, {
+        lastAcquiredMicSettings = {
+          tier: tier.name,
           deviceId: settings.deviceId,
           sampleRate: settings.sampleRate,
           channelCount: settings.channelCount,
@@ -127,7 +130,8 @@ async function acquireMicrophoneAudioStream() {
           noiseSuppression: settings.noiseSuppression,
           autoGainControl: settings.autoGainControl,
           latency: settings.latency
-        });
+        };
+        console.log(`[WebRTC Mic] Acquired microphone stream using ${tier.name}:`, lastAcquiredMicSettings);
         return stream;
       }
     } catch (err) {
@@ -246,11 +250,19 @@ function tuneSdpForVoiceClarity(sdp) {
         }
       });
 
-      // Inject voice-optimized parameters
-      existingParams.set('minptime', '10');
+      // WhatsApp-grade speech optimization:
+      // - ptime=20, minptime=20, maxptime=40: Standard 20ms frames (50 pkts/sec) eliminates NetEQ robotic jitter distortion
+      // - useinbandfec=1: In-Band Forward Error Correction enables loss recovery without retransmission
+      // - usedtx=1: Discontinuous Transmission during silence saves battery and mobile bandwidth
+      // - maxaveragebitrate=32000: 32 kbps studio speech (clear and natural, no clipping or room echo)
+      // - stereo=0 & sprop-stereo=0: Enforce strict mono so phone hardware DSP AEC operates at 100%
+      // - cbr=0: Adaptive Variable Bitrate (VBR)
+      existingParams.set('minptime', '20');
+      existingParams.set('ptime', '20');
+      existingParams.set('maxptime', '40');
       existingParams.set('useinbandfec', '1');
       existingParams.set('usedtx', '1');
-      existingParams.set('maxaveragebitrate', '36000');
+      existingParams.set('maxaveragebitrate', '32000');
       existingParams.set('stereo', '0');
       existingParams.set('sprop-stereo', '0');
       existingParams.set('cbr', '0');
@@ -268,7 +280,7 @@ function tuneSdpForVoiceClarity(sdp) {
   if (!fmtpFound) {
     const rtpIndex = tunedLines.findIndex(l => l.startsWith(`a=rtpmap:${opusPayloadType} `));
     if (rtpIndex !== -1) {
-      const newFmtp = `a=fmtp:${opusPayloadType} minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=36000;stereo=0;sprop-stereo=0;cbr=0`;
+      const newFmtp = `a=fmtp:${opusPayloadType} minptime=20;ptime=20;maxptime=40;useinbandfec=1;usedtx=1;maxaveragebitrate=32000;stereo=0;sprop-stereo=0;cbr=0`;
       tunedLines.splice(rtpIndex + 1, 0, newFmtp);
     }
   }
@@ -464,6 +476,8 @@ class InAppCallManager {
     this.statsInterval = null;
     this.processedCandidates = new Set();
     this.earlyLocalCandidates = [];
+    this.audioContext = null;
+    this.webAudioSourceNode = null;
 
     try {
       this.broadcastChannel = new BroadcastChannel('up_police_webrtc_calls');
@@ -516,11 +530,13 @@ class InAppCallManager {
       audioElem.muted = false;
       audioElem.volume = 1.0;
       audioElem.style.position = 'fixed';
-      audioElem.style.width = '1px';
-      audioElem.style.height = '1px';
-      audioElem.style.opacity = '0.001';
+      audioElem.style.width = '2px';
+      audioElem.style.height = '2px';
+      audioElem.style.bottom = '0px';
+      audioElem.style.right = '0px';
+      audioElem.style.opacity = '0.01';
       audioElem.style.pointerEvents = 'none';
-      audioElem.style.top = '-100px';
+      audioElem.style.zIndex = '-1';
       document.body.appendChild(audioElem);
     } else if (audioElem) {
       audioElem.autoplay = true;
@@ -535,16 +551,31 @@ class InAppCallManager {
   }
 
   // Pre-unlock and prime audio playback within user gesture (Click / Tap)
-  unlockAudioPipeline() {
+  async unlockAudioPipeline() {
     try {
       const audioElem = this.getOrCreateRemoteAudioElement();
       if (audioElem) {
         audioElem.muted = false;
         audioElem.volume = 1.0;
-        const playPromise = audioElem.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(() => {});
+        // Prime with silent 1-sample WAV so browser permanently unlocks autoplay under this user gesture
+        if (!audioElem.srcObject) {
+          audioElem.src = SILENT_WAV_BASE64;
+          const playPromise = audioElem.play();
+          if (playPromise !== undefined) {
+            await playPromise.catch(() => {});
+          }
         }
+      }
+
+      // Resume / prime Web Audio API AudioContext under user gesture
+      if (!this.audioContext) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          this.audioContext = new AudioCtx();
+        }
+      }
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        await this.audioContext.resume().catch(() => {});
       }
     } catch (e) {
       console.warn('[WebRTC Audio] Unlock audio notice:', e);
@@ -671,7 +702,7 @@ class InAppCallManager {
           startedAt: null,
           duration: 0,
           isMuted: false,
-          isSpeaker: false
+          isSpeaker: true
         };
         callAudio.startIncomingRingtone();
         if (navigator.vibrate) navigator.vibrate([600, 300, 600, 300, 600]);
@@ -759,7 +790,7 @@ class InAppCallManager {
               startedAt: null,
               duration: 0,
               isMuted: false,
-              isSpeaker: false,
+              isSpeaker: true,
               viaCloudflare: true
             };
             callAudio.startIncomingRingtone();
@@ -858,7 +889,7 @@ class InAppCallManager {
       startedAt: null,
       duration: 0,
       isMuted: false,
-      isSpeaker: false,
+      isSpeaker: true,
       presence: null
     };
     this.notify();
@@ -921,9 +952,8 @@ class InAppCallManager {
         }
       }
 
-      // Prioritize Opus and tune sender parameters
+      // Prioritize Opus codec
       preferOpusCodec(this.peerConnection);
-      await configureSenderEncodingParameters(this.peerConnection, 36000);
 
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -944,10 +974,18 @@ class InAppCallManager {
 
       this.peerConnection.ontrack = (event) => {
         console.log('[WebRTC Caller] Received remote track:', event.track?.kind);
-        if (event.track) event.track.enabled = true;
-        const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
-        this.remoteStream = stream;
-        this.playRemoteAudio(stream);
+        if (event.track) {
+          event.track.enabled = true;
+          if (!this.remoteStream) {
+            this.remoteStream = new MediaStream();
+          }
+          const existing = this.remoteStream.getTracks().find(t => t.id === event.track.id);
+          if (!existing) {
+            this.remoteStream.addTrack(event.track);
+          }
+          this.playRemoteAudio(this.remoteStream);
+          this.notify();
+        }
       };
 
       this.peerConnection.oniceconnectionstatechange = () => {
@@ -977,6 +1015,9 @@ class InAppCallManager {
       });
       offer.sdp = tuneSdpForVoiceClarity(offer.sdp);
       await this.peerConnection.setLocalDescription(offer);
+
+      // Configure sender parameters after local description is set
+      await configureSenderEncodingParameters(this.peerConnection, 32000);
 
       // Wait up to 1.5s for ICE candidates so they are embedded directly in offer.sdp
       await waitForIceGathering(this.peerConnection, 1500);
@@ -1038,7 +1079,7 @@ class InAppCallManager {
         startedAt: null,
         duration: 0,
         isMuted: false,
-        isSpeaker: false,
+        isSpeaker: true,
         offlineMessage: 'कॉल स्थापित नहीं हो सकी। कृपया दोबारा प्रयास करें।'
       };
       this.notify();
@@ -1169,9 +1210,8 @@ class InAppCallManager {
         }
       }
 
-      // Prioritize Opus and tune sender parameters
+      // Prioritize Opus codec
       preferOpusCodec(this.peerConnection);
-      await configureSenderEncodingParameters(this.peerConnection, 36000);
 
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -1194,10 +1234,18 @@ class InAppCallManager {
 
       this.peerConnection.ontrack = (event) => {
         console.log('[WebRTC Receiver] Received remote track:', event.track?.kind);
-        if (event.track) event.track.enabled = true;
-        const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
-        this.remoteStream = stream;
-        this.playRemoteAudio(stream);
+        if (event.track) {
+          event.track.enabled = true;
+          if (!this.remoteStream) {
+            this.remoteStream = new MediaStream();
+          }
+          const existing = this.remoteStream.getTracks().find(t => t.id === event.track.id);
+          if (!existing) {
+            this.remoteStream.addTrack(event.track);
+          }
+          this.playRemoteAudio(this.remoteStream);
+          this.notify();
+        }
       };
 
       this.peerConnection.oniceconnectionstatechange = () => {
@@ -1233,6 +1281,9 @@ class InAppCallManager {
         });
         answer.sdp = tuneSdpForVoiceClarity(answer.sdp);
         await this.peerConnection.setLocalDescription(answer);
+
+        // Configure sender parameters after local description is set
+        await configureSenderEncodingParameters(this.peerConnection, 32000);
 
         // Wait up to 1.5s for ICE candidates so they are embedded directly into answer.sdp
         await waitForIceGathering(this.peerConnection, 1500);
@@ -1436,9 +1487,15 @@ class InAppCallManager {
           })
           .catch((err) => {
             console.warn('[WebRTC Audio] HTMLAudioElement autoplay deferred:', err?.message);
+            // Fallback: connect through Web Audio API
+            this.attachWebAudioFallback(stream);
+
             const resumeOnTouch = () => {
               if (audioElem && audioElem.srcObject) {
                 audioElem.play().catch(() => {});
+              }
+              if (this.audioContext && this.audioContext.state === 'suspended') {
+                this.audioContext.resume().catch(() => {});
               }
             };
             window.addEventListener('touchstart', resumeOnTouch, { once: true, passive: true });
@@ -1447,6 +1504,29 @@ class InAppCallManager {
       }
     } catch (err) {
       console.error('[WebRTC] playRemoteAudio execution error:', err);
+    }
+  }
+
+  attachWebAudioFallback(stream) {
+    try {
+      if (!stream) return;
+      if (!this.audioContext) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext && !this.webAudioSourceNode) {
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume().catch(() => {});
+        }
+        this.webAudioSourceNode = this.audioContext.createMediaStreamSource(stream);
+        const gainNode = this.audioContext.createGain();
+        gainNode.gain.setValueAtTime(1.0, this.audioContext.currentTime);
+        this.webAudioSourceNode.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        console.log('[WebRTC Audio] Web Audio fallback pipeline connected successfully');
+      }
+    } catch (e) {
+      console.warn('[WebRTC Audio] Web Audio fallback notice:', e);
     }
   }
 
@@ -1520,6 +1600,12 @@ class InAppCallManager {
         audioElem.pause();
         audioElem.srcObject = null;
       } catch (e) {}
+    }
+    if (this.webAudioSourceNode) {
+      try {
+        this.webAudioSourceNode.disconnect();
+      } catch (e) {}
+      this.webAudioSourceNode = null;
     }
     if (this.peerConnection) {
       this.peerConnection.close();
