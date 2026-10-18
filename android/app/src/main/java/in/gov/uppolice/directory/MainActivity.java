@@ -27,14 +27,6 @@ public class MainActivity extends BridgeActivity {
 
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
-        // Ensure Android runtime permission for microphone and audio settings
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{
-                Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.MODIFY_AUDIO_SETTINGS
-            }, 101);
-        }
-
         try {
             WebView webView = getBridge().getWebView();
             if (webView != null) {

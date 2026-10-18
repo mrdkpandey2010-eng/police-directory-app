@@ -26,6 +26,8 @@ const LoginDisclaimerModal = lazy(() => import('./components/LoginDisclaimerModa
 const Admin2FAModal = lazy(() => import('./components/Admin2FAModal'));
 const ActiveCallModal = lazy(() => import('./components/ActiveCallModal'));
 const RecentCallsModal = lazy(() => import('./components/RecentCallsModal'));
+import ServiceTermsScreen from './components/ServiceTermsScreen';
+import PermissionOnboardingScreen from './components/PermissionOnboardingScreen';
 import {
   isFirebaseConfigured,
   subscribeToFirestoreChats,
@@ -188,6 +190,7 @@ export default function App() {
   // Modals
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [registerPrefillPno, setRegisterPrefillPno] = useState('');
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [adminInitialTab, setAdminInitialTab] = useState('pending');
   const [isAdmin2FAModalOpen, setIsAdmin2FAModalOpen] = useState(false);
@@ -210,7 +213,9 @@ export default function App() {
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const [activePolicyType, setActivePolicyType] = useState('disclaimer');
 
-  // Post-Login Mandatory Disclaimer Gate
+  // Post-Login Mandatory Service Terms & Permission Gates
+  const [isTermsAccepted, setIsTermsAccepted] = useState(false);
+  const [isPermissionsCompleted, setIsPermissionsCompleted] = useState(false);
   const [isDisclaimerModalOpen, setIsDisclaimerModalOpen] = useState(false);
   const [disclaimerAgreed, setDisclaimerAgreed] = useState(true);
   const [isPhotoGateDismissed, setIsPhotoGateDismissed] = useState(false);
@@ -402,11 +407,20 @@ export default function App() {
       if (savedUser.role === 'user' || savedUser.role === 'co_admin') {
         setSelectedDistrict(savedUser.district || '');
       }
+      const hasAcceptedTerms = (savedUser.termsAcceptedVersion >= 2) || 
+        (localStorage.getItem(`police_terms_v2_${savedUser.id}`) === 'true');
+      setIsTermsAccepted(hasAcceptedTerms);
+
+      const hasDonePerms = localStorage.getItem(`police_permissions_onboarding_${savedUser.id}`) === 'true';
+      setIsPermissionsCompleted(hasDonePerms);
+
       setDisclaimerAgreed(true);
       setIsDisclaimerModalOpen(false);
     } else {
       // Front screen login wall if no active session
       setCurrentUser(null);
+      setIsTermsAccepted(false);
+      setIsPermissionsCompleted(false);
     }
 
     return () => {
@@ -788,11 +802,16 @@ export default function App() {
       setSelectedDistrict('');
     }
 
-    // Show home screen directly on login without blocking disclaimer modal
+    const hasAcceptedTerms = (userObj.termsAcceptedVersion >= 2) || 
+      (localStorage.getItem(`police_terms_v2_${userObj.id}`) === 'true');
+    setIsTermsAccepted(hasAcceptedTerms);
+
+    const hasDonePerms = localStorage.getItem(`police_permissions_onboarding_${userObj.id}`) === 'true';
+    setIsPermissionsCompleted(hasDonePerms);
+
     setIsDisclaimerModalOpen(false);
     setDisclaimerAgreed(true);
     setIsPhotoGateDismissed(false);
-    sessionStorage.setItem(`police_disclaimer_agreed_${userObj.id}`, 'true');
 
     // Telemetry & Device Change Audit (Non-intrusive, zero extra permissions)
     if (userObj.id && userObj.role !== 'admin') {
@@ -808,6 +827,25 @@ export default function App() {
     }
 
     showToast(`सफलतापूर्वक लॉगिन: ${userObj.name} (${userObj.role === 'admin' ? 'Super Admin' : userObj.role === 'co_admin' ? `Co-Admin ${userObj.district}` : 'User'})`);
+  };
+
+  const handleTermsAccepted = (version = 2) => {
+    if (currentUser) {
+      const updatedUser = { ...currentUser, termsAcceptedVersion: version };
+      setCurrentUser(updatedUser);
+      saveSession(updatedUser);
+      localStorage.setItem(`police_terms_v${version}_${currentUser.id}`, 'true');
+    }
+    setIsTermsAccepted(true);
+    showToast('✅ सेवा शर्तें एवं शासकीय गोपनीयता नीति स्वीकृत।');
+  };
+
+  const handlePermissionsCompleted = () => {
+    if (currentUser) {
+      localStorage.setItem(`police_permissions_onboarding_${currentUser.id}`, 'true');
+    }
+    setIsPermissionsCompleted(true);
+    showToast('✅ अनुमतियां सत्यापित! निर्देशिका में आपका स्वागत है।');
   };
 
   const handleAgreeDisclaimer = () => {
@@ -857,6 +895,8 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     saveSession(null);
+    setIsTermsAccepted(false);
+    setIsPermissionsCompleted(false);
     localStorage.removeItem('police_last_activity_time');
     setIsChatModalOpen(false);
     setIs2FAVerifiedThisSession(false);
@@ -1765,6 +1805,50 @@ export default function App() {
     );
   }
 
+  // ---------------- SECURITY CHECK 2: MANDATORY SERVICE TERMS ACCEPTANCE (POST-LOGIN) ----------------
+  if (!isTermsAccepted) {
+    return (
+      <div className="app-container">
+        {toastMessage && (
+          <div className="toast-notice">
+            <span>{toastMessage}</span>
+          </div>
+        )}
+        <ServiceTermsScreen
+          user={currentUser}
+          terms={terms}
+          onAccepted={handleTermsAccepted}
+          onOpenPolicy={handleOpenPolicy}
+        />
+        <Suspense fallback={null}>
+          <PolicyModal
+            isOpen={isPolicyModalOpen}
+            activePolicy={activePolicyType}
+            policies={policies}
+            onClose={() => setIsPolicyModalOpen(false)}
+          />
+        </Suspense>
+      </div>
+    );
+  }
+
+  // ---------------- SECURITY CHECK 3: POST-LOGIN PERMISSION ONBOARDING ----------------
+  if (!isPermissionsCompleted) {
+    return (
+      <div className="app-container">
+        {toastMessage && (
+          <div className="toast-notice">
+            <span>{toastMessage}</span>
+          </div>
+        )}
+        <PermissionOnboardingScreen
+          user={currentUser}
+          onComplete={handlePermissionsCompleted}
+        />
+      </div>
+    );
+  }
+
   // ---------------- AUTHENTICATED USER DIRECTORY VIEW ----------------
   return (
     <div className="app-container">
@@ -2152,19 +2236,27 @@ export default function App() {
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
+        onOpenRegister={(prefilledPno) => {
+          setRegisterPrefillPno(prefilledPno);
+          setIsLoginModalOpen(false);
+          setIsRegisterModalOpen(true);
+        }}
         contacts={contacts}
         coAdmins={coAdmins}
-        onSuperBlockUser={handleSuperBlockUser}
       />
 
       {/* Employee Self-Registration Modal */}
       <RegistrationModal
         isOpen={isRegisterModalOpen}
-        onClose={() => setIsRegisterModalOpen(false)}
+        onClose={() => {
+          setIsRegisterModalOpen(false);
+          setRegisterPrefillPno('');
+        }}
         onSubmitRegistration={handleRegistrationSubmit}
         districts={districts}
         posts={posts}
         offices={offices}
+        initialPno={registerPrefillPno}
       />
 
       {/* User Profile Modal */}
@@ -2289,9 +2381,6 @@ export default function App() {
         }}
       />
 
-      {/* Mandatory Audio & Notification Permissions Gate Modal */}
-      <MandatoryPermissionModal currentUser={currentUser} />
-
       {/* WhatsApp / Phone Style Call History & Recent Calls Modal */}
       <RecentCallsModal
         isOpen={isCallHistoryModalOpen}
@@ -2319,14 +2408,6 @@ export default function App() {
           const targetContact = contacts.find(c => c.id === officer.id) || officer;
           handleOpenChat(targetContact);
         }}
-      />
-
-      {/* Mandatory Post-Login Official Disclaimer Gate */}
-      <LoginDisclaimerModal
-        isOpen={isDisclaimerModalOpen && !disclaimerAgreed}
-        user={currentUser}
-        onAgree={handleAgreeDisclaimer}
-        onOpenPolicy={handleOpenPolicy}
       />
 
       {/* Admin / Co-Admin 2FA Security Gate */}

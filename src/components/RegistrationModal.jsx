@@ -11,7 +11,8 @@ export default function RegistrationModal({
   onOpenPolicy,
   districts = [],
   posts = [],
-  offices = []
+  offices = [],
+  initialPno = ''
 }) {
   const effectiveDistricts = React.useMemo(() => {
     if (Array.isArray(districts) && districts.length > 1) {
@@ -45,6 +46,12 @@ export default function RegistrationModal({
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  React.useEffect(() => {
+    if (initialPno && isOpen) {
+      setFormData(prev => ({ ...prev, pno: initialPno }));
+    }
+  }, [initialPno, isOpen]);
 
   const districtOffices = React.useMemo(() => {
     if (!Array.isArray(offices)) return [];
