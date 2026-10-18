@@ -145,208 +145,176 @@ export default function LoginModal({
           <button className="close-btn" onClick={onClose}><X size={18} /></button>
         </div>
 
-        {/* STAGE 1: PNO INPUT */}
+        {/* STAGE 1: PNO INPUT (MINIMAL) */}
         {stage === 'pno_entry' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.25rem' }}>
-            {pnoError && (
-              <div style={{
-                background: 'rgba(239,68,68,0.15)',
-                border: '1px solid #ef4444',
-                color: '#fca5a5',
-                padding: '0.65rem 0.85rem',
-                borderRadius: '8px',
-                fontSize: '0.8rem',
-                lineHeight: 1.45
-              }}>
-                {pnoError}
-                {pnoServerError && (
-                  <div style={{ marginTop: '5px' }}>
-                    <button
-                      type="button"
-                      onClick={handlePnoSubmit}
-                      style={{
-                        background: 'rgba(255,255,255,0.15)',
-                        border: '1px solid rgba(255,255,255,0.3)',
-                        color: '#fff',
-                        borderRadius: '4px',
-                        padding: '2px 8px',
-                        fontSize: '0.74rem',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      पुनः प्रयास करें (Retry)
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <form onSubmit={handlePnoSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-              <div className="form-group">
-                <label className="form-label">PNO नंबर (Personal No.)</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="अपना PNO नंबर दर्ज करें (उदा. 987654321)"
-                  value={pnoInput}
-                  onChange={e => {
-                    setPnoInput(e.target.value);
-                    if (pnoError) setPnoError('');
-                  }}
-                  autoFocus
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isVerifyingPno}
-                className="btn btn-primary"
-                style={{ width: '100%', padding: '0.75rem', marginTop: '0.25rem' }}
-              >
-                {isVerifyingPno ? (
-                  <>
-                    <RefreshCw size={16} className="animate-spin" />
-                    <span>सत्यापित हो रहा है...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>आगे बढ़ें (Continue)</span>
-                    <ArrowRight size={16} />
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* STAGE 2: DYNAMIC PASSWORD SCREEN */}
-        {stage === 'password_entry' && verifiedAccount && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setStage('pno_entry');
-                  setLoginError('');
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--khaki-primary, #c49756)',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '0.8rem',
-                  padding: 0
-                }}
-              >
-                <ArrowLeft size={14} />
-                PNO बदलें
-              </button>
-
-              <span style={{ fontSize: '0.76rem', color: '#cbd5e1' }}>
-                PNO: <strong>{verifiedAccount.pno}</strong>
-              </span>
-            </div>
-
-            {/* Role Header Badge */}
+          <form
+            onSubmit={handlePnoSubmit}
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+              marginTop: '0.5rem'
+            }}
+          >
             <div style={{
-              background: 'rgba(196,151,86,0.1)',
-              border: '1px solid var(--khaki-primary, #c49756)',
-              borderRadius: '8px',
-              padding: '0.65rem 0.85rem',
               display: 'flex',
               alignItems: 'center',
-              gap: '10px'
+              width: '100%',
+              background: 'rgba(15, 23, 42, 0.95)',
+              border: '1.5px solid var(--khaki-primary, #c49756)',
+              borderRadius: '10px',
+              padding: '4px 6px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
             }}>
-              {verifiedAccount.role === 'admin' ? (
-                <Award size={20} color="#fca5a5" />
-              ) : verifiedAccount.role === 'co_admin' ? (
-                <Building size={20} color="#93c5fd" />
-              ) : (
-                <User size={20} color="var(--khaki-primary, #c49756)" />
-              )}
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--khaki-light, #dfb97e)', fontWeight: 700 }}>
-                  {verifiedAccount.role === 'admin' ? '👑 Super Admin' : verifiedAccount.role === 'co_admin' ? `🏛️ Co-Admin • ${verifiedAccount.district}` : '👮 पुलिस कार्मिक'}
-                </div>
-                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#f8fafc' }}>
-                  {verifiedAccount.name}
-                </div>
+              <input
+                type="text"
+                value={pnoInput}
+                onChange={e => {
+                  setPnoInput(e.target.value);
+                  if (pnoError) setPnoError('');
+                }}
+                placeholder="PNO"
+                aria-label="PNO Number"
+                autoFocus
+                disabled={isVerifyingPno}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#f8fafc',
+                  fontSize: '1.05rem',
+                  fontWeight: 600,
+                  padding: '0.6rem 0.8rem',
+                  letterSpacing: '0.04em'
+                }}
+              />
+              <button
+                type="submit"
+                disabled={isVerifyingPno || !pnoInput.trim()}
+                aria-label="Submit PNO"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: (isVerifyingPno || !pnoInput.trim()) ? 'rgba(196, 151, 86, 0.3)' : 'var(--khaki-primary, #c49756)',
+                  color: '#0f172a',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: (isVerifyingPno || !pnoInput.trim()) ? 'not-allowed' : 'pointer',
+                  flexShrink: 0,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {isVerifyingPno ? (
+                  <RefreshCw size={16} className="animate-spin" />
+                ) : (
+                  <ArrowRight size={18} />
+                )}
+              </button>
+            </div>
+
+            {pnoError && (
+              <div style={{
+                fontSize: '0.78rem',
+                color: '#fca5a5',
+                textAlign: 'center',
+                padding: '2px 8px'
+              }}>
+                {pnoError}
               </div>
+            )}
+          </form>
+        )}
+
+        {/* STAGE 2: PASSWORD SCREEN (MINIMAL) */}
+        {stage === 'password_entry' && (
+          <form
+            onSubmit={handlePasswordSubmit}
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+              marginTop: '0.5rem'
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              width: '100%',
+              background: 'rgba(15, 23, 42, 0.95)',
+              border: '1.5px solid var(--khaki-primary, #c49756)',
+              borderRadius: '10px',
+              padding: '4px 6px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
+            }}>
+              <input
+                type="password"
+                value={password}
+                onChange={e => {
+                  setPassword(e.target.value);
+                  if (loginError) setLoginError('');
+                }}
+                placeholder="••••••••"
+                aria-label="Password"
+                autoFocus
+                disabled={isLoggingIn}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#f8fafc',
+                  fontSize: '1.05rem',
+                  fontWeight: 600,
+                  padding: '0.6rem 0.8rem',
+                  letterSpacing: '0.08em'
+                }}
+              />
+              <button
+                type="submit"
+                disabled={isLoggingIn || !password.trim()}
+                aria-label="Submit Password"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: (isLoggingIn || !password.trim()) ? 'rgba(196, 151, 86, 0.3)' : 'var(--khaki-primary, #c49756)',
+                  color: '#0f172a',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: (isLoggingIn || !password.trim()) ? 'not-allowed' : 'pointer',
+                  flexShrink: 0,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {isLoggingIn ? (
+                  <RefreshCw size={16} className="animate-spin" />
+                ) : (
+                  <ArrowRight size={18} />
+                )}
+              </button>
             </div>
 
             {loginError && (
               <div style={{
-                background: 'rgba(239,68,68,0.15)',
-                border: '1px solid #ef4444',
+                fontSize: '0.78rem',
                 color: '#fca5a5',
-                padding: '0.65rem 0.85rem',
-                borderRadius: '8px',
-                fontSize: '0.8rem'
+                textAlign: 'center',
+                padding: '2px 8px'
               }}>
                 {loginError}
               </div>
             )}
-
-            <form onSubmit={handlePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-              <div className="form-group">
-                <label className="form-label">
-                  {verifiedAccount.role === 'admin' ? 'Master Admin PIN' : 'पासवर्ड'}
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    className="form-input"
-                    placeholder="पासवर्ड दर्ज करें"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    autoFocus
-                    required
-                    style={{ paddingRight: '2.5rem' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '10px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: '#94a3b8',
-                      cursor: 'pointer',
-                      padding: '4px'
-                    }}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoggingIn}
-                className="btn btn-primary"
-                style={{ width: '100%', padding: '0.75rem', marginTop: '0.25rem' }}
-              >
-                {isLoggingIn ? (
-                  <>
-                    <RefreshCw size={16} className="animate-spin" />
-                    <span>लॉगिन हो रहा है...</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock size={15} />
-                    <span>लॉगिन करें</span>
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
+          </form>
         )}
       </div>
     </div>

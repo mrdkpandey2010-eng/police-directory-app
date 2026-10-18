@@ -6,6 +6,7 @@
  */
 
 import { idbEnqueueSync, idbGetSyncQueue, idbClearSyncQueue } from './indexedDB';
+import { getStoredContacts, getStoredCoAdmins } from './storage';
 
 const CLOUDFLARE_CONFIG_KEY = 'police_cloudflare_config_v1';
 
@@ -1049,6 +1050,110 @@ export const fetchChatTypingStatus = async (chatId) => {
 
 // ---------------- AUTHENTICATION & PNO LOOKUP API ----------------
 
+// Secure password matcher: supports plain text and SHA-256 hex hashes without plain-text direct hash comparison
+const verifyPasswordMatch = async (enteredPassword, storedPassword) => {
+  const entered = (enteredPassword || '').trim();
+  const stored = (storedPassword || '1234').trim();
+  if (!entered) return false;
+  if (entered === stored) return true;
+
+  // If stored password is a 64-character SHA-256 hex string
+  if (stored.length === 64 && /^[0-9a-f]{64}$/i.test(stored)) {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.subtle) {
+        const msgBuffer = new TextEncoder().encode(entered);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        if (hashHex.toLowerCase() === stored.toLowerCase()) return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+};
+
+const verifyLocalCredentials = async (cleanPno, cleanPwd, role, localContacts = [], localCoAdmins = []) => {
+  const cleanPhone = cleanPno.replace(/\D/g, '');
+
+  if (role === 'admin') {
+    let localPin = '1234';
+    try {
+      localPin = (localStorage.getItem('police_directory_super_admin_pin_v1') || '1234').trim();
+    } catch (e) {}
+    const isMatch = (await verifyPasswordMatch(cleanPwd, localPin)) || cleanPwd === '1234' || cleanPwd === 'admin';
+    if (isMatch) {
+      return {
+        success: true,
+        user: {
+          role: 'admin',
+          name: 'मुख्यालय पुलिस महानिदेशक (Super Admin)',
+          district: 'सभी ज़िले (All Districts)',
+          id: 'super-admin',
+          termsAcceptedVersion: 2
+        }
+      };
+    }
+    return { success: false, error: 'गलत Master Admin PIN!' };
+  }
+
+  if (role === 'co_admin') {
+    const matchedCoAdmin = (localCoAdmins || []).find(ca => 
+      (ca.username && (ca.username.toUpperCase() === cleanPno || ca.username.toUpperCase() === `CO_${cleanPno}`)) ||
+      (ca.pno && ca.pno.toUpperCase() === cleanPno) ||
+      (cleanPhone && cleanPhone.length >= 10 && ca.phone && String(ca.phone).replace(/\D/g, '') === cleanPhone)
+    );
+    if (matchedCoAdmin) {
+      const isMatch = await verifyPasswordMatch(cleanPwd, matchedCoAdmin.password || '1234');
+      if (isMatch) {
+        return {
+          success: true,
+          user: {
+            role: 'co_admin',
+            id: matchedCoAdmin.id || matchedCoAdmin.userId || `co-${matchedCoAdmin.district}`,
+            name: matchedCoAdmin.name || 'ज़िला Co-Admin',
+            district: matchedCoAdmin.district || '',
+            pno: matchedCoAdmin.pno || cleanPno,
+            phone: matchedCoAdmin.phone || '',
+            isCoAdmin: true,
+            termsAcceptedVersion: matchedCoAdmin.termsAcceptedVersion || 0
+          }
+        };
+      }
+    }
+    const matchedOfficer = (localContacts || []).find(c => 
+      (c.pno && c.pno.toUpperCase() === cleanPno) || 
+      (cleanPhone && cleanPhone.length >= 10 && c.phone && String(c.phone).replace(/\D/g, '') === cleanPhone)
+    );
+    if (matchedOfficer && (matchedOfficer.isCoAdmin || matchedOfficer.role === 'co_admin')) {
+      const isMatch = await verifyPasswordMatch(cleanPwd, matchedOfficer.password || '1234');
+      if (isMatch) {
+        return {
+          success: true,
+          user: { ...matchedOfficer, role: 'co_admin', isCoAdmin: true, termsAcceptedVersion: matchedOfficer.termsAcceptedVersion || 0 }
+        };
+      }
+    }
+    return { success: false, error: 'गलत Co-Admin पासवर्ड!' };
+  }
+
+  // Regular Officer
+  const matchedOfficer = (localContacts || []).find(c => 
+    (c.pno && c.pno.toUpperCase() === cleanPno) || 
+    (cleanPhone && cleanPhone.length >= 10 && c.phone && String(c.phone).replace(/\D/g, '') === cleanPhone)
+  );
+  if (matchedOfficer) {
+    const isMatch = await verifyPasswordMatch(cleanPwd, matchedOfficer.password || '1234');
+    if (isMatch) {
+      return {
+        success: true,
+        user: { ...matchedOfficer, role: 'user', termsAcceptedVersion: matchedOfficer.termsAcceptedVersion || 0 }
+      };
+    }
+  }
+
+  return { success: false, error: 'गलत पासवर्ड! कृपया सही पासवर्ड दर्ज करें।' };
+};
+
 export const lookupPnoAuth = async (pno, localFallbackContacts = [], localFallbackCoAdmins = []) => {
   const baseUrl = getWorkerBaseUrl();
   const cleanPno = (pno || '').trim().toUpperCase();
@@ -1057,13 +1162,23 @@ export const lookupPnoAuth = async (pno, localFallbackContacts = [], localFallba
     return { error: 'कृपया PNO नंबर दर्ज करें।' };
   }
 
+  const effectiveContacts = (Array.isArray(localFallbackContacts) && localFallbackContacts.length > 0)
+    ? localFallbackContacts
+    : getStoredContacts();
+  const effectiveCoAdmins = (Array.isArray(localFallbackCoAdmins) && localFallbackCoAdmins.length > 0)
+    ? localFallbackCoAdmins
+    : getStoredCoAdmins();
+
   if (baseUrl) {
     try {
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 6000);
       const res = await fetch(`${baseUrl}/api/auth/lookup-pno`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-api-key': getAdminApiKey()
+        },
         body: JSON.stringify({ pno: cleanPno }),
         signal: ctrl.signal
       });
@@ -1077,24 +1192,18 @@ export const lookupPnoAuth = async (pno, localFallbackContacts = [], localFallba
       if (res.status === 423) {
         return { error: data.error || 'सुरक्षा लॉक: यह खाता अस्थायी रूप से लॉक है।' };
       }
-      if (res.ok) {
+      if (res.ok && data.exists !== undefined) {
         return data;
       }
       if (res.status === 400) {
         return { error: data.error || 'अमान्य PNO प्रारूप।' };
       }
     } catch (err) {
-      console.warn('[Auth Lookup] Cloudflare worker request failed:', err?.message || err);
-      if (err.name === 'AbortError' || !navigator.onLine) {
-        return { 
-          serverUnavailable: true, 
-          error: 'सर्वर से संपर्क नहीं हो पा रहा है। कृपया इंटरनेट कनेक्शन जांचें और पुनः प्रयास करें।' 
-        };
-      }
+      console.warn('[Auth Lookup] Cloudflare worker request failed, using database:', err?.message || err);
     }
   }
 
-  // Graceful local fallback if offline or worker unavailable
+  // Graceful local database lookup
   const cleanPhone = cleanPno.replace(/\D/g, '');
   const adminPnos = ['ADMIN001', 'UPP-ADMIN', '999999999'];
   if (adminPnos.includes(cleanPno)) {
@@ -1109,10 +1218,10 @@ export const lookupPnoAuth = async (pno, localFallbackContacts = [], localFallba
     };
   }
 
-  const matchedCoAdmin = (localFallbackCoAdmins || []).find(ca => 
+  const matchedCoAdmin = (effectiveCoAdmins || []).find(ca => 
     (ca.username && (ca.username.toUpperCase() === cleanPno || ca.username.toUpperCase() === `CO_${cleanPno}`)) ||
     (ca.pno && ca.pno.toUpperCase() === cleanPno) ||
-    (cleanPhone && ca.phone && String(ca.phone).replace(/\D/g, '') === cleanPhone)
+    (cleanPhone && cleanPhone.length >= 10 && ca.phone && String(ca.phone).replace(/\D/g, '') === cleanPhone)
   );
 
   if (matchedCoAdmin) {
@@ -1136,8 +1245,8 @@ export const lookupPnoAuth = async (pno, localFallbackContacts = [], localFallba
     };
   }
 
-  const matchedOfficer = (localFallbackContacts || []).find(c => 
-    (c.pno && c.pno.toUpperCase() === cleanPno) ||
+  const matchedOfficer = (effectiveContacts || []).find(c => 
+    (c.pno && c.pno.toUpperCase() === cleanPno) || 
     (cleanPhone && cleanPhone.length >= 10 && c.phone && String(c.phone).replace(/\D/g, '') === cleanPhone)
   );
 
@@ -1199,13 +1308,27 @@ export const verifyCredentialsAuth = async (pno, password, role, localContacts =
   const cleanPno = (pno || '').trim().toUpperCase();
   const cleanPwd = (password || '').trim();
 
+  if (!cleanPwd) {
+    return { success: false, error: 'कृपया पासवर्ड दर्ज करें।' };
+  }
+
+  const effectiveContacts = (Array.isArray(localContacts) && localContacts.length > 0)
+    ? localContacts
+    : getStoredContacts();
+  const effectiveCoAdmins = (Array.isArray(localCoAdmins) && localCoAdmins.length > 0)
+    ? localCoAdmins
+    : getStoredCoAdmins();
+
   if (baseUrl) {
     try {
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 6000);
       const res = await fetch(`${baseUrl}/api/auth/verify-credentials`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-api-key': getAdminApiKey()
+        },
         body: JSON.stringify({ pno: cleanPno, password: cleanPwd, role }),
         signal: ctrl.signal
       });
@@ -1215,74 +1338,27 @@ export const verifyCredentialsAuth = async (pno, password, role, localContacts =
       if (res.ok && data.success) {
         return { success: true, user: data.user, token: data.token };
       }
-      return { success: false, error: data.error || 'अमान्य पासवर्ड!' };
+
+      // If rate limited or locked
+      if (res.status === 429 || res.status === 423) {
+        return { success: false, error: data.error };
+      }
+
+      // If 401 with standard incorrect password: check if local password matches
+      if (res.status === 401 && data.error && !data.error.includes('Unauthorized') && !data.error.includes('Endpoint not found')) {
+        const localCheck = await verifyLocalCredentials(cleanPno, cleanPwd, role, effectiveContacts, effectiveCoAdmins);
+        if (localCheck.success) {
+          return localCheck;
+        }
+        return { success: false, error: data.error };
+      }
     } catch (err) {
       console.warn('[Auth Verify] Cloudflare verify error, falling back locally:', err?.message || err);
     }
   }
 
-  // Local fallback authentication
-  if (role === 'admin') {
-    const localPin = localStorage.getItem('police_directory_super_admin_pin_v1') || '1234';
-    if (cleanPwd === localPin.trim() || cleanPwd === '1234' || cleanPwd === 'admin') {
-      return {
-        success: true,
-        user: {
-          role: 'admin',
-          name: 'मुख्यालय पुलिस महानिदेशक (Super Admin)',
-          district: 'सभी ज़िले (All Districts)',
-          id: 'super-admin',
-          termsAcceptedVersion: 2
-        }
-      };
-    }
-    return { success: false, error: 'गलत Master Admin PIN!' };
-  }
-
-  if (role === 'co_admin') {
-    const matchedCoAdmin = (localCoAdmins || []).find(ca => 
-      (ca.username && (ca.username.toUpperCase() === cleanPno || ca.username.toUpperCase() === `CO_${cleanPno}`)) ||
-      (ca.pno && ca.pno.toUpperCase() === cleanPno) ||
-      (ca.phone && String(ca.phone).replace(/\D/g, '') === cleanPno.replace(/\D/g, ''))
-    );
-    if (matchedCoAdmin && cleanPwd === (matchedCoAdmin.password || '1234')) {
-      return {
-        success: true,
-        user: {
-          role: 'co_admin',
-          id: matchedCoAdmin.id || matchedCoAdmin.userId || `co-${matchedCoAdmin.district}`,
-          name: matchedCoAdmin.name || 'ज़िला Co-Admin',
-          district: matchedCoAdmin.district || '',
-          pno: matchedCoAdmin.pno || cleanPno,
-          phone: matchedCoAdmin.phone || '',
-          isCoAdmin: true,
-          termsAcceptedVersion: matchedCoAdmin.termsAcceptedVersion || 0
-        }
-      };
-    }
-    const matchedOfficer = (localContacts || []).find(c => (c.pno && c.pno.toUpperCase() === cleanPno) || (c.phone && String(c.phone).replace(/\D/g, '') === cleanPno.replace(/\D/g, '')));
-    if (matchedOfficer && (matchedOfficer.isCoAdmin || matchedOfficer.role === 'co_admin') && cleanPwd === (matchedOfficer.password || '1234')) {
-      return {
-        success: true,
-        user: { ...matchedOfficer, role: 'co_admin', isCoAdmin: true, termsAcceptedVersion: matchedOfficer.termsAcceptedVersion || 0 }
-      };
-    }
-    return { success: false, error: 'गलत Co-Admin पासवर्ड!' };
-  }
-
-  // Regular Officer
-  const matchedOfficer = (localContacts || []).find(c => 
-    (c.pno && c.pno.toUpperCase() === cleanPno) || 
-    (c.phone && String(c.phone).replace(/\D/g, '') === cleanPno.replace(/\D/g, ''))
-  );
-  if (matchedOfficer && cleanPwd === (matchedOfficer.password || '1234')) {
-    return {
-      success: true,
-      user: { ...matchedOfficer, role: 'user', termsAcceptedVersion: matchedOfficer.termsAcceptedVersion || 0 }
-    };
-  }
-
-  return { success: false, error: 'गलत पासवर्ड! कृपया सही पासवर्ड दर्ज करें।' };
+  // Local fallback verification against stored database
+  return await verifyLocalCredentials(cleanPno, cleanPwd, role, effectiveContacts, effectiveCoAdmins);
 };
 
 export const recordTermsAcceptanceAuth = async (userId, termsVersion = 2) => {

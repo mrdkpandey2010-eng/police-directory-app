@@ -53,12 +53,12 @@ export default function ContactList({
             padding: '3px 8px',
             fontWeight: 600
           }}>
-            ⚡ तीव्र गति हेतु अधिकतम 10 कार्ड प्रदर्शित (विशिष्ट कार्मिक हेतु फ़िल्टर/खोज का उपयोग करें)
+            ⚡ तीव्र गति हेतु अधिकतम 10 कार्मिक प्रदर्शित (विशिष्ट कार्मिक हेतु फ़िल्टर/खोज का उपयोग करें)
           </span>
         )}
       </div>
 
-      <div className="contacts-grid">
+      <div className="contacts-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {contacts.map((contact) => (
           <ContactCard
             key={contact.id}

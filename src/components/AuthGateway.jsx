@@ -268,381 +268,204 @@ export default function AuthGateway({
       justifyContent: 'center',
       padding: '0.75rem 1rem'
     }}>
-      <div style={{
-        width: '100%',
-        maxWidth: stage === 'register_entry' ? '680px' : '480px',
-        background: 'var(--bg-surface, #111827)',
-        border: '1px solid var(--khaki-border, rgba(196, 151, 86, 0.35))',
-        borderTop: '4px solid var(--khaki-primary, #c49756)',
-        borderRadius: 'var(--radius-lg, 12px)',
-        padding: '1.5rem',
-        boxShadow: 'var(--shadow-card, 0 10px 30px rgba(0,0,0,0.5))',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '1.25rem',
-        transition: 'max-width 0.25s ease'
-      }}>
+      <div style={
+        stage === 'pno_entry' || stage === 'password_entry'
+          ? {
+              width: '100%',
+              maxWidth: '340px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          : {
+              width: '100%',
+              maxWidth: stage === 'register_entry' ? '680px' : '480px',
+              background: 'var(--bg-surface, #111827)',
+              border: '1px solid var(--khaki-border, rgba(196, 151, 86, 0.35))',
+              borderTop: '4px solid var(--khaki-primary, #c49756)',
+              borderRadius: 'var(--radius-lg, 12px)',
+              padding: '1.5rem',
+              boxShadow: 'var(--shadow-card, 0 10px 30px rgba(0,0,0,0.5))',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1.25rem',
+              transition: 'max-width 0.25s ease'
+            }
+      }>
 
         {/* ============================================================== */}
-        {/* STAGE 1: ENTER PNO (CLEAN & MINIMAL - NO TABS / NO PASSWORDS)  */}
+        {/* STAGE 1: ENTER PNO (EXTREMELY MINIMAL - INPUT + ARROW ONLY)    */}
         {/* ============================================================== */}
         {stage === 'pno_entry' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            {/* Header */}
-            <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-              <div style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '50%',
-                background: 'rgba(196,151,86,0.15)',
-                border: '2px solid var(--khaki-primary, #c49756)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <Shield size={34} color="var(--khaki-primary, #c49756)" />
-              </div>
-              <h1 style={{
-                margin: 0,
-                fontSize: '1.25rem',
-                fontWeight: 800,
-                color: 'var(--khaki-light, #dfb97e)',
-                letterSpacing: '0.02em'
-              }}>
-                उत्तर प्रदेश पुलिस • विभागीय पोर्टल
-              </h1>
-              <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8' }}>
-                विभागीय कार्मिक सत्यापन (PNO Verification)
-              </p>
-            </div>
-
-            {/* Error Message */}
-            {pnoError && (
-              <div style={{
-                background: 'rgba(239,68,68,0.15)',
-                border: '1px solid #ef4444',
-                color: '#fca5a5',
-                padding: '0.75rem 1rem',
-                borderRadius: '8px',
-                fontSize: '0.82rem',
-                lineHeight: 1.45,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '8px'
-              }}>
-                <AlertTriangle size={18} style={{ minWidth: '18px', marginTop: '2px' }} />
-                <div style={{ flex: 1 }}>
-                  <span>{pnoError}</span>
-                  {pnoServerError && (
-                    <div style={{ marginTop: '6px' }}>
-                      <button
-                        type="button"
-                        onClick={handlePnoSubmit}
-                        style={{
-                          background: 'rgba(255,255,255,0.15)',
-                          border: '1px solid rgba(255,255,255,0.3)',
-                          color: '#fff',
-                          borderRadius: '6px',
-                          padding: '3px 10px',
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <RefreshCw size={12} />
-                        पुनः प्रयास करें (Retry)
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Form: Single PNO Input + Continue Button */}
-            <form onSubmit={handlePnoSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div className="form-group">
-                <label className="form-label" style={{ fontWeight: 600, color: '#f8fafc' }}>
-                  PNO नंबर (Personal Identification Number)
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="अपना PNO नंबर दर्ज करें (उदा. 987654321)"
-                  value={pnoInput}
-                  onChange={(e) => {
-                    setPnoInput(e.target.value);
-                    if (pnoError) setPnoError('');
-                  }}
-                  autoFocus
-                  required
-                  style={{
-                    fontSize: '1rem',
-                    padding: '0.85rem 1rem',
-                    letterSpacing: '0.04em'
-                  }}
-                />
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>
-                  विभागीय पहचान संख्या (PNO) द्वारा सत्यापन के पश्चात पासवर्ड स्क्रीन प्रदर्शित होगी।
-                </span>
-              </div>
-
+          <form
+            onSubmit={handlePnoSubmit}
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              width: '100%',
+              background: 'rgba(15, 23, 42, 0.95)',
+              border: '1.5px solid var(--khaki-primary, #c49756)',
+              borderRadius: '10px',
+              padding: '4px 6px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
+            }}>
+              <input
+                type="text"
+                value={pnoInput}
+                onChange={(e) => {
+                  setPnoInput(e.target.value);
+                  if (pnoError) setPnoError('');
+                }}
+                placeholder="PNO"
+                aria-label="PNO Number"
+                autoFocus
+                disabled={isVerifyingPno}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#f8fafc',
+                  fontSize: '1.05rem',
+                  fontWeight: 600,
+                  padding: '0.6rem 0.8rem',
+                  letterSpacing: '0.04em'
+                }}
+              />
               <button
                 type="submit"
-                disabled={isVerifyingPno}
-                className="btn btn-primary"
+                disabled={isVerifyingPno || !pnoInput.trim()}
+                aria-label="Submit PNO"
                 style={{
-                  width: '100%',
-                  padding: '0.85rem',
-                  fontSize: '0.98rem',
-                  fontWeight: 700,
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: (isVerifyingPno || !pnoInput.trim()) ? 'rgba(196, 151, 86, 0.3)' : 'var(--khaki-primary, #c49756)',
+                  color: '#0f172a',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '8px',
-                  borderRadius: '8px',
-                  marginTop: '0.25rem'
+                  cursor: (isVerifyingPno || !pnoInput.trim()) ? 'not-allowed' : 'pointer',
+                  flexShrink: 0,
+                  transition: 'all 0.15s ease'
                 }}
               >
                 {isVerifyingPno ? (
-                  <>
-                    <RefreshCw size={18} className="animate-spin" />
-                    <span>सत्यापित किया जा रहा है...</span>
-                  </>
+                  <RefreshCw size={16} className="animate-spin" />
                 ) : (
-                  <>
-                    <span>आगे बढ़ें (Continue)</span>
-                    <ArrowRight size={18} />
-                  </>
+                  <ArrowRight size={18} />
                 )}
               </button>
-            </form>
-          </div>
+            </div>
+
+            {pnoError && (
+              <div style={{
+                fontSize: '0.78rem',
+                color: '#fca5a5',
+                textAlign: 'center',
+                padding: '2px 8px'
+              }}>
+                {pnoError}
+              </div>
+            )}
+          </form>
         )}
 
         {/* ============================================================== */}
-        {/* STAGE 2: DYNAMIC PASSWORD SCREEN (AUTOMATIC ROLE DETECTION)    */}
+        {/* STAGE 2: PASSWORD SCREEN (EXTREMELY MINIMAL - INPUT + ARROW)   */}
         {/* ============================================================== */}
-        {stage === 'password_entry' && verifiedAccount && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            {/* Top Back Navigation & Chip */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setStage('pno_entry');
-                  setLoginError('');
+        {stage === 'password_entry' && (
+          <form
+            onSubmit={handlePasswordSubmit}
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              width: '100%',
+              background: 'rgba(15, 23, 42, 0.95)',
+              border: '1.5px solid var(--khaki-primary, #c49756)',
+              borderRadius: '10px',
+              padding: '4px 6px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
+            }}>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (loginError) setLoginError('');
                 }}
+                placeholder="••••••••"
+                aria-label="Password"
+                autoFocus
+                disabled={isLoggingIn}
                 style={{
-                  background: 'none',
+                  flex: 1,
+                  background: 'transparent',
                   border: 'none',
-                  color: 'var(--khaki-primary, #c49756)',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
+                  outline: 'none',
+                  color: '#f8fafc',
+                  fontSize: '1.05rem',
+                  fontWeight: 600,
+                  padding: '0.6rem 0.8rem',
+                  letterSpacing: '0.08em'
+                }}
+              />
+              <button
+                type="submit"
+                disabled={isLoggingIn || !password.trim()}
+                aria-label="Submit Password"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: (isLoggingIn || !password.trim()) ? 'rgba(196, 151, 86, 0.3)' : 'var(--khaki-primary, #c49756)',
+                  color: '#0f172a',
+                  display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '0.82rem',
-                  padding: 0,
-                  fontWeight: 600
+                  justifyContent: 'center',
+                  cursor: (isLoggingIn || !password.trim()) ? 'not-allowed' : 'pointer',
+                  flexShrink: 0,
+                  transition: 'all 0.15s ease'
                 }}
               >
-                <ArrowLeft size={16} />
-                PNO बदलें (Back)
-              </button>
-
-              <span style={{
-                fontSize: '0.78rem',
-                color: 'var(--khaki-light, #dfb97e)',
-                background: 'rgba(196,151,86,0.15)',
-                padding: '3px 10px',
-                borderRadius: '12px',
-                border: '1px solid rgba(196,151,86,0.3)',
-                fontWeight: 600
-              }}>
-                PNO: {verifiedAccount.pno}
-              </span>
-            </div>
-
-            {/* Dynamic Role Detected Heading */}
-            <div style={{
-              background: verifiedAccount.role === 'admin' 
-                ? 'rgba(239, 68, 68, 0.12)' 
-                : verifiedAccount.role === 'co_admin' 
-                  ? 'rgba(59, 130, 246, 0.12)' 
-                  : 'rgba(196, 151, 86, 0.12)',
-              border: `1px solid ${
-                verifiedAccount.role === 'admin' 
-                  ? '#ef4444' 
-                  : verifiedAccount.role === 'co_admin' 
-                    ? '#3b82f6' 
-                    : 'var(--khaki-primary, #c49756)'
-              }`,
-              borderRadius: '10px',
-              padding: '0.85rem 1rem',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '12px'
-            }}>
-              <div style={{
-                background: verifiedAccount.role === 'admin' 
-                  ? 'rgba(239, 68, 68, 0.25)' 
-                  : verifiedAccount.role === 'co_admin' 
-                    ? 'rgba(59, 130, 246, 0.25)' 
-                    : 'rgba(196, 151, 86, 0.25)',
-                borderRadius: '50%',
-                padding: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginTop: '1px'
-              }}>
-                {verifiedAccount.role === 'admin' ? (
-                  <Award size={22} color="#fca5a5" />
-                ) : verifiedAccount.role === 'co_admin' ? (
-                  <Building size={22} color="#93c5fd" />
+                {isLoggingIn ? (
+                  <RefreshCw size={16} className="animate-spin" />
                 ) : (
-                  <User size={22} color="var(--khaki-primary, #c49756)" />
+                  <ArrowRight size={18} />
                 )}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  color: verifiedAccount.role === 'admin' 
-                    ? '#fca5a5' 
-                    : verifiedAccount.role === 'co_admin' 
-                      ? '#93c5fd' 
-                      : 'var(--khaki-light, #dfb97e)'
-                }}>
-                  {verifiedAccount.role === 'admin' 
-                    ? '👑 मुख्यालय Super Admin सत्यापन' 
-                    : verifiedAccount.role === 'co_admin' 
-                      ? `🏛️ ज़िला Co-Admin • ${verifiedAccount.district || 'अधिकृत ज़िला'}` 
-                      : '👮 अधिकृत पुलिस कार्मिक'}
-                </div>
-                <h3 style={{ margin: '2px 0 0 0', fontSize: '1.05rem', color: '#f8fafc', fontWeight: 700 }}>
-                  {verifiedAccount.role === 'admin' 
-                    ? 'मुख्यालय मास्टर एडमिन लॉगिन' 
-                    : verifiedAccount.role === 'co_admin' 
-                      ? `${verifiedAccount.name} (Co-Admin)` 
-                      : verifiedAccount.name}
-                </h3>
-                <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
-                  {verifiedAccount.role === 'admin' 
-                    ? 'समस्त 75 जनपदों, डेटाबेस एवं सेटिंग्स का पूर्ण प्रशासनिक नियंत्रण' 
-                    : `${verifiedAccount.post || 'अधिकारी'} • जनपद: ${verifiedAccount.district || 'उत्तर प्रदेश'}`}
-                </p>
-              </div>
+              </button>
             </div>
 
-            {/* Error Message */}
             {loginError && (
               <div style={{
-                background: 'rgba(239,68,68,0.15)',
-                border: '1px solid #ef4444',
+                fontSize: '0.78rem',
                 color: '#fca5a5',
-                padding: '0.65rem 0.85rem',
-                borderRadius: '8px',
-                fontSize: '0.82rem',
-                lineHeight: 1.45
+                textAlign: 'center',
+                padding: '2px 8px'
               }}>
                 {loginError}
               </div>
             )}
-
-            {/* Password Form */}
-            <form onSubmit={handlePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div className="form-group">
-                <label className="form-label" style={{ fontWeight: 600, color: '#f8fafc' }}>
-                  {verifiedAccount.role === 'admin' ? 'Master Admin PIN / Password' : 'पासवर्ड (Password)'}
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    className="form-input"
-                    placeholder={verifiedAccount.role === 'admin' ? 'Master PIN दर्ज करें' : 'अपना पासवर्ड दर्ज करें'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoFocus
-                    required
-                    style={{
-                      paddingRight: '2.5rem',
-                      fontSize: '1rem',
-                      paddingTop: '0.8rem',
-                      paddingBottom: '0.8rem'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '10px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: '#94a3b8',
-                      cursor: 'pointer',
-                      padding: '4px'
-                    }}
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoggingIn}
-                className="btn btn-primary"
-                style={{
-                  width: '100%',
-                  padding: '0.85rem',
-                  fontSize: '0.98rem',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  borderRadius: '8px'
-                }}
-              >
-                {isLoggingIn ? (
-                  <>
-                    <RefreshCw size={18} className="animate-spin" />
-                    <span>लॉगिन किया जा रहा है...</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock size={17} />
-                    <span>लॉगिन करें (Login)</span>
-                    <ArrowRight size={17} />
-                  </>
-                )}
-              </button>
-
-              <div style={{ textAlign: 'center', marginTop: '0.25rem' }}>
-                <button
-                  type="button"
-                  onClick={() => alert('पासवर्ड सहायता:\n\nयदि आप अपना पासवर्ड भूल गए हैं, तो कृपया अपने जनपद के अधिकृत Co-Admin अथवा पुलिस मुख्यालय कंट्रोल रूम से संपर्क कर पासवर्ड रीसेट कराएं।')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#94a3b8',
-                    fontSize: '0.78rem',
-                    textDecoration: 'underline',
-                    cursor: 'pointer'
-                  }}
-                >
-                  पासवर्ड भूल गए? (Forgot Password)
-                </button>
-              </div>
-            </form>
-          </div>
+          </form>
         )}
 
         {/* ============================================================== */}
