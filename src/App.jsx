@@ -160,8 +160,22 @@ import {
   saveRecycleBinItemToCloud
 } from './utils/cloudflareR2';
 import { captureFullDeviceTelemetry } from './utils/deviceTelemetry';
+import { 
+  resolveBilingualField, 
+  isBilingualMatch, 
+  matchesSearchQueryBilingual, 
+  getStoredDisplayLanguage, 
+  saveStoredDisplayLanguage 
+} from './utils/bilingual';
 
 export default function App() {
+  const [displayLanguage, setDisplayLanguage] = useState(() => getStoredDisplayLanguage());
+
+  const handleLanguageChange = (lang) => {
+    setDisplayLanguage(lang);
+    saveStoredDisplayLanguage(lang);
+  };
+
   const [contacts, setContacts] = useState([]);
   const [coAdmins, setCoAdmins] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -967,59 +981,38 @@ export default function App() {
 
       // 1. Role / Policy Scoping: If user is explicitly restricted to specific district(s)
       if (currentUser?.isRestricted && currentUser?.district) {
-        const userDist = (currentUser.district || '').trim().toLowerCase();
-        const contactDist = (c.district || '').trim().toLowerCase();
-        if (userDist && contactDist !== userDist) return false;
+        if (!isBilingualMatch(currentUser.district, c.district, 'district')) return false;
       } else if (Array.isArray(currentUser?.allowedDistricts) && currentUser.allowedDistricts.length > 0) {
-        const contactDist = (c.district || '').trim().toLowerCase();
-        const isAllowed = currentUser.allowedDistricts.some(d => (d || '').trim().toLowerCase() === contactDist);
+        const isAllowed = currentUser.allowedDistricts.some(d => isBilingualMatch(d, c.district, 'district'));
         if (!isAllowed) return false;
       }
 
       // 2. Default Home Screen: Logged-in user's own police station or office (Requirement 1)
       if (userDistrictScope === 'my_office') {
-        const userDist = (currentUser.district || '').trim().toLowerCase();
-        const userOff = (currentUser.office || '').trim().toLowerCase();
-        const contactDist = (c.district || '').trim().toLowerCase();
-        const contactOff = (c.office || '').trim().toLowerCase();
-
-        if (userDist && contactDist !== userDist) return false;
-        if (userOff && contactOff !== userOff) return false;
+        if (!isBilingualMatch(currentUser.district, c.district, 'district')) return false;
+        if (!isBilingualMatch(currentUser.office, c.office, 'office')) return false;
       } else if (userDistrictScope === 'my_district') {
-        const userDist = (currentUser.district || '').trim().toLowerCase();
-        const contactDist = (c.district || '').trim().toLowerCase();
-        if (userDist && contactDist !== userDist) return false;
+        if (!isBilingualMatch(currentUser.district, c.district, 'district')) return false;
       }
 
       // 3. Explicit District Filter
-      if (selectedDistrict && (c.district || '').trim().toLowerCase() !== selectedDistrict.trim().toLowerCase()) {
+      if (selectedDistrict && !isBilingualMatch(selectedDistrict, c.district, 'district')) {
         return false;
       }
 
       // 4. Explicit Office / Thana Filter
-      if (selectedOffice && (c.office || '').trim().toLowerCase() !== selectedOffice.trim().toLowerCase()) {
+      if (selectedOffice && !isBilingualMatch(selectedOffice, c.office, 'office')) {
         return false;
       }
 
       // 5. Explicit Post / Rank Filter
-      if (selectedPost && (c.post || '').trim().toLowerCase() !== selectedPost.trim().toLowerCase()) {
+      if (selectedPost && !isBilingualMatch(selectedPost, c.post, 'post')) {
         return false;
       }
 
-      // 6. Free Text Search matching (PNO, mobile, name, office, police station, district, post)
+      // 6. Free Text Search matching (bilingual: PNO, mobile, name, office, police station, district, post)
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const cleanQueryDigits = q.replace(/\D/g, '');
-        const cleanPhoneDigits = (c.phone || '').replace(/\D/g, '');
-
-        const matchesName = (c.name || '').toLowerCase().includes(q);
-        const matchesPno = (c.pno || '').toLowerCase().includes(q);
-        const matchesPhone = (cleanQueryDigits.length >= 3 && cleanPhoneDigits.includes(cleanQueryDigits)) || (c.phone || '').toLowerCase().includes(q);
-        const matchesDistrict = (c.district || '').toLowerCase().includes(q);
-        const matchesPost = (c.post || '').toLowerCase().includes(q);
-        const matchesOffice = (c.office || '').toLowerCase().includes(q);
-
-        if (!matchesName && !matchesPno && !matchesPhone && !matchesDistrict && !matchesPost && !matchesOffice) {
+        if (!matchesSearchQueryBilingual(c, searchQuery)) {
           return false;
         }
       }
@@ -1027,15 +1020,17 @@ export default function App() {
       return true;
     });
 
-    // Deterministic ordering for results (Section 5: name in Hindi locale, then PNO)
+    // Deterministic ordering for results (Section 5: name in current locale, then PNO)
     matches.sort((a, b) => {
-      const nameComp = (a.name || '').localeCompare(b.name || '', 'hi');
+      const nameA = resolveBilingualField('name', a, displayLanguage) || a.name || '';
+      const nameB = resolveBilingualField('name', b, displayLanguage) || b.name || '';
+      const nameComp = nameA.localeCompare(nameB, displayLanguage === 'en' ? 'en' : 'hi');
       if (nameComp !== 0) return nameComp;
       return (a.pno || '').localeCompare(b.pno || '');
     });
 
     return matches;
-  }, [contacts, searchQuery, selectedDistrict, selectedPost, selectedOffice, currentUser, userDistrictScope]);
+  }, [contacts, searchQuery, selectedDistrict, selectedPost, selectedOffice, currentUser, userDistrictScope, displayLanguage]);
 
   // Maximum 200 Contact Cards displayed on home screen (Section 5)
   const displayedContacts = useMemo(() => {
@@ -1830,9 +1825,9 @@ export default function App() {
 
   const hasActiveFilters = Boolean(
     searchQuery || 
-    (selectedDistrict && (currentUser?.role === 'admin' || userDistrictScope === 'all' || selectedDistrict !== currentUser?.district)) || 
+    (selectedDistrict && (currentUser?.role === 'admin' || userDistrictScope === 'all' || !isBilingualMatch(selectedDistrict, currentUser?.district, 'district'))) || 
     selectedPost || 
-    (selectedOffice && (userDistrictScope === 'all' || selectedOffice !== (currentUser?.office || '')))
+    (selectedOffice && (userDistrictScope === 'all' || !isBilingualMatch(selectedOffice, currentUser?.office || '', 'office')))
   );
 
   // Scoped pending counts
@@ -1973,6 +1968,8 @@ export default function App() {
 
       {/* Official Uttar Pradesh Police Top Header Bar */}
       <Header
+        displayLanguage={displayLanguage}
+        onLanguageChange={handleLanguageChange}
         currentUser={currentUser}
         userDistrictScope={userDistrictScope}
         selectedDistrict={selectedDistrict}
@@ -2229,11 +2226,32 @@ export default function App() {
           gap: '6px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--khaki-light, #dfb97e)', fontWeight: 700 }}>सक्रिय फ़िल्टर:</span>
-            {selectedDistrict && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>ज़िला: {selectedDistrict}</span>}
-            {selectedOffice && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>थाना/कार्यालय: {selectedOffice}</span>}
-            {selectedPost && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>पद: {selectedPost}</span>}
-            {searchQuery && <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>सर्च: "{searchQuery}"</span>}
+            <span style={{ color: 'var(--khaki-light, #dfb97e)', fontWeight: 700 }}>
+              {displayLanguage === 'en' ? 'Active Filters:' : 'सक्रिय फ़िल्टर:'}
+            </span>
+            {selectedDistrict && (
+              <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>
+                {displayLanguage === 'en' ? 'District: ' : 'ज़िला: '}
+                {resolveBilingualField('district', selectedDistrict, displayLanguage)}
+              </span>
+            )}
+            {selectedOffice && (
+              <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>
+                {displayLanguage === 'en' ? 'Thana/Office: ' : 'थाना/कार्यालय: '}
+                {resolveBilingualField('office', selectedOffice, displayLanguage)}
+              </span>
+            )}
+            {selectedPost && (
+              <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>
+                {displayLanguage === 'en' ? 'Post: ' : 'पद: '}
+                {resolveBilingualField('post', selectedPost, displayLanguage)}
+              </span>
+            )}
+            {searchQuery && (
+              <span className="pill" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>
+                {displayLanguage === 'en' ? 'Search: ' : 'सर्च: '}"{searchQuery}"
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button 
@@ -2249,9 +2267,9 @@ export default function App() {
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
-              title="डिफ़ॉल्ट कार्यालय के संपर्क देखें"
+              title={displayLanguage === 'en' ? 'View default office contacts' : 'डिफ़ॉल्ट कार्यालय के संपर्क देखें'}
             >
-              ✕ डिफ़ॉल्ट पर वापस जाएं
+              ✕ {displayLanguage === 'en' ? 'Back to Default' : 'डिफ़ॉल्ट पर वापस जाएं'}
             </button>
           </div>
         </div>
@@ -2259,6 +2277,7 @@ export default function App() {
 
       {/* Contact Cards Grid (Scoped by authenticated district - Max 10 cards displayed for load reduction) */}
       <ContactList
+        displayLanguage={displayLanguage}
         contacts={displayedContacts}
         totalCount={filteredContacts.length}
         currentUser={currentUser}

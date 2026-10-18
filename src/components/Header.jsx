@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import DistrictOfficeWizardPopup from './DistrictOfficeWizardPopup';
 import InlineSearchPopup from './InlineSearchPopup';
+import { resolveBilingualField } from '../utils/bilingual';
 
 export default function Header({ 
   currentUser, 
@@ -35,7 +36,9 @@ export default function Header({
   onLogout, 
   onResetData,
   onOpenMenu,
-  onNavigateHome
+  onNavigateHome,
+  displayLanguage = 'hi',
+  onLanguageChange
 }) {
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
@@ -101,8 +104,12 @@ export default function Header({
             <MapPin size={14} color="var(--khaki-light, #dfb97e)" style={{ flexShrink: 0 }} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {selectedDistrict 
-                ? (selectedOffice ? `${selectedDistrict} • ${selectedOffice}` : selectedDistrict)
-                : (currentUser?.district || 'जनपद चुनें')}
+                ? (selectedOffice 
+                    ? `${resolveBilingualField('district', selectedDistrict, displayLanguage)} • ${resolveBilingualField('office', selectedOffice, displayLanguage)}` 
+                    : resolveBilingualField('district', selectedDistrict, displayLanguage))
+                : (currentUser?.district 
+                    ? resolveBilingualField('district', currentUser.district, displayLanguage) 
+                    : (displayLanguage === 'en' ? 'Select District' : 'जनपद चुनें'))}
             </span>
             <ChevronDown size={13} color="var(--khaki-primary, #c49756)" style={{ flexShrink: 0, transform: isDistrictPopupOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
           </button>
@@ -128,8 +135,8 @@ export default function Header({
               transition: 'all 0.2s ease',
               flexShrink: 0
             }}
-            title="कर्मचारी खोजें"
-            aria-label="सर्च करें"
+            title={displayLanguage === 'en' ? 'Search Personnel' : 'कर्मचारी खोजें'}
+            aria-label={displayLanguage === 'en' ? 'Search' : 'सर्च करें'}
           >
             <Search size={15} />
           </button>
@@ -143,6 +150,7 @@ export default function Header({
               contacts={contacts}
               currentUser={currentUser}
               initialDistrict={selectedDistrict || currentUser?.district || ''}
+              displayLanguage={displayLanguage}
               onSelectComplete={(data) => {
                 if (onSelectWizardFilters) onSelectWizardFilters(data);
                 setIsDistrictPopupOpen(false);
@@ -164,9 +172,64 @@ export default function Header({
           )}
         </div>
 
-        {/* Header Right Action Area: ONLY Profile (Point 1 & 2) */}
-        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', position: 'relative' }}>
+        {/* Header Right Action Area: Language Selector + Profile (Requirement A) */}
+        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', position: 'relative' }}>
           
+          {/* Bilingual Language Preference Selector (Requirement A) */}
+          <div 
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: 'rgba(0, 0, 0, 0.45)',
+              border: '1px solid var(--khaki-border, rgba(196, 151, 86, 0.35))',
+              borderRadius: '7px',
+              padding: '2px',
+              gap: '2px',
+              flexShrink: 0
+            }}
+            role="group"
+            aria-label="भाषा चयन / Select Language"
+          >
+            <button
+              type="button"
+              onClick={() => onLanguageChange && onLanguageChange('hi')}
+              style={{
+                padding: '3px 7px',
+                fontSize: '0.72rem',
+                fontWeight: displayLanguage === 'hi' ? 700 : 500,
+                background: displayLanguage === 'hi' ? 'var(--khaki-primary, #c49756)' : 'transparent',
+                color: displayLanguage === 'hi' ? '#070e1c' : '#cbd5e1',
+                border: 'none',
+                borderRadius: '5px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                lineHeight: 1.2
+              }}
+              title="हिंदी में संपर्क प्रदर्शित करें"
+            >
+              हिंदी
+            </button>
+            <button
+              type="button"
+              onClick={() => onLanguageChange && onLanguageChange('en')}
+              style={{
+                padding: '3px 7px',
+                fontSize: '0.72rem',
+                fontWeight: displayLanguage === 'en' ? 700 : 500,
+                background: displayLanguage === 'en' ? 'var(--khaki-primary, #c49756)' : 'transparent',
+                color: displayLanguage === 'en' ? '#070e1c' : '#cbd5e1',
+                border: 'none',
+                borderRadius: '5px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                lineHeight: 1.2
+              }}
+              title="Display contacts in English"
+            >
+              English
+            </button>
+          </div>
+
           {/* User Profile Pill with Logout and Feedback options on click */}
           {isLoggedIn ? (
             <div style={{ position: 'relative' }} ref={profileMenuRef}>
@@ -210,10 +273,14 @@ export default function Header({
                 </div>
                 <div style={{ textAlign: 'left' }} className="hide-on-mobile">
                   <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f1f5f9', lineHeight: 1.1 }}>
-                    {currentUser.name}
+                    {resolveBilingualField('name', currentUser, displayLanguage)}
                   </div>
                   <div style={{ fontSize: '0.68rem', color: 'var(--khaki-light, #dfb97e)' }}>
-                    {isAdmin ? 'Super Admin' : isCoAdmin ? `Co-Admin (${currentUser.district})` : currentUser.post}
+                    {isAdmin 
+                      ? 'Super Admin' 
+                      : isCoAdmin 
+                        ? `Co-Admin (${resolveBilingualField('district', currentUser?.district, displayLanguage)})` 
+                        : resolveBilingualField('post', currentUser?.post, displayLanguage)}
                   </div>
                 </div>
                 <ChevronDown size={14} color="var(--khaki-primary, #c49756)" style={{ transition: 'transform 0.2s', transform: isProfileMenuOpen ? 'rotate(180deg)' : 'none' }} />

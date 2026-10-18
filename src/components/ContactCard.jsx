@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { canViewPhoneNumber, requestPhonePermission } from '../utils/storage';
 import { callManager } from '../utils/webrtc';
+import { resolveBilingualField } from '../utils/bilingual';
 
 export default function ContactCard({ 
   contact, 
@@ -18,7 +19,8 @@ export default function ContactCard({
   onRevokeCoAdmin,
   onDelete,
   onOpenChatWithContact,
-  onPermissionUpdated
+  onPermissionUpdated,
+  displayLanguage = 'hi'
 }) {
   const [copied, setCopied] = useState(false);
   const [requestStatus, setRequestStatus] = useState(null);
@@ -90,6 +92,11 @@ export default function ContactCard({
     return cleanName.charAt(0).toUpperCase();
   };
 
+  const resolvedName = resolveBilingualField('name', contact, displayLanguage);
+  const resolvedPost = resolveBilingualField('post', contact, displayLanguage);
+  const resolvedDistrict = resolveBilingualField('district', contact, displayLanguage);
+  const resolvedOffice = resolveBilingualField('office', contact, displayLanguage);
+
   return (
     <>
       {/* ---------------- 1. COMPACT CONTACT LIST ROW ---------------- */}
@@ -127,8 +134,8 @@ export default function ContactCard({
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis'
-          }} title={contact.name}>
-            {contact.name}
+          }} title={resolvedName}>
+            {resolvedName}
           </div>
           <div style={{
             fontSize: '0.78rem',
@@ -138,7 +145,7 @@ export default function ContactCard({
             overflow: 'hidden',
             textOverflow: 'ellipsis'
           }}>
-            {isPhoneVisible ? contact.phone : 'XXXXXXXX (गोपनीय नंबर)'}
+            {isPhoneVisible ? contact.phone : (displayLanguage === 'en' ? 'XXXXXXXX (Confidential Number)' : 'XXXXXXXX (गोपनीय नंबर)')}
           </div>
         </div>
 
@@ -154,8 +161,8 @@ export default function ContactCard({
               e.stopPropagation();
               handleStartInAppCall();
             }}
-            title={`${contact.name} को इन-ऐप सुरक्षित कॉल करें`}
-            aria-label="इन-ऐप कॉल"
+            title={displayLanguage === 'en' ? `Make in-app secure call to ${resolvedName}` : `${resolvedName} को इन-ऐप सुरक्षित कॉल करें`}
+            aria-label={displayLanguage === 'en' ? 'In-app call' : 'इन-ऐप कॉल'}
             style={{
               width: '34px',
               height: '34px',
@@ -178,8 +185,8 @@ export default function ContactCard({
             <a
               href={`tel:${cleanPhone}`}
               onClick={(e) => e.stopPropagation()}
-              title={`${contact.name} को फोन कॉल करें`}
-              aria-label="फोन कॉल"
+              title={displayLanguage === 'en' ? `Call ${resolvedName}` : `${resolvedName} को फोन कॉल करें`}
+              aria-label={displayLanguage === 'en' ? 'Phone call' : 'फोन कॉल'}
               style={{
                 width: '34px',
                 height: '34px',
@@ -204,8 +211,8 @@ export default function ContactCard({
                 e.stopPropagation();
                 handleRequestAccess();
               }}
-              title="नंबर देखने की अनुमति मांगें"
-              aria-label="फोन कॉल (अनुमति आवश्यक)"
+              title={displayLanguage === 'en' ? 'Request permission to view phone number' : 'नंबर देखने की अनुमति मांगें'}
+              aria-label={displayLanguage === 'en' ? 'Request phone permission' : 'फोन कॉल (अनुमति आवश्यक)'}
               style={{
                 width: '34px',
                 height: '34px',
@@ -230,8 +237,8 @@ export default function ContactCard({
               e.stopPropagation();
               if (onOpenChatWithContact) onOpenChatWithContact(contact);
             }}
-            title={`${contact.name} को संदेश भेजें`}
-            aria-label="संदेश भेजें"
+            title={displayLanguage === 'en' ? `Send message to ${resolvedName}` : `${resolvedName} को संदेश भेजें`}
+            aria-label={displayLanguage === 'en' ? 'Send message' : 'संदेश भेजें'}
             style={{
               width: '34px',
               height: '34px',
@@ -271,7 +278,7 @@ export default function ContactCard({
             <div className="modal-header" style={{ paddingBottom: '0.65rem', marginBottom: '0.75rem' }}>
               <div className="modal-title" style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ShieldCheck size={18} color="var(--khaki-primary, #c49756)" />
-                <span>पुलिस अधिकारी विवरण (Officer Details)</span>
+                <span>{displayLanguage === 'en' ? 'Officer Details' : 'पुलिस अधिकारी विवरण (Officer Details)'}</span>
               </div>
               <button 
                 type="button" 
@@ -315,16 +322,16 @@ export default function ContactCard({
                     {contact.uniformPhoto ? (
                       <img 
                         src={contact.uniformPhoto} 
-                        alt={contact.name} 
+                        alt={resolvedName} 
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                       />
                     ) : (
-                      getInitial(contact.name)
+                      getInitial(resolvedName)
                     )}
                   </div>
                   {contact.uniformPhoto && (
                     <span 
-                      title="वर्दी फोटो सत्यापित (Uniform Verified)"
+                      title={displayLanguage === 'en' ? 'Uniform Verified' : 'वर्दी फोटो सत्यापित (Uniform Verified)'}
                       style={{
                         position: 'absolute',
                         bottom: -3,
@@ -341,7 +348,7 @@ export default function ContactCard({
                   )}
                   {/* Live Online Presence Indicator Dot on Avatar */}
                   <span 
-                    title={isOnline ? "🟢 ऑनलाइन (Online Now)" : "⚪ ऑफ़लाइन (Offline)"}
+                    title={isOnline ? (displayLanguage === 'en' ? "🟢 Online" : "🟢 ऑनलाइन (Online Now)") : (displayLanguage === 'en' ? "⚪ Offline" : "⚪ ऑफ़लाइन (Offline)")}
                     style={{
                       position: 'absolute',
                       top: -3,
@@ -368,8 +375,8 @@ export default function ContactCard({
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis'
-                    }} title={contact.name}>
-                      {contact.name}
+                    }} title={resolvedName}>
+                      {resolvedName}
                     </h3>
                     {contact.isCoAdmin && (
                       <span style={{ fontSize: '0.68rem', background: 'rgba(59,130,246,0.2)', color: '#93c5fd', border: '1px solid rgba(59,130,246,0.3)', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
@@ -395,7 +402,7 @@ export default function ContactCard({
                         gap: '4px'
                       }}>
                         <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981' }} />
-                        ऑनलाइन
+                        {displayLanguage === 'en' ? 'Online' : 'ऑनलाइन'}
                       </span>
                     ) : (
                       <span style={{
@@ -411,7 +418,7 @@ export default function ContactCard({
                         gap: '3px'
                       }}>
                         <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#64748b', display: 'inline-block' }} />
-                        ऑफ़लाइन
+                        {displayLanguage === 'en' ? 'Offline' : 'ऑफ़लाइन'}
                       </span>
                     )}
                   </div>
@@ -424,7 +431,7 @@ export default function ContactCard({
                     borderRadius: '4px',
                     marginTop: '2px'
                   }}>
-                    {contact.post}
+                    {resolvedPost}
                   </span>
                 </div>
               </div>
@@ -443,11 +450,11 @@ export default function ContactCard({
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <MapPin size={13} color="var(--khaki-primary)" />
-                  <span>ज़िला: <strong style={{ color: '#e2e8f0' }}>{contact.district}</strong></span>
+                  <span>{displayLanguage === 'en' ? 'District: ' : 'ज़िला: '}<strong style={{ color: '#e2e8f0' }}>{resolvedDistrict}</strong></span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Building2 size={13} color="var(--khaki-primary)" />
-                  <span>कार्यालय/थाना: <strong style={{ color: '#e2e8f0' }}>{contact.office}</strong></span>
+                  <span>{displayLanguage === 'en' ? 'Office / Station: ' : 'कार्यालय/थाना: '}<strong style={{ color: '#e2e8f0' }}>{resolvedOffice}</strong></span>
                 </div>
 
                 {/* Phone Number Row with Privacy Masking */}
@@ -461,7 +468,7 @@ export default function ContactCard({
                     ) : (
                       <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '0.74rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <EyeOff size={12} color="#f59e0b" />
-                        <span>XXXXXXXX (गोपनीय नंबर)</span>
+                        <span>{displayLanguage === 'en' ? 'XXXXXXXX (Confidential Number)' : 'XXXXXXXX (गोपनीय नंबर)'}</span>
                       </span>
                     )}
                   </div>
@@ -477,7 +484,7 @@ export default function ContactCard({
                         padding: '2px 4px',
                         borderRadius: '4px'
                       }}
-                      title="नंबर कॉपी करें"
+                      title={displayLanguage === 'en' ? 'Copy number' : 'नंबर कॉपी करें'}
                     >
                       {copied ? <Check size={13} /> : <Copy size={13} />}
                     </button>
@@ -491,7 +498,7 @@ export default function ContactCard({
                           background: existingReq.status === 'approved' ? 'rgba(16,185,129,0.2)' : existingReq.status === 'rejected' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
                           color: existingReq.status === 'approved' ? '#34d399' : existingReq.status === 'rejected' ? '#fca5a5' : '#fcd34d'
                         }}>
-                          {existingReq.status === 'approved' ? 'स्वीकृत' : existingReq.status === 'rejected' ? 'अस्वीकृत' : '⏳ लंबित'}
+                          {existingReq.status === 'approved' ? (displayLanguage === 'en' ? 'Approved' : 'स्वीकृत') : existingReq.status === 'rejected' ? (displayLanguage === 'en' ? 'Rejected' : 'अस्वीकृत') : (displayLanguage === 'en' ? '⏳ Pending' : '⏳ लंबित')}
                         </span>
                       ) : (
                         <button
@@ -510,10 +517,10 @@ export default function ContactCard({
                             alignItems: 'center',
                             gap: '3px'
                           }}
-                          title="अधिकारी से मोबाइल नंबर देखने हेतु अनुमति मांगें"
+                          title={displayLanguage === 'en' ? 'Request permission to view phone number' : 'अधिकारी से मोबाइल नंबर देखने हेतु अनुमति मांगें'}
                         >
                           <KeyRound size={10} />
-                          <span>अनुमति मांगें</span>
+                          <span>{displayLanguage === 'en' ? 'Request Access' : 'अनुमति मांगें'}</span>
                         </button>
                       )}
                     </div>
@@ -532,7 +539,7 @@ export default function ContactCard({
                   type="button"
                   onClick={handleStartInAppCall}
                   className="btn btn-call"
-                  title={`${contact.name} को इन-ऐप सुरक्षित वॉइस कॉल करें (अधिकतम 05 मिनट)`}
+                  title={displayLanguage === 'en' ? `Make in-app secure voice call to ${resolvedName} (Max 5 mins)` : `${resolvedName} को इन-ऐप सुरक्षित वॉइस कॉल करें (अधिकतम 05 मिनट)`}
                   style={{
                     padding: '0.45rem 0.35rem',
                     fontSize: '0.78rem',
@@ -549,7 +556,7 @@ export default function ContactCard({
                   }}
                 >
                   <PhoneCall size={13} />
-                  <span>इन-ऐप कॉल</span>
+                  <span>{displayLanguage === 'en' ? 'In-App Call' : 'इन-ऐप कॉल'}</span>
                 </button>
 
                 {/* Button 2: Direct Phone Call */}
@@ -557,7 +564,7 @@ export default function ContactCard({
                   <a 
                     href={`tel:${cleanPhone}`} 
                     className="btn btn-secondary" 
-                    title={`${contact.name} के मोबाइल पर डायरेक्ट सिम कॉल करें`}
+                    title={displayLanguage === 'en' ? `Call ${resolvedName}` : `${resolvedName} के मोबाइल पर डायरेक्ट सिम कॉल करें`}
                     style={{
                       padding: '0.45rem 0.35rem',
                       fontSize: '0.78rem',
@@ -574,7 +581,7 @@ export default function ContactCard({
                     }}
                   >
                     <Phone size={13} />
-                    <span>फोन कॉल</span>
+                    <span>{displayLanguage === 'en' ? 'Phone Call' : 'फोन कॉल'}</span>
                   </a>
                 )}
 
@@ -586,7 +593,7 @@ export default function ContactCard({
                     if (onOpenChatWithContact) onOpenChatWithContact(contact);
                   }}
                   className="btn btn-primary"
-                  title={`${contact.name} को आधिकारिक विभागीय संदेश भेजें`}
+                  title={displayLanguage === 'en' ? `Send official departmental message to ${resolvedName}` : `${resolvedName} को आधिकारिक विभागीय संदेश भेजें`}
                   style={{
                     padding: '0.45rem 0.35rem',
                     fontSize: '0.78rem',
@@ -603,7 +610,7 @@ export default function ContactCard({
                   }}
                 >
                   <Mail size={13} />
-                  <span>संदेश भेजें</span>
+                  <span>{displayLanguage === 'en' ? 'Message' : 'संदेश भेजें'}</span>
                 </button>
               </div>
 

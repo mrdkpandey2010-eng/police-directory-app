@@ -2,16 +2,18 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import WheelPicker from './WheelPicker';
 import { ALL_UP_DISTRICTS, STANDARD_POLICE_POSTS } from '../data/mockContacts';
+import { resolveBilingualField, isBilingualMatch } from '../utils/bilingual';
 
 /**
  * DistrictOfficeWizardPopup
  * Minimal, compact 3-stage wheel scroller popup:
  * Sequence: 1. District (जनपद) -> 2. Police Station (थाना) -> 3. Designation (पद)
  * Features:
- * - At least 5 visible items at each stage in the 3D drum wheel picker.
+ * - At least 5 visible items at each stage in the 3D drum wheel picker (up to 11).
  * - Zero search inputs, zero headlines, zero instructions across all stages.
  * - Uniform style with compact golden arrow icon button only (no text buttons).
  * - Smooth back navigation (<) and close (✕) controls.
+ * - Bilingual display support (Hindi/English).
  */
 export default function DistrictOfficeWizardPopup({
   districts = [],
@@ -20,6 +22,7 @@ export default function DistrictOfficeWizardPopup({
   contacts = [],
   currentUser = null,
   initialDistrict = '',
+  displayLanguage = 'hi',
   onSelectComplete,
   onClose
 }) {
@@ -27,7 +30,9 @@ export default function DistrictOfficeWizardPopup({
 
   // 3 Stages in sequence: 'district' -> 'office' -> 'post'
   const [stage, setStage] = useState('district');
-  const [selectedDist, setSelectedDist] = useState(initialDistrict || '');
+  const [selectedDist, setSelectedDist] = useState(() => {
+    return initialDistrict ? resolveBilingualField('district', initialDistrict, displayLanguage) : '';
+  });
   const [selectedOff, setSelectedOff] = useState('');
   const [selectedPost, setSelectedPost] = useState('');
 
@@ -58,7 +63,7 @@ export default function DistrictOfficeWizardPopup({
     let list = Array.isArray(districts) && districts.length > 0 ? districts : ALL_UP_DISTRICTS;
     list = list.filter(d => {
       const name = typeof d === 'object' ? d.name : d;
-      return name && name !== 'सभी ज़िले (All Districts)' && name !== 'सभी ज़िले';
+      return name && !name.includes('सभी ज़िले') && !name.toLowerCase().includes('all districts');
     });
 
     // Auto-heal if list is too small
@@ -89,34 +94,36 @@ export default function DistrictOfficeWizardPopup({
     return list;
   }, [districts, currentUser]);
 
-  // Safe diagnostic log
-  useEffect(() => {
-    console.log(`[District Wheel Selector] Loaded ${authorizedDistricts.length} authorized districts for role: ${currentUser?.role || 'guest'}`);
-  }, [authorizedDistricts.length, currentUser?.role]);
+  // Localized districts for wheel display
+  const displayDistricts = useMemo(() => {
+    const list = authorizedDistricts.map(d => {
+      const name = typeof d === 'object' ? d.name : d;
+      return resolveBilingualField('district', name, displayLanguage);
+    });
+    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b, displayLanguage === 'en' ? 'en' : 'hi'));
+  }, [authorizedDistricts, displayLanguage]);
 
   // Initialize selected district
   useEffect(() => {
-    if (!selectedDist && authorizedDistricts.length > 0) {
-      const first = typeof authorizedDistricts[0] === 'object' ? authorizedDistricts[0].name : authorizedDistricts[0];
-      setSelectedDist(first);
+    if (!selectedDist && displayDistricts.length > 0) {
+      setSelectedDist(displayDistricts[0]);
     }
-  }, [authorizedDistricts, selectedDist]);
+  }, [displayDistricts, selectedDist]);
 
   // Stage 2: Available Thanas / Offices in selected District
   const availableOffices = useMemo(() => {
     if (!selectedDist) return [];
 
     const officeSet = new Set();
-    const cleanDist = selectedDist.trim().toLowerCase();
 
     // From master offices list
     if (Array.isArray(offices)) {
       offices.forEach(o => {
         const name = typeof o === 'string' ? o : o.name;
         const dist = typeof o === 'object' ? o.district : null;
-        if (name && !name.includes('सभी कार्यालय/थाने') && !name.includes('सभी')) {
-          if (!dist || dist.trim().toLowerCase() === cleanDist) {
-            officeSet.add(name.trim());
+        if (name && !name.includes('सभी') && !name.toLowerCase().includes('all')) {
+          if (!dist || isBilingualMatch(selectedDist, dist, 'district')) {
+            officeSet.add(resolveBilingualField('office', name.trim(), displayLanguage));
           }
         }
       });
@@ -125,10 +132,10 @@ export default function DistrictOfficeWizardPopup({
     // Also collect offices from actual contacts in this district
     if (Array.isArray(contacts)) {
       contacts.forEach(c => {
-        if (c.district && c.district.trim().toLowerCase() === cleanDist && c.office) {
+        if (c.district && isBilingualMatch(selectedDist, c.district, 'district') && c.office) {
           const off = c.office.trim();
-          if (off && !off.includes('सभी')) {
-            officeSet.add(off);
+          if (off && !off.includes('सभी') && !off.toLowerCase().includes('all')) {
+            officeSet.add(resolveBilingualField('office', off, displayLanguage));
           }
         }
       });
@@ -136,20 +143,29 @@ export default function DistrictOfficeWizardPopup({
 
     // Fallback standard police stations for district if database has zero custom stations registered yet
     if (officeSet.size === 0) {
-      const standard = [
-        `थाना कोतवाली (${selectedDist})`,
-        `थाना सिविल लाइन्स (${selectedDist})`,
-        `महिला थाना (${selectedDist})`,
-        `यातायात पुलिस लाइन (${selectedDist})`,
-        `पुलिस कार्यालय / एसपी ऑफिस (${selectedDist})`,
-        `अपराध शाखा / क्राइम ब्रांच (${selectedDist})`
+      const distName = resolveBilingualField('district', selectedDist, displayLanguage);
+      const standard = displayLanguage === 'en' ? [
+        `Kotwali Police Station (${distName})`,
+        `Civil Lines Police Station (${distName})`,
+        `Mahila Police Station (${distName})`,
+        `Traffic Police Line (${distName})`,
+        `Police Office / SP Office (${distName})`,
+        `Crime Branch (${distName})`
+      ] : [
+        `थाना कोतवाली (${distName})`,
+        `थाना सिविल लाइन्स (${distName})`,
+        `महिला थाना (${distName})`,
+        `यातायात पुलिस लाइन (${distName})`,
+        `पुलिस कार्यालय / एसपी ऑफिस (${distName})`,
+        `अपराध शाखा / क्राइम ब्रांच (${distName})`
       ];
       standard.forEach(s => officeSet.add(s));
     }
 
-    const sorted = Array.from(officeSet).sort((a, b) => a.localeCompare(b, 'hi'));
-    return ['सभी थाने / कार्यालय (All Stations)', ...sorted];
-  }, [offices, contacts, selectedDist]);
+    const sorted = Array.from(officeSet).sort((a, b) => a.localeCompare(b, displayLanguage === 'en' ? 'en' : 'hi'));
+    const allLabel = displayLanguage === 'en' ? 'All Stations / Offices' : 'सभी थाने / कार्यालय (All Stations)';
+    return [allLabel, ...sorted];
+  }, [offices, contacts, selectedDist, displayLanguage]);
 
   // Initialize selected office when entering office stage or when district changes
   useEffect(() => {
@@ -163,28 +179,29 @@ export default function DistrictOfficeWizardPopup({
   // Stage 3: Available Designations / Posts (for selected district and thana)
   const availablePosts = useMemo(() => {
     const list = Array.isArray(posts) && posts.length > 0 ? posts : STANDARD_POLICE_POSTS;
-    const cleanMaster = list.filter(p => p && p !== 'सभी पद (All Posts)' && p !== 'सभी पद');
+    const cleanMaster = list
+      .filter(p => p && !p.includes('सभी पद') && !p.toLowerCase().includes('all posts'))
+      .map(p => resolveBilingualField('post', p, displayLanguage));
 
     // Find designations specifically present in this district & thana
     const officePosts = new Set();
-    const cleanDist = (selectedDist || '').trim().toLowerCase();
-    const cleanOff = (selectedOff || '').trim().toLowerCase();
-    const isAllOffices = !cleanOff || cleanOff.includes('सभी');
+    const isAllOffices = !selectedOff || selectedOff.includes('सभी') || selectedOff.toLowerCase().includes('all');
 
-    if (cleanDist && Array.isArray(contacts)) {
+    if (selectedDist && Array.isArray(contacts)) {
       contacts.forEach(c => {
-        const cDist = (c.district || '').trim().toLowerCase();
-        const cOff = (c.office || '').trim().toLowerCase();
-        if (cDist === cleanDist && (isAllOffices || cOff === cleanOff) && c.post) {
-          officePosts.add(c.post.trim());
+        const cDistMatch = isBilingualMatch(selectedDist, c.district, 'district');
+        const cOffMatch = isAllOffices || isBilingualMatch(selectedOff, c.office, 'office');
+        if (cDistMatch && cOffMatch && c.post) {
+          officePosts.add(resolveBilingualField('post', c.post.trim(), displayLanguage));
         }
       });
     }
 
     // Combine office-specific posts first, then master posts list
     const combined = Array.from(new Set([...officePosts, ...cleanMaster]));
-    return ['सभी पद (All Posts)', ...combined];
-  }, [posts, contacts, selectedDist, selectedOff]);
+    const allPostsLabel = displayLanguage === 'en' ? 'All Posts' : 'सभी पद (All Posts)';
+    return [allPostsLabel, ...combined];
+  }, [posts, contacts, selectedDist, selectedOff, displayLanguage]);
 
   // Initialize selected post when entering post stage
   useEffect(() => {
@@ -197,9 +214,8 @@ export default function DistrictOfficeWizardPopup({
 
   // Action: Confirm District -> Move to Thanas stage
   const handleConfirmDistrict = () => {
-    if (!selectedDist && authorizedDistricts.length > 0) {
-      const first = typeof authorizedDistricts[0] === 'object' ? authorizedDistricts[0].name : authorizedDistricts[0];
-      setSelectedDist(first);
+    if (!selectedDist && displayDistricts.length > 0) {
+      setSelectedDist(displayDistricts[0]);
     }
     setStage('office');
   };
@@ -214,8 +230,8 @@ export default function DistrictOfficeWizardPopup({
 
   // Action: Confirm Designation (पद) -> Filter directory & close popup
   const handleConfirmPost = () => {
-    const finalOffice = (!selectedOff || selectedOff.includes('सभी थाने')) ? '' : selectedOff;
-    const finalPost = (!selectedPost || selectedPost.includes('सभी पद')) ? '' : selectedPost;
+    const finalOffice = (!selectedOff || selectedOff.includes('सभी') || selectedOff.toLowerCase().includes('all')) ? '' : selectedOff;
+    const finalPost = (!selectedPost || selectedPost.includes('सभी') || selectedPost.toLowerCase().includes('all')) ? '' : selectedPost;
 
     if (onSelectComplete) {
       onSelectComplete({
@@ -277,8 +293,8 @@ export default function DistrictOfficeWizardPopup({
               justifyContent: 'center',
               transition: 'background 0.15s ease'
             }}
-            title="जनपद व्हील पर वापस जाएं"
-            aria-label="पीछे जाएं"
+            title={displayLanguage === 'en' ? 'Back to Districts' : 'जनपद व्हील पर वापस जाएं'}
+            aria-label={displayLanguage === 'en' ? 'Go Back' : 'पीछे जाएं'}
           >
             <ArrowLeft size={16} />
           </button>
@@ -300,8 +316,8 @@ export default function DistrictOfficeWizardPopup({
               justifyContent: 'center',
               transition: 'background 0.15s ease'
             }}
-            title="थाना व्हील पर वापस जाएं"
-            aria-label="पीछे जाएं"
+            title={displayLanguage === 'en' ? 'Back to Police Stations' : 'थाना व्हील पर वापस जाएं'}
+            aria-label={displayLanguage === 'en' ? 'Go Back' : 'पीछे जाएं'}
           >
             <ArrowLeft size={16} />
           </button>
@@ -322,8 +338,8 @@ export default function DistrictOfficeWizardPopup({
             borderRadius: '4px',
             transition: 'color 0.15s ease'
           }}
-          aria-label="बंद करें"
-          title="बंद करें"
+          aria-label={displayLanguage === 'en' ? 'Close' : 'बंद करें'}
+          title={displayLanguage === 'en' ? 'Close' : 'बंद करें'}
           onMouseEnter={e => e.currentTarget.style.color = '#ffffff'}
           onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
         >
@@ -335,7 +351,7 @@ export default function DistrictOfficeWizardPopup({
       {stage === 'district' && (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <WheelPicker
-            items={authorizedDistricts}
+            items={displayDistricts}
             selectedValue={selectedDist}
             onValueChange={(val) => {
               const name = typeof val === 'object' ? val.name : val;
@@ -343,8 +359,8 @@ export default function DistrictOfficeWizardPopup({
             }}
             itemHeight={34}
             visibleCount={11}
-            ariaLabel="जनपद व्हील स्क्रोलर"
-            placeholder="कोई जनपद उपलब्ध नहीं"
+            ariaLabel={displayLanguage === 'en' ? 'District Wheel Scroller' : 'जनपद व्हील स्क्रोलर'}
+            placeholder={displayLanguage === 'en' ? 'No districts available' : 'कोई जनपद उपलब्ध नहीं'}
           />
 
           {/* Compact Arrow Icon Button Only (No text button) */}
@@ -366,8 +382,8 @@ export default function DistrictOfficeWizardPopup({
                 boxShadow: '0 4px 14px rgba(196, 151, 86, 0.45)',
                 transition: 'transform 0.15s ease, box-shadow 0.15s ease'
               }}
-              title={`${selectedDist} के थाने देखें`}
-              aria-label="थाने देखें"
+              title={displayLanguage === 'en' ? `View stations in ${selectedDist}` : `${selectedDist} के थाने देखें`}
+              aria-label={displayLanguage === 'en' ? 'View stations' : 'थाने देखें'}
               onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
               onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
             >
@@ -389,8 +405,8 @@ export default function DistrictOfficeWizardPopup({
             }}
             itemHeight={34}
             visibleCount={11}
-            ariaLabel="थाना/कार्यालय व्हील स्क्रोलर"
-            placeholder="इस जनपद में कोई थाना नहीं मिला"
+            ariaLabel={displayLanguage === 'en' ? 'Station/Office Wheel Scroller' : 'थाना/कार्यालय व्हील स्क्रोलर'}
+            placeholder={displayLanguage === 'en' ? 'No stations found in this district' : 'इस जनपद में कोई थाना नहीं मिला'}
           />
 
           {/* Compact Arrow Icon Button Only (Advances to Post stage) */}
@@ -412,8 +428,8 @@ export default function DistrictOfficeWizardPopup({
                 boxShadow: '0 4px 14px rgba(196, 151, 86, 0.45)',
                 transition: 'transform 0.15s ease, box-shadow 0.15s ease'
               }}
-              title={`${selectedOff || 'थाने'} के पद देखें`}
-              aria-label="पद देखें"
+              title={displayLanguage === 'en' ? `View posts in ${selectedOff || 'stations'}` : `${selectedOff || 'थाने'} के पद देखें`}
+              aria-label={displayLanguage === 'en' ? 'View posts' : 'पद देखें'}
               onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
               onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
             >
@@ -435,8 +451,8 @@ export default function DistrictOfficeWizardPopup({
             }}
             itemHeight={34}
             visibleCount={11}
-            ariaLabel="पद/रैंक व्हील स्क्रोलर"
-            placeholder="कोई पद उपलब्ध नहीं"
+            ariaLabel={displayLanguage === 'en' ? 'Post/Rank Wheel Scroller' : 'पद/रैंक व्हील स्क्रोलर'}
+            placeholder={displayLanguage === 'en' ? 'No posts available' : 'कोई पद उपलब्ध नहीं'}
           />
 
           {/* Compact Arrow Icon Button Only (Applies filter and displays contacts) */}
@@ -458,8 +474,8 @@ export default function DistrictOfficeWizardPopup({
                 boxShadow: '0 4px 14px rgba(196, 151, 86, 0.45)',
                 transition: 'transform 0.15s ease, box-shadow 0.15s ease'
               }}
-              title="संपर्क देखें"
-              aria-label="संपर्क देखें"
+              title={displayLanguage === 'en' ? 'View Contacts' : 'संपर्क देखें'}
+              aria-label={displayLanguage === 'en' ? 'View Contacts' : 'संपर्क देखें'}
               onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
               onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
             >
