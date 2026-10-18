@@ -29,6 +29,8 @@ export {
   saveCloudflareChat as saveFirestoreChat,
   createCloudflareGroupChat as createFirestoreGroupChat,
   saveCloudflareDistricts as saveFirestoreDistricts,
+  fetchCloudflareDistricts,
+  fetchCloudflareDistricts as fetchFirestoreDistricts,
   saveCloudflarePosts as saveFirestorePosts,
   saveCloudflareOffices as saveFirestoreOffices,
   saveCloudflareCoAdmins as saveFirestoreCoAdmins,

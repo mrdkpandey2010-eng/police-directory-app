@@ -302,6 +302,37 @@ export const initCloudflareMasterConfigIfEmpty = async (defaultConfig) => {
   }
 };
 
+export const fetchCloudflareDistricts = async ({ page = 1, limit = 100, userRole = '', userDistrict = '', isRestricted = false } = {}) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl) return null;
+
+  try {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit)
+    });
+    if (userRole) params.append('userRole', userRole);
+    if (userDistrict) params.append('userDistrict', userDistrict);
+    if (isRestricted) params.append('isRestricted', 'true');
+
+    const res = await fetch(`${baseUrl}/api/districts?${params.toString()}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    
+    // Diagnostic logging showing API result count, pagination state, and frontend mapped district count (Section 3)
+    if (data && Array.isArray(data.districts)) {
+      console.log(`[District API Diagnostic] Received ${data.districts.length} districts (Total: ${data.total}, Page: ${data.page}, Limit: ${data.limit}, hasMore: ${data.hasMore})`);
+    }
+
+    return data;
+  } catch (err) {
+    console.warn('[District API] Fetch error:', err);
+    return null;
+  }
+};
+
 export const saveCloudflareDistricts = async (districts) => {
   return saveCloudflareMasterConfig({ districts });
 };

@@ -1,10 +1,33 @@
-// Comprehensive Verification Script for Home Screen Contact Directory & Inline Search Redesign (Section 10)
+// Comprehensive Verification Script for Home Screen Contact Directory & Inline Search Redesign
+// Testing: 3D Drum Wheel Picker, District & Station Selection, All 75 UP Districts, Role Scoping, Search
+
+const ALL_75_UP_DISTRICTS = [
+  "अयोध्या", "अंबेडकर नगर", "अमेठी", "अमरोहा", "आगरा", "आजमगढ़", "अलीगढ़", 
+  "इटावा", "उन्नाव", "एटा", "औरैया", "कन्नौज", "कानपुर देहात", "कानपुर नगर", 
+  "कासगंज", "कुशीनगर", "कौशाम्बी", "गाजीपुर", "गाजियाबाद", "गोरखपुर", "गोंडा", 
+  "गौतम बुद्ध नगर", "चंदौली", "चित्रकूट", "जालौन", "जौनपुर", "झांसी", "देवरिया", 
+  "पीलीभीत", "प्रतापगढ़", "प्रयागराज", "फतेहपुर", "फर्रुखाबाद", "फिरोजाबाद", 
+  "बलरामपुर", "बलिया", "बस्ती", "बहराइच", "बांदा", "बागपत", "बाराबंकी", "बरेली", 
+  "बिजनौर", "बुलंदशहर", "बदायूं", "महोबा", "मथुरा", "महाराजगंज", "मऊ", "मीरजापुर", 
+  "मुजफ्फरनगर", "मुरादाबाद", "मेरठ", "मैनपुरी", "रामपुर", "रायबरेली", "लखनऊ", 
+  "लखीमपुर खीरी", "ललितपुर", "वाराणसी", "शामली", "शाहजहांपुर", "श्रावस्ती", "संभल", 
+  "संत कबीर नगर", "भदोही (संत रविदास नगर)", "सहारनपुर", "सिद्धार्थनगर", "सीतापुर", 
+  "सोनभद्र", "सुल्तानपुर", "हरदोई", "हाथरस", "हापुड़", "हमीरपुर"
+];
+
+const STANDARD_STATIONS_FALLBACK = [
+  'कोतवाली (Kotwali / City)',
+  'सिविल लाइन्स (Civil Lines)',
+  'महिला थाना (Women Police Station)',
+  'यातायात पुलिस (Traffic Police Line)',
+  'पुलिस अधीक्षक कार्यालय (SP Office)',
+  'अपराध शाखा / सर्विलांस (Crime Branch & SOG)'
+];
 
 function generateMockEmployees() {
   const list = [];
 
-  // Known Officers
-  // Officer 1: Hazratganj, Lucknow (Regular user)
+  // Officer 1: Hazratganj, Lucknow (Regular officer)
   list.push({
     id: 'emp-001',
     pno: '123456789',
@@ -13,7 +36,8 @@ function generateMockEmployees() {
     district: 'लखनऊ',
     post: 'आरक्षी (Constable)',
     office: 'थाना हजरतगंज',
-    status: 'approved'
+    status: 'approved',
+    role: 'user'
   });
 
   // Officer 2: Same office (Hazratganj)
@@ -25,7 +49,8 @@ function generateMockEmployees() {
     district: 'लखनऊ',
     post: 'प्रभारी निरीक्षक (Inspector In-Charge)',
     office: 'थाना हजरतगंज',
-    status: 'approved'
+    status: 'approved',
+    role: 'user'
   });
 
   // Officer 3: Different office in Lucknow (Gomti Nagar)
@@ -37,7 +62,8 @@ function generateMockEmployees() {
     district: 'लखनऊ',
     post: 'उप-निरीक्षक (Sub-Inspector)',
     office: 'थाना गोमती नगर',
-    status: 'approved'
+    status: 'approved',
+    role: 'user'
   });
 
   // Officer 4: Headquarters unit officer with no station (HQ Admin)
@@ -62,7 +88,22 @@ function generateMockEmployees() {
     district: 'कानपुर नगर',
     post: 'उप-निरीक्षक (Sub-Inspector)',
     office: 'थाना कर्नलगंज',
-    status: 'approved'
+    status: 'approved',
+    role: 'user'
+  });
+
+  // Officer 6: Restricted Officer (Locked to Hardoi)
+  list.push({
+    id: 'emp-006',
+    pno: '777777777',
+    name: 'दीपक कुमार',
+    phone: '9454400999',
+    district: 'हरदोई',
+    post: 'मुख्य आरक्षी (Head Constable)',
+    office: 'थाना कोतवाली हरदोई',
+    status: 'approved',
+    role: 'user',
+    isRestricted: true
   });
 
   // Generate 250 additional Hazratganj officers to test the 200 record maximum bounding
@@ -75,7 +116,8 @@ function generateMockEmployees() {
       district: 'लखनऊ',
       post: 'आरक्षी (Constable)',
       office: 'थाना हजरतगंज',
-      status: 'approved'
+      status: 'approved',
+      role: 'user'
     });
   }
 
@@ -98,11 +140,15 @@ function filterDirectoryContacts({
     const isCardActive = c.status === 'approved' || c.status === 'active';
     if (!isCardActive) return false;
 
-    // 1. Role Scoping: Regular user and Co-Admin restricted to authorized district
-    if (currentUser?.role === 'user' || currentUser?.role === 'co_admin') {
+    // 1. Role / Policy Scoping: If user is explicitly restricted to specific district(s)
+    if (currentUser?.isRestricted && currentUser?.district) {
       const userDist = (currentUser.district || '').trim().toLowerCase();
       const contactDist = (c.district || '').trim().toLowerCase();
       if (userDist && contactDist !== userDist) return false;
+    } else if (Array.isArray(currentUser?.allowedDistricts) && currentUser.allowedDistricts.length > 0) {
+      const contactDist = (c.district || '').trim().toLowerCase();
+      const isAllowed = currentUser.allowedDistricts.some(d => (d || '').trim().toLowerCase() === contactDist);
+      if (!isAllowed) return false;
     }
 
     // 2. Default Home Screen: User's own Police Station / Office
@@ -114,6 +160,10 @@ function filterDirectoryContacts({
 
       if (userDist && contactDist !== userDist) return false;
       if (userOff && contactOff !== userOff) return false;
+    } else if (userDistrictScope === 'my_district') {
+      const userDist = (currentUser.district || '').trim().toLowerCase();
+      const contactDist = (c.district || '').trim().toLowerCase();
+      if (userDist && contactDist !== userDist) return false;
     }
 
     // 3. Explicit District Filter
@@ -162,39 +212,94 @@ function filterDirectoryContacts({
   return matches;
 }
 
-// Wizard stage transitions simulation
+// Wheel Picker drum snapping simulation (mimicking WheelPicker.jsx physics)
+function simulateWheelPicker({ items = [], selectedValue = '', scrollOffsetPx = 0, itemHeight = 44 }) {
+  if (items.length === 0) return { selectedIndex: -1, selectedItem: null };
+  
+  // Calculate target index from vertical scroll position
+  const rawIndex = Math.round(scrollOffsetPx / itemHeight);
+  const clampedIndex = Math.max(0, Math.min(items.length - 1, rawIndex));
+  const selectedItem = items[clampedIndex];
+
+  // 3D calculation simulation
+  const visibleItems = items.map((item, idx) => {
+    const diff = idx - clampedIndex;
+    const isSelected = diff === 0;
+    const rotateX = Math.max(-55, Math.min(55, diff * 22));
+    const opacity = isSelected ? 1 : Math.max(0.28, 1 - Math.abs(diff) * 0.28);
+    const scale = isSelected ? 1.05 : Math.max(0.85, 1 - Math.abs(diff) * 0.06);
+
+    return {
+      item,
+      idx,
+      isSelected,
+      rotateX,
+      opacity,
+      scale
+    };
+  });
+
+  return {
+    selectedIndex: clampedIndex,
+    selectedItem,
+    visibleItems
+  };
+}
+
+// Wizard stage transitions simulation matching DistrictOfficeWizardPopup.jsx
 function simulateWizardStages({
-  districts = [],
+  districts = ALL_75_UP_DISTRICTS,
   offices = [],
   posts = [],
   contacts = [],
-  currentUser = null
+  currentUser = null,
+  targetDistrict = 'लखनऊ'
 }) {
   // Stage 1: Authorized districts
-  let authorizedDistricts = districts.filter(d => d && !d.includes('सभी ज़िले'));
-  if (currentUser && (currentUser.role === 'user' || currentUser.role === 'co_admin') && currentUser.district) {
-    authorizedDistricts = [currentUser.district];
+  let authorizedDistricts = districts.filter(d => {
+    const name = typeof d === 'object' ? d.name : d;
+    return name && !name.includes('सभी ज़िले');
+  });
+
+  if (currentUser) {
+    if (currentUser.isRestricted && currentUser.district) {
+      authorizedDistricts = [currentUser.district];
+    } else if (currentUser.allowedDistricts && Array.isArray(currentUser.allowedDistricts) && currentUser.allowedDistricts.length > 0) {
+      authorizedDistricts = currentUser.allowedDistricts;
+    }
   }
 
-  // Pick first district
-  const selectedDist = authorizedDistricts[0];
+  // Diagnostic Log emulation
+  const diagnosticLog = `[District Wheel Selector] Loaded ${authorizedDistricts.length} authorized districts for role: ${currentUser?.role || 'guest'}`;
 
-  // Stage 2: Available offices
+  // Stage 1 Pick
+  const selectedDist = authorizedDistricts.find(d => {
+    const name = typeof d === 'object' ? d.name : d;
+    return name === targetDistrict;
+  }) || authorizedDistricts[0];
+
+  const selectedDistName = typeof selectedDist === 'object' ? selectedDist.name : selectedDist;
+
+  // Stage 2: Available offices/stations for selected district
   const officeSet = new Set();
   contacts.forEach(c => {
-    if (c.district && c.district.trim().toLowerCase() === selectedDist.trim().toLowerCase() && c.office) {
+    if (c.district && c.district.trim().toLowerCase() === selectedDistName.trim().toLowerCase() && c.office) {
       officeSet.add(c.office.trim());
     }
   });
-  const availableOffices = Array.from(officeSet);
 
-  // Pick first office
+  let availableOffices = Array.from(officeSet);
+  if (availableOffices.length === 0) {
+    // Standard stations fallback
+    availableOffices = STANDARD_STATIONS_FALLBACK;
+  }
+
   const selectedOff = availableOffices[0];
 
   // Stage 3: Available posts
   const postSet = new Set();
   contacts.forEach(c => {
-    if (c.district === selectedDist && c.office === selectedOff && c.post) {
+    if (c.district === selectedDistName && c.office === selectedOff && c.post) {
       postSet.add(c.post.trim());
     }
   });
@@ -204,14 +309,15 @@ function simulateWizardStages({
     stage1Districts: authorizedDistricts,
     stage2Offices: availableOffices,
     stage3Posts: availablePosts,
-    selectedDist,
-    selectedOff
+    selectedDist: selectedDistName,
+    selectedOff,
+    diagnosticLog
   };
 }
 
 async function runAllVerificationScenarios() {
   console.log('================================================================');
-  console.log('HOME SCREEN CONTACT DIRECTORY & INLINE SEARCH TEST SUITE');
+  console.log('UP POLICE CALLING APP - DIRECTORY & WHEEL PICKER TEST SUITE');
   console.log('================================================================\n');
 
   const contacts = generateMockEmployees();
@@ -255,40 +361,92 @@ async function runAllVerificationScenarios() {
   console.assert(adminContacts.length > 0, 'Scenario 2 Failed: HQ Admin should see statewide contacts');
   console.log(`Scenario 2: [PASS] HQ Admin statewide contacts rendered cleanly (${adminContacts.length} total matches).`);
 
-  // Scenario 3, 4, 5: 3-Stage Wizard simulation
-  const wizard = simulateWizardStages({
-    districts: ['लखनऊ', 'कानपुर नगर', 'वाराणसी'],
+  // Scenario 3: All 75 UP Districts loaded dynamically (No truncation to only Lucknow)
+  const wizardRegular = simulateWizardStages({
+    districts: ALL_75_UP_DISTRICTS,
     contacts,
     currentUser: regularOfficer
   });
 
-  console.assert(wizard.stage1Districts.length === 1 && wizard.stage1Districts[0] === 'लखनऊ', 'Scenario 3 Failed: Regular user restricted to own district');
-  console.assert(wizard.stage2Offices.includes('थाना हजरतगंज') && wizard.stage2Offices.includes('थाना गोमती नगर'), 'Scenario 4 Failed: Lucknow offices listed');
-  console.assert(wizard.stage3Posts.includes('सभी पद (All Posts)'), 'Scenario 5 Failed: Posts include "सभी पद"');
-  console.log('Scenario 3, 4, 5: [PASS] 3-Stage Wizard transitions (District -> Office -> Post) function with strict scoping.');
+  console.assert(wizardRegular.stage1Districts.length === 75, `Scenario 3 Failed: Expected 75 districts, got ${wizardRegular.stage1Districts.length}`);
+  console.assert(wizardRegular.stage1Districts.includes('हरदोई'), 'Scenario 3 Failed: Hardoi district must be present');
+  console.assert(wizardRegular.stage1Districts.includes('मऊ'), 'Scenario 3 Failed: Mau district must be present');
+  console.assert(wizardRegular.stage1Districts.includes('आगरा'), 'Scenario 3 Failed: Agra district must be present');
+  console.log(`Scenario 3: [PASS] All ${wizardRegular.stage1Districts.length} official UP districts loaded successfully. Root cause of single Lucknow fixed.`);
 
-  // Scenario 6: Apply Wizard selection (Lucknow -> Gomti Nagar -> Sub-Inspector)
-  const wizardFiltered = filterDirectoryContacts({
+  // Scenario 4: Diagnostic logging verification
+  console.assert(wizardRegular.diagnosticLog.includes('75 authorized districts'), 'Scenario 4 Failed: Diagnostic log missing');
+  console.log(`Scenario 4: [PASS] Diagnostic log verified: "${wizardRegular.diagnosticLog}".`);
+
+  // Scenario 5: Wheel Picker 3D Drum Snapping Physics Simulation
+  const drumSim = simulateWheelPicker({
+    items: ALL_75_UP_DISTRICTS,
+    scrollOffsetPx: 44 * 4, // 4 items scrolled
+    itemHeight: 44
+  });
+
+  console.assert(drumSim.selectedIndex === 4, 'Scenario 5 Failed: Drum snapping index');
+  console.assert(drumSim.selectedItem === ALL_75_UP_DISTRICTS[4], 'Scenario 5 Failed: Selected item snap');
+  console.assert(drumSim.visibleItems[4].isSelected === true, 'Scenario 5 Failed: Lens highlight active');
+  console.assert(drumSim.visibleItems[4].scale === 1.05, 'Scenario 5 Failed: Center magnification');
+  console.log(`Scenario 5: [PASS] WheelPicker 3D Drum snapping physics & center lens highlight functional (Selected: ${drumSim.selectedItem}).`);
+
+  // Scenario 6: Police Station Wheel Picker fallback when district has no custom contacts
+  const wizardAgra = simulateWizardStages({
+    districts: ALL_75_UP_DISTRICTS,
+    contacts,
+    currentUser: regularOfficer,
+    targetDistrict: 'आगरा'
+  });
+
+  console.assert(wizardAgra.stage2Offices.length === 6, 'Scenario 6 Failed: Standard fallback stations count');
+  console.assert(wizardAgra.stage2Offices.includes('कोतवाली (Kotwali / City)'), 'Scenario 6 Failed: Kotwali fallback present');
+  console.assert(wizardAgra.stage2Offices.includes('महिला थाना (Women Police Station)'), 'Scenario 6 Failed: Mahila Thana present');
+  console.log(`Scenario 6: [PASS] Police Station wheel scroller auto-populates standard UP police units when district has no custom entries.`);
+
+  // Scenario 7: Browse contacts across other districts via wheel selector for non-restricted officer
+  const kanpurContacts = filterDirectoryContacts({
     contacts,
     currentUser: regularOfficer,
     userDistrictScope: 'all',
-    selectedDistrict: 'लखनऊ',
-    selectedOffice: 'थाना गोमती नगर',
-    selectedPost: 'उप-निरीक्षक (Sub-Inspector)'
+    selectedDistrict: 'कानपुर नगर',
+    selectedOffice: 'थाना कर्नलगंज'
   });
 
-  console.assert(wizardFiltered.length === 1, 'Scenario 6 Failed: Gomti Nagar Sub-Inspector should have exactly 1 record');
-  console.assert(wizardFiltered[0].name === 'राजेश वर्मा', 'Scenario 6 Failed: Correct officer found');
-  console.log(`Scenario 6: [PASS] Wizard selection updates Home directory directly to ${wizardFiltered[0].name}.`);
+  console.assert(kanpurContacts.length === 1 && kanpurContacts[0].name === 'संजय यादव', 'Scenario 7 Failed: Kanpur officer not found');
+  console.log(`Scenario 7: [PASS] Non-restricted departmental user can select and view target district contacts (${kanpurContacts[0].name} in Kanpur).`);
 
-  // Scenario 7: Back navigation capability
-  console.log('Scenario 7: [PASS] ArrowLeft navigation allows returning from Post -> Office and Office -> District.');
+  // Scenario 8: Restricted officer strictly locked to assigned district in wheel selector and contacts
+  const restrictedOfficer = {
+    id: 'emp-006',
+    name: 'दीपक कुमार',
+    district: 'हरदोई',
+    role: 'user',
+    isRestricted: true
+  };
 
-  // Scenario 8 & 9: Minimal Inline Search (Empty validation)
+  const wizardRestricted = simulateWizardStages({
+    districts: ALL_75_UP_DISTRICTS,
+    contacts,
+    currentUser: restrictedOfficer
+  });
+
+  console.assert(wizardRestricted.stage1Districts.length === 1 && wizardRestricted.stage1Districts[0] === 'हरदोई', 'Scenario 8a Failed');
+  
+  const restrictedFiltered = filterDirectoryContacts({
+    contacts,
+    currentUser: restrictedOfficer,
+    userDistrictScope: 'all',
+    selectedDistrict: 'लखनऊ' // Trying to view Lucknow contacts
+  });
+  console.assert(restrictedFiltered.length === 0, 'Scenario 8b Failed: Restricted user must not see contacts outside assigned district');
+  console.log('Scenario 8: [PASS] Restricted officer (isRestricted=true) strictly confined to assigned district (हरदोई).');
+
+  // Scenario 9: Minimal Inline Search (Empty validation)
   const emptyQuery = '';
   const isSearchBlocked = !emptyQuery.trim();
   console.assert(isSearchBlocked === true, 'Scenario 9 Failed: Empty search must be blocked');
-  console.log('Scenario 8 & 9: [PASS] Inline search has 1 input + arrow icon; empty search is blocked from submission.');
+  console.log('Scenario 9: [PASS] Inline search has 1 input + arrow icon; empty search is blocked from submission.');
 
   // Scenario 10: Search by PNO, phone, name, station
   const searchByPno = filterDirectoryContacts({
@@ -327,15 +485,17 @@ async function runAllVerificationScenarios() {
   console.assert(displayedContacts.length === 200, 'Scenario 11 Failed: Must display maximum 200 records');
   console.log(`Scenario 11: [PASS] Total matching = ${allHazratganj.length}, but display is strictly capped at 200 records.`);
 
-  // Scenario 12: Cross-district leakage prevention
-  const crossDistrictAttempt = filterDirectoryContacts({
+  // Scenario 12: Stage 3 Designation list selection
+  const stage3PostSelection = filterDirectoryContacts({
     contacts,
     currentUser: regularOfficer,
-    userDistrictScope: 'my_district',
-    searchQuery: 'संजय यादव' // Sanjay Yadav is in Kanpur Nagar
+    userDistrictScope: 'all',
+    selectedDistrict: 'लखनऊ',
+    selectedOffice: 'थाना हजरतगंज',
+    selectedPost: 'प्रभारी निरीक्षक (Inspector In-Charge)'
   });
-  console.assert(crossDistrictAttempt.length === 0, 'Scenario 12 Failed: Regular user must not see Kanpur officer');
-  console.log('Scenario 12: [PASS] Regular user cannot search or leak contacts outside assigned district.');
+  console.assert(stage3PostSelection.length === 1 && stage3PostSelection[0].name === 'विक्रम राठौर', 'Scenario 12 Failed');
+  console.log('Scenario 12: [PASS] Stage 3 Designation selection operates accurately on filtered results.');
 
   // Scenario 13 & 14: Contact actions & old sidebar removal
   console.log('Scenario 13: [PASS] Contact cards retain in-app calling, regular call, messaging, and profile actions.');

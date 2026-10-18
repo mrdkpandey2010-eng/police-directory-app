@@ -491,19 +491,29 @@ export const getOfficesForDistrict = (officesList, districtName) => {
 export const getStoredDistricts = () => {
   try {
     const saved = localStorage.getItem(DISTRICTS_KEY);
-    if (!saved) {
-      localStorage.setItem(DISTRICTS_KEY, JSON.stringify(DEFAULT_DISTRICTS));
-      return DEFAULT_DISTRICTS;
+    let list = saved ? JSON.parse(saved) : null;
+    
+    // Auto-heal if list is missing, corrupt, or truncated (< 70 districts)
+    if (!Array.isArray(list) || list.length < 70) {
+      const mergedSet = new Set(ALL_UP_DISTRICTS);
+      if (Array.isArray(list)) {
+        list.forEach(d => {
+          const name = typeof d === 'object' ? d.name : d;
+          if (name && typeof name === 'string' && name.trim()) {
+            mergedSet.add(name.trim());
+          }
+        });
+      }
+      const fullList = Array.from(mergedSet);
+      try {
+        localStorage.setItem(DISTRICTS_KEY, JSON.stringify(fullList));
+      } catch (e) {}
+      idbSet(DISTRICTS_KEY, fullList);
+      return fullList;
     }
-    const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed) || parsed.length <= 1) {
-      localStorage.setItem(DISTRICTS_KEY, JSON.stringify(DEFAULT_DISTRICTS));
-      idbSet(DISTRICTS_KEY, DEFAULT_DISTRICTS);
-      return DEFAULT_DISTRICTS;
-    }
-    return parsed;
+    return list;
   } catch (err) {
-    return DEFAULT_DISTRICTS;
+    return ALL_UP_DISTRICTS;
   }
 };
 

@@ -41,6 +41,7 @@ import {
   processOfflineSyncQueue,
   saveFirestoreMasterConfig,
   saveFirestoreDistricts,
+  fetchCloudflareDistricts,
   saveFirestorePosts,
   saveFirestoreOffices,
   saveFirestoreCoAdmins,
@@ -323,9 +324,22 @@ export default function App() {
     setFeedbacks(getStoredFeedbacks());
     setChats(getStoredChats());
     setPosts(getStoredPosts());
-    setOffices(getStoredOffices());
-    setDistricts(getStoredDistricts());
-    setTerms(getStoredTerms());
+    const initialDistricts = getStoredDistricts();
+    setDistricts(initialDistricts);
+    console.log(`[Frontend District Mapping Diagnostic] Initialized ${initialDistricts.length} districts from local storage/database.`);
+
+    // Synchronize full districts list from Cloudflare API if available (Section 3)
+    if (navigator.onLine && isFirebaseConfigured()) {
+      fetchCloudflareDistricts().then(res => {
+        if (res && Array.isArray(res.districts) && res.districts.length > 0) {
+          const cloudNames = res.districts.map(d => typeof d === 'object' ? d.name : d);
+          const merged = Array.from(new Set([...initialDistricts, ...cloudNames]));
+          setDistricts(merged);
+          saveDistricts(merged);
+          console.log(`[Frontend District Mapping Diagnostic] Synchronized ${merged.length} districts from API (Total in DB: ${res.total}).`);
+        }
+      }).catch(err => console.warn('[District API] Initial fetch notice:', err));
+    }
     setPolicies(getStoredPolicies());
     setPhonePermissions(getStoredPhonePermissions());
     setCallLogs(getStoredCallLogs());
@@ -547,10 +561,14 @@ export default function App() {
     const unsubscribe = subscribeToFirestoreMasterConfig((cloudConfig) => {
       if (!cloudConfig) return;
 
-      // 1. Sync Districts across all devices
-      if (Array.isArray(cloudConfig.districts) && cloudConfig.districts.length > 1) {
+      // 1. Sync Districts across all devices without overwriting with truncated list
+      if (Array.isArray(cloudConfig.districts) && cloudConfig.districts.length >= 70) {
         setDistricts(cloudConfig.districts);
         saveDistricts(cloudConfig.districts);
+      } else if (Array.isArray(cloudConfig.districts) && cloudConfig.districts.length > 0) {
+        const merged = Array.from(new Set([...getStoredDistricts(), ...cloudConfig.districts]));
+        setDistricts(merged);
+        saveDistricts(merged);
       }
 
       // 2. Sync Posts across all devices
@@ -947,11 +965,15 @@ export default function App() {
       const isCardActive = c.status === 'approved' || c.status === 'active';
       if (!isCardActive) return false;
 
-      // 1. Role Scoping: Regular User & Co-Admin strictly cannot access other districts
-      if (currentUser?.role === 'user' || currentUser?.role === 'co_admin') {
+      // 1. Role / Policy Scoping: If user is explicitly restricted to specific district(s)
+      if (currentUser?.isRestricted && currentUser?.district) {
         const userDist = (currentUser.district || '').trim().toLowerCase();
         const contactDist = (c.district || '').trim().toLowerCase();
         if (userDist && contactDist !== userDist) return false;
+      } else if (Array.isArray(currentUser?.allowedDistricts) && currentUser.allowedDistricts.length > 0) {
+        const contactDist = (c.district || '').trim().toLowerCase();
+        const isAllowed = currentUser.allowedDistricts.some(d => (d || '').trim().toLowerCase() === contactDist);
+        if (!isAllowed) return false;
       }
 
       // 2. Default Home Screen: Logged-in user's own police station or office (Requirement 1)
@@ -963,6 +985,10 @@ export default function App() {
 
         if (userDist && contactDist !== userDist) return false;
         if (userOff && contactOff !== userOff) return false;
+      } else if (userDistrictScope === 'my_district') {
+        const userDist = (currentUser.district || '').trim().toLowerCase();
+        const contactDist = (c.district || '').trim().toLowerCase();
+        if (userDist && contactDist !== userDist) return false;
       }
 
       // 3. Explicit District Filter
@@ -1030,7 +1056,7 @@ export default function App() {
     const trimmed = (query || '').trim();
     if (!trimmed) return;
     setSearchQuery(trimmed);
-    if (currentUser?.role === 'user' || currentUser?.role === 'co_admin') {
+    if (currentUser?.isRestricted && currentUser?.district) {
       setSelectedDistrict(currentUser.district || '');
       setSelectedOffice('');
       setSelectedPost('');

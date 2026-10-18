@@ -661,6 +661,59 @@ export default {
         });
       }
 
+      // 2c. Official UP Districts API: /api/districts (Section 3)
+      if (path === '/api/districts') {
+        const ALL_UP_DISTRICTS_LIST = [
+          "अयोध्या", "अंबेडकर नगर", "अमेठी", "अमरोहा", "आगरा", "आजमगढ़", "अलीगढ़", 
+          "इटावा", "उन्नाव", "एटा", "औरैया", "कन्नौज", "कानपुर देहात", "कानपुर नगर", 
+          "कासगंज", "कुशीनगर", "कौशाम्बी", "गाजीपुर", "गाजियाबाद", "गोरखपुर", "गोंडा", 
+          "गौतम बुद्ध नगर", "चंदौली", "चित्रकूट", "जालौन", "जौनपुर", "झांसी", "देवरिया", 
+          "पीलीभीत", "प्रतापगढ़", "प्रयागराज", "फतेहपुर", "फर्रुखाबाद", "फिरोजाबाद", 
+          "बलरामपुर", "बलिया", "बस्ती", "बहराइच", "बांदा", "बागपत", "बाराबंकी", "बरेली", 
+          "बिजनौर", "बुलंदशहर", "बदायूं", "महोबा", "मथुरा", "महाराजगंज", "मऊ", "मीरजापुर", 
+          "मुजफ्फरनगर", "मुरादाबाद", "मेरठ", "मैनपुरी", "रामपुर", "रायबरेली", "लखनऊ", 
+          "लखीमपुर खीरी", "ललितपुर", "वाराणसी", "शामली", "शाहजहांपुर", "श्रावस्ती", "संभल", 
+          "संत कबीर नगर", "भदोही (संत रविदास नगर)", "सहारनपुर", "सिद्धार्थनगर", "सीतापुर", 
+          "सोनभद्र", "सुल्तानपुर", "हरदोई", "हाथरस", "हापुड़", "हमीरपुर"
+        ];
+
+        let structuredList = ALL_UP_DISTRICTS_LIST.map((name, idx) => ({
+          id: `dist-${String(idx + 1).padStart(2, '0')}`,
+          name,
+          code: `UP-${String(idx + 1).padStart(2, '0')}`
+        }));
+
+        // Role-based authorization scoping
+        const userRole = url.searchParams.get('userRole') || '';
+        const userDistrict = url.searchParams.get('userDistrict') || '';
+        const isRestricted = url.searchParams.get('isRestricted') === 'true';
+
+        if (isRestricted && userDistrict) {
+          structuredList = structuredList.filter(d => d.name.trim().toLowerCase() === userDistrict.trim().toLowerCase());
+        }
+
+        // Pagination parameters
+        const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+        const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit') || '100', 10)));
+        const startIndex = (page - 1) * limit;
+        const paged = structuredList.slice(startIndex, startIndex + limit);
+
+        return new Response(JSON.stringify({
+          success: true,
+          total: structuredList.length,
+          page,
+          limit,
+          hasMore: startIndex + limit < structuredList.length,
+          districts: paged
+        }), {
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=60, stale-while-revalidate=300'
+          }
+        });
+      }
+
       // 3. Master Config: /api/master
       if (path === '/api/master') {
         if (request.method === 'GET') {
