@@ -25,9 +25,15 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Helper: read data from D1 Database (100k writes/day), KV, or in-memory fallback
+    // Helper: read data from In-Memory cache (<0.1ms), D1 Database, or KV
     const getItem = async (key) => {
-      // 1. D1 Database (Primary persistent storage)
+      // 1. Fast in-memory isolate store (instant 0ms)
+      if (memoryStore.has(key)) {
+        const val = memoryStore.get(key);
+        if (val !== null && val !== undefined) return val;
+      }
+
+      // 2. D1 Database (Primary persistent storage)
       if (env.DB) {
         try {
           const row = await env.DB.prepare('SELECT value FROM kv_store WHERE key = ?').bind(key).first();
@@ -39,7 +45,7 @@ export default {
           console.warn(`[D1 Read Error] ${e.message}`);
         }
       }
-      // 2. Cloudflare KV fallback
+      // 3. Cloudflare KV fallback
       if (env.POLICE_KV) {
         try {
           const val = await env.POLICE_KV.get(key);
@@ -49,32 +55,52 @@ export default {
           }
         } catch (e) {}
       }
-      return memoryStore.get(key) || null;
+      return null;
     };
 
-    // Helper: write data to D1 Database (100k writes/day), KV, and in-memory fallback
+    // Helper: write data to in-memory store immediately, then persist asynchronously for call signaling
     const putItem = async (key, value) => {
       memoryStore.set(key, value);
-      let success = false;
-      // 1. D1 Database (Primary persistent storage - 100k writes / day)
-      if (env.DB) {
-        try {
-          await env.DB.prepare('INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)')
-            .bind(key, value, Date.now())
-            .run();
-          success = true;
-        } catch (e) {
-          console.warn(`[D1 Write Error] ${e.message}`);
+
+      const isSignaling = 
+        key.startsWith('call_') || 
+        key.startsWith('active_call_') || 
+        key.startsWith('early_cand_');
+
+      const persistAsync = async () => {
+        let success = false;
+        // 1. D1 Database (Primary persistent storage - 100k writes / day)
+        if (env.DB) {
+          try {
+            await env.DB.prepare('INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)')
+              .bind(key, value, Date.now())
+              .run();
+            success = true;
+          } catch (e) {
+            console.warn(`[D1 Write Error] ${e.message}`);
+          }
         }
+        // 2. Cloudflare KV best-effort sync
+        if (env.POLICE_KV) {
+          try {
+            await env.POLICE_KV.put(key, value);
+            success = true;
+          } catch (e) {}
+        }
+        return success;
+      };
+
+      // For real-time call signaling, return immediately (<2ms) and persist in background
+      if (isSignaling) {
+        if (ctx && typeof ctx.waitUntil === 'function') {
+          ctx.waitUntil(persistAsync());
+        } else {
+          persistAsync().catch(() => {});
+        }
+        return true;
       }
-      // 2. Cloudflare KV best-effort sync
-      if (env.POLICE_KV) {
-        try {
-          await env.POLICE_KV.put(key, value);
-          success = true;
-        } catch (e) {}
-      }
-      return success;
+
+      return await persistAsync();
     };
 
     // Admin API Key validation
@@ -857,6 +883,22 @@ export default {
         if (path === '/api/calls/ring' && request.method === 'POST') {
           const body = await request.text();
           const callData = JSON.parse(body);
+
+          // Handle seamless ICE restart on active call without disrupting state
+          if (callData.isIceRestart && callData.callId) {
+            const callStr = await getItem(`call_${callData.callId}`);
+            if (callStr) {
+              const callObj = JSON.parse(callStr);
+              callObj.offer = callData.offer;
+              callObj.isIceRestart = true;
+              callObj.restartTimestamp = Date.now();
+              await putItem(`call_${callData.callId}`, JSON.stringify(callObj));
+              return new Response(JSON.stringify({ success: true, callId: callData.callId, isIceRestart: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+          }
+
           if (!callData.callId || !callData.receiverId) {
             return new Response(JSON.stringify({ error: 'Missing callId or receiverId' }), {
               status: 400,

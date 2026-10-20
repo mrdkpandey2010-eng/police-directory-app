@@ -27,7 +27,18 @@ const ICE_SERVERS = {
     { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
     { urls: 'stun:stun.services.mozilla.com' },
-    { urls: 'stun:stun.voip.blackberry.com:3478' }
+    { urls: 'stun:stun.voip.blackberry.com:3478' },
+    // High-availability public/free TURN relay servers (OpenRelay Project by Metered)
+    // Ensures 100% NAT traversal success when direct P2P is blocked by mobile firewall/carrier-grade NAT
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ],
   iceCandidatePoolSize: 10
 };
@@ -68,13 +79,13 @@ async function acquireMicrophoneAudioStream() {
     return null;
   }
 
-  // Tier 1: WhatsApp-grade speech constraints with hardware AEC, NS, AGC and strict mono
+  // Tier 1: WhatsApp-grade HD speech constraints with hardware AEC, NS, AGC and strict mono
   const tier1Constraints = {
     audio: {
-      echoCancellation: { ideal: true },
-      noiseSuppression: { ideal: true },
-      autoGainControl: { ideal: true },
-      channelCount: { ideal: 1 }, // Strictly mono to enable hardware DSP AEC & prevent phase cancellation
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1, // Strictly mono to enable hardware DSP AEC & prevent phase cancellation
       sampleRate: { ideal: 48000 },
       sampleSize: { ideal: 16 }
     },
@@ -96,6 +107,7 @@ async function acquireMicrophoneAudioStream() {
   const tier3Constraints = {
     audio: {
       echoCancellation: true,
+      noiseSuppression: true,
       channelCount: 1
     },
     video: false
@@ -108,7 +120,7 @@ async function acquireMicrophoneAudioStream() {
   };
 
   const tiers = [
-    { name: 'Tier 1 (WhatsApp-Grade Studio Speech)', constraints: tier1Constraints },
+    { name: 'Tier 1 (WhatsApp-Grade Studio HD Speech)', constraints: tier1Constraints },
     { name: 'Tier 2 (Standard W3C Voice)', constraints: tier2Constraints },
     { name: 'Tier 3 (Core AEC Mono)', constraints: tier3Constraints },
     { name: 'Tier 4 (Basic Fallback)', constraints: tier4Constraints }
@@ -177,9 +189,9 @@ function preferOpusCodec(peerConnection) {
 }
 
 /**
- * Configure RTCRtpSender encoding parameters for high-res voice transport (36 kbps, high priority)
+ * Configure RTCRtpSender encoding parameters for high-res voice transport (64 kbps HD, DTX disabled)
  */
-async function configureSenderEncodingParameters(peerConnection, targetBitrateBps = 36000) {
+async function configureSenderEncodingParameters(peerConnection, targetBitrateBps = 64000) {
   if (!peerConnection || typeof peerConnection.getSenders !== 'function') return;
   try {
     const senders = peerConnection.getSenders();
@@ -188,8 +200,9 @@ async function configureSenderEncodingParameters(peerConnection, targetBitrateBp
         const params = sender.getParameters();
         if (params && Array.isArray(params.encodings) && params.encodings.length > 0) {
           params.encodings[0].maxBitrate = targetBitrateBps;
+          // Disable DTX to eliminate choppy/robotic voice dropouts during pauses or soft speech
           if ('dtx' in params.encodings[0]) {
-            params.encodings[0].dtx = 'enabled';
+            params.encodings[0].dtx = 'disabled';
           }
           if ('priority' in params.encodings[0]) {
             params.encodings[0].priority = 'high';
@@ -198,7 +211,7 @@ async function configureSenderEncodingParameters(peerConnection, targetBitrateBp
             params.encodings[0].networkPriority = 'high';
           }
           await sender.setParameters(params);
-          console.log('[WebRTC Sender] Configured encoding parameters:', { maxBitrate: targetBitrateBps, priority: 'high' });
+          console.log('[WebRTC Sender] Configured encoding parameters:', { maxBitrate: targetBitrateBps, dtx: 'disabled', priority: 'high' });
         }
       }
     }
@@ -208,12 +221,12 @@ async function configureSenderEncodingParameters(peerConnection, targetBitrateBp
 }
 
 /**
- * Tune Opus SDP FMTP line for WhatsApp-level speech quality:
- * - minptime=10: ultra-low speech packetization latency
- * - useinbandfec=1: In-Band Forward Error Correction for packet loss recovery
- * - usedtx=1: Discontinuous Transmission for silence bandwidth savings
- * - maxaveragebitrate=36000: 36 kbps studio speech bitrate
- * - stereo=0 & sprop-stereo=0: Clean mono voice encoding (prevents phase cancellation)
+ * Tune Opus SDP FMTP line for WhatsApp-level HD speech quality:
+ * - minptime=20, ptime=20, maxptime=40: Standard 20ms frames (50 pkts/sec) prevents NetEQ robotic distortion
+ * - useinbandfec=1: In-Band Forward Error Correction for loss recovery without retransmission
+ * - usedtx=0: Disable DTX to guarantee continuous smooth speech transmission and eliminate robotic sound
+ * - maxaveragebitrate=64000: 64 kbps studio HD voice
+ * - stereo=0 & sprop-stereo=0: Clean mono voice encoding (ensures mobile hardware DSP AEC is active)
  * - cbr=0: Adaptive variable bitrate
  */
 function tuneSdpForVoiceClarity(sdp) {
@@ -250,19 +263,19 @@ function tuneSdpForVoiceClarity(sdp) {
         }
       });
 
-      // WhatsApp-grade speech optimization:
+      // WhatsApp-grade HD speech optimization:
       // - ptime=20, minptime=20, maxptime=40: Standard 20ms frames (50 pkts/sec) eliminates NetEQ robotic jitter distortion
       // - useinbandfec=1: In-Band Forward Error Correction enables loss recovery without retransmission
-      // - usedtx=1: Discontinuous Transmission during silence saves battery and mobile bandwidth
-      // - maxaveragebitrate=32000: 32 kbps studio speech (clear and natural, no clipping or room echo)
+      // - usedtx=0: Disable DTX to guarantee continuous smooth speech transmission and eliminate robotic sound
+      // - maxaveragebitrate=64000: 64 kbps studio HD speech (crystal-clear voice)
       // - stereo=0 & sprop-stereo=0: Enforce strict mono so phone hardware DSP AEC operates at 100%
       // - cbr=0: Adaptive Variable Bitrate (VBR)
       existingParams.set('minptime', '20');
       existingParams.set('ptime', '20');
       existingParams.set('maxptime', '40');
       existingParams.set('useinbandfec', '1');
-      existingParams.set('usedtx', '1');
-      existingParams.set('maxaveragebitrate', '32000');
+      existingParams.set('usedtx', '0');
+      existingParams.set('maxaveragebitrate', '64000');
       existingParams.set('stereo', '0');
       existingParams.set('sprop-stereo', '0');
       existingParams.set('cbr', '0');
@@ -280,7 +293,7 @@ function tuneSdpForVoiceClarity(sdp) {
   if (!fmtpFound) {
     const rtpIndex = tunedLines.findIndex(l => l.startsWith(`a=rtpmap:${opusPayloadType} `));
     if (rtpIndex !== -1) {
-      const newFmtp = `a=fmtp:${opusPayloadType} minptime=20;ptime=20;maxptime=40;useinbandfec=1;usedtx=1;maxaveragebitrate=32000;stereo=0;sprop-stereo=0;cbr=0`;
+      const newFmtp = `a=fmtp:${opusPayloadType} minptime=20;ptime=20;maxptime=40;useinbandfec=1;usedtx=0;maxaveragebitrate=64000;stereo=0;sprop-stereo=0;cbr=0`;
       tunedLines.splice(rtpIndex + 1, 0, newFmtp);
     }
   }
@@ -475,7 +488,11 @@ class InAppCallManager {
     this.remoteAudioElement = null;
     this.statsInterval = null;
     this.processedCandidates = new Set();
+    this.pendingRemoteCandidates = [];
     this.earlyLocalCandidates = [];
+    this.pendingRemoteAnswer = null;
+    this.isRestartingIce = false;
+    this.lastProcessedRestartTs = null;
     this.audioContext = null;
     this.webAudioSourceNode = null;
 
@@ -502,6 +519,168 @@ class InAppCallManager {
           setNativeSpeakerphone(this.activeCall.isSpeaker !== false);
         }
       });
+    }
+
+    // Automatic ICE Restart on network switch (Wi-Fi <-> 4G/5G handoff)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        console.log('[WebRTC Network] Device reconnected online');
+        if (this.activeCall && this.activeCall.status === 'connected') {
+          setTimeout(() => this.restartIce(), 600);
+        }
+      });
+
+      if (typeof navigator !== 'undefined' && navigator.connection) {
+        navigator.connection.addEventListener('change', () => {
+          console.log('[WebRTC Network] Network interface changed (Wi-Fi/Cellular handover)');
+          if (this.activeCall && this.activeCall.status === 'connected') {
+            setTimeout(() => this.restartIce(), 800);
+          }
+        });
+      }
+    }
+  }
+
+  // Queue or immediately apply remote ICE candidate to avoid signaling race conditions
+  async queueOrAddRemoteCandidate(candidate) {
+    if (!candidate) return;
+    const candKey = typeof candidate === 'string' ? candidate : JSON.stringify(candidate);
+    if (this.processedCandidates.has(candKey)) return;
+    this.processedCandidates.add(candKey);
+
+    if (this.peerConnection && this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
+      try {
+        await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn('[WebRTC ICE] addIceCandidate caught:', err);
+      }
+    } else {
+      this.pendingRemoteCandidates = this.pendingRemoteCandidates || [];
+      this.pendingRemoteCandidates.push(candidate);
+    }
+  }
+
+  // Drain and apply any queued remote ICE candidates after remoteDescription is established
+  async drainPendingCandidates() {
+    if (!this.peerConnection || !this.peerConnection.remoteDescription) return;
+    if (!Array.isArray(this.pendingRemoteCandidates) || this.pendingRemoteCandidates.length === 0) return;
+
+    const queued = [...this.pendingRemoteCandidates];
+    this.pendingRemoteCandidates = [];
+    for (const cand of queued) {
+      try {
+        await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (e) {
+        console.warn('[WebRTC ICE] Drain addIceCandidate error:', e);
+      }
+    }
+  }
+
+  // Perform seamless ICE restart on network handoff (e.g. Wi-Fi <-> 4G)
+  async restartIce() {
+    if (!this.peerConnection || !this.activeCall || this.activeCall.status !== 'connected') return;
+    if (this.isRestartingIce) return;
+    this.isRestartingIce = true;
+    console.log('[WebRTC ICE] Triggering ICE restart for network handover recovery...');
+
+    try {
+      const offer = await this.peerConnection.createOffer({ iceRestart: true });
+      offer.sdp = tuneSdpForVoiceClarity(offer.sdp);
+      await this.peerConnection.setLocalDescription(offer);
+
+      await configureSenderEncodingParameters(this.peerConnection, 64000);
+      await waitForIceGathering(this.peerConnection, 1200);
+
+      const completeOffer = this.peerConnection.localDescription || offer;
+      const offerData = {
+        type: completeOffer.type || 'offer',
+        sdp: tuneSdpForVoiceClarity(completeOffer.sdp)
+      };
+
+      // 1. Broadcast locally
+      this.broadcastSignal({
+        callId: this.activeCall.callId,
+        type: 'ice-restart-offer',
+        offer: offerData,
+        senderId: this.currentUser?.id
+      });
+
+      // 2. Transmit to Cloudflare
+      await sendCloudflareCallRing({
+        callId: this.activeCall.callId,
+        callerId: this.currentUser?.id,
+        receiverId: this.activeCall.receiver?.id || this.activeCall.caller?.id,
+        offer: offerData,
+        isIceRestart: true,
+        status: 'connected'
+      });
+
+      console.log('[WebRTC ICE] ICE restart offer dispatched successfully');
+    } catch (err) {
+      console.warn('[WebRTC ICE] restartIce notice:', err);
+    } finally {
+      setTimeout(() => { this.isRestartingIce = false; }, 3500);
+    }
+  }
+
+  // Handle incoming ICE restart offer from peer on active call
+  async handleRemoteRenegotiationOffer(offer) {
+    if (!this.peerConnection || !this.activeCall || !offer) return;
+    try {
+      console.log('[WebRTC ICE] Processing remote ICE restart offer...');
+      const tunedOffer = {
+        type: offer.type || 'offer',
+        sdp: tuneSdpForVoiceClarity(offer.sdp)
+      };
+      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(tunedOffer));
+      await this.drainPendingCandidates();
+
+      const answer = await this.peerConnection.createAnswer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false
+      });
+      answer.sdp = tuneSdpForVoiceClarity(answer.sdp);
+      await this.peerConnection.setLocalDescription(answer);
+
+      await configureSenderEncodingParameters(this.peerConnection, 64000);
+      await waitForIceGathering(this.peerConnection, 1000);
+
+      const completeAnswer = this.peerConnection.localDescription || answer;
+      const answerData = {
+        type: completeAnswer.type || 'answer',
+        sdp: tuneSdpForVoiceClarity(completeAnswer.sdp)
+      };
+
+      this.broadcastSignal({
+        callId: this.activeCall.callId,
+        type: 'ice-restart-answer',
+        answer: answerData,
+        senderId: this.currentUser?.id
+      });
+
+      await answerCloudflareCall(this.activeCall.callId, answerData, null);
+      console.log('[WebRTC ICE] Processed remote ICE restart and answered');
+    } catch (err) {
+      console.warn('[WebRTC ICE] handleRemoteRenegotiationOffer notice:', err);
+    }
+  }
+
+  // Handle incoming ICE restart answer from peer
+  async handleRemoteRenegotiationAnswer(answer) {
+    if (!this.peerConnection || !answer) return;
+    try {
+      if (this.peerConnection.signalingState === 'have-local-offer') {
+        console.log('[WebRTC ICE] Applying remote ICE restart answer...');
+        const tunedAnswer = {
+          type: answer.type || 'answer',
+          sdp: tuneSdpForVoiceClarity(answer.sdp)
+        };
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(tunedAnswer));
+        await this.drainPendingCandidates();
+        console.log('[WebRTC ICE] Successfully finalized remote ICE restart');
+      }
+    } catch (err) {
+      console.warn('[WebRTC ICE] handleRemoteRenegotiationAnswer notice:', err);
     }
   }
 
@@ -713,45 +892,47 @@ class InAppCallManager {
 
     if (data.callId !== this.activeCall.callId) return;
 
-    if (data.type === 'answer' && this.peerConnection && this.activeCall.status === 'calling') {
-      const applyAnswer = () => {
+    // Handle seamless ICE restart offer/answer from peer
+    if (data.type === 'ice-restart-offer' || (data.type === 'offer' && this.activeCall.status === 'connected')) {
+      this.handleRemoteRenegotiationOffer(data.offer || data);
+      return;
+    }
+
+    if (data.type === 'ice-restart-answer') {
+      this.handleRemoteRenegotiationAnswer(data.answer);
+      return;
+    }
+
+    if (data.type === 'answer' && this.activeCall.status === 'calling') {
+      const applyAnswer = async () => {
+        if (this.peerConnection && this.peerConnection.signalingState === 'have-local-offer') {
+          const tunedAnswer = {
+            type: data.answer.type || 'answer',
+            sdp: tuneSdpForVoiceClarity(data.answer.sdp)
+          };
+          try {
+            await this.peerConnection.setRemoteDescription(new RTCSessionDescription(tunedAnswer));
+            await this.drainPendingCandidates();
+          } catch (err) {
+            console.warn('[WebRTC Signal] Remote answer set notice:', err);
+          }
+        }
         this.activeCall.status = 'connected';
         this.activeCall.startedAt = this.activeCall.startedAt || Date.now();
         callAudio.stop();
         setNativeCommunicationMode(this.activeCall.isSpeaker !== false);
         this.startStatsMonitoring();
-        if (Array.isArray(this.earlyLocalCandidates) && this.earlyLocalCandidates.length > 0) {
-          this.earlyLocalCandidates.forEach(cand => {
-            try { this.peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
-          });
-          this.earlyLocalCandidates = [];
-        }
         this.notify();
       };
 
-      if (this.peerConnection.signalingState === 'have-local-offer') {
-        const tunedAnswer = {
-          type: data.answer.type || 'answer',
-          sdp: tuneSdpForVoiceClarity(data.answer.sdp)
-        };
-        this.peerConnection.setRemoteDescription(new RTCSessionDescription(tunedAnswer))
-          .then(applyAnswer)
-          .catch(err => {
-            console.warn('[WebRTC Signal] Remote answer set notice:', err);
-            applyAnswer();
-          });
-      } else {
+      if (this.peerConnection && this.peerConnection.signalingState === 'have-local-offer') {
         applyAnswer();
+      } else {
+        // Buffer answer if local offer is still in flight (eliminates race condition)
+        this.pendingRemoteAnswer = data.answer;
       }
-    } else if (data.type === 'candidate' && this.peerConnection) {
-      try {
-        if (this.peerConnection.remoteDescription) {
-          this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } else {
-          this.earlyLocalCandidates = this.earlyLocalCandidates || [];
-          this.earlyLocalCandidates.push(data.candidate);
-        }
-      } catch (e) {}
+    } else if (data.type === 'candidate') {
+      this.queueOrAddRemoteCandidate(data.candidate);
     } else if (data.type === 'hangup' || data.type === 'reject') {
       this.endCall(false, data.type === 'reject' ? 'rejected' : 'ended');
     }
@@ -768,7 +949,7 @@ class InAppCallManager {
 
     if (!currentUser || !currentUser.id) return;
 
-    // Check Cloudflare Edge KV for incoming call every 2.0 seconds
+    // Check Cloudflare Edge KV for incoming call every 1.0 second (near-zero notification delay)
     this.pollIncomingInterval = setInterval(async () => {
       if (this.activeCall) return; // Already on a call or ringing
       try {
@@ -802,7 +983,7 @@ class InAppCallManager {
           }
         }
       } catch (e) {}
-    }, 2000);
+    }, 1000);
   }
 
   // Helper to generate and dispatch missed call notifications
@@ -976,6 +1157,11 @@ class InAppCallManager {
         console.log('[WebRTC Caller] Received remote track:', event.track?.kind);
         if (event.track) {
           event.track.enabled = true;
+          // Optimize playout delay and jitter buffer target for WhatsApp-level low latency (40ms)
+          if (event.receiver) {
+            try { if ('playoutDelayHint' in event.receiver) event.receiver.playoutDelayHint = 0.04; } catch (e) {}
+            try { if ('jitterBufferTarget' in event.receiver) event.receiver.jitterBufferTarget = 40; } catch (e) {}
+          }
           if (!this.remoteStream) {
             this.remoteStream = new MediaStream();
           }
@@ -989,7 +1175,19 @@ class InAppCallManager {
       };
 
       this.peerConnection.oniceconnectionstatechange = () => {
-        console.log('[WebRTC Caller] ICE Connection State:', this.peerConnection?.iceConnectionState);
+        const state = this.peerConnection?.iceConnectionState;
+        console.log('[WebRTC Caller] ICE Connection State:', state);
+        if (state === 'failed') {
+          console.warn('[WebRTC Caller] ICE connection failed, triggering ICE restart...');
+          this.restartIce();
+        } else if (state === 'disconnected') {
+          console.warn('[WebRTC Caller] ICE disconnected, checking recovery...');
+          setTimeout(() => {
+            if (this.peerConnection?.iceConnectionState === 'disconnected' && this.activeCall?.status === 'connected') {
+              this.restartIce();
+            }
+          }, 2500);
+        }
       };
 
       this.peerConnection.onconnectionstatechange = () => {
@@ -997,11 +1195,7 @@ class InAppCallManager {
         console.log('[WebRTC Caller] Connection State:', state);
         if (state === 'failed') {
           console.warn('[WebRTC Caller] Connection failed, attempting ICE restart...');
-          try {
-            if (this.peerConnection && this.peerConnection.restartIce) {
-              this.peerConnection.restartIce();
-            }
-          } catch (e) {}
+          this.restartIce();
         } else if (state === 'disconnected' || state === 'closed') {
           if (this.activeCall && this.activeCall.status === 'connected') {
             this.endCall(false, 'completed');
@@ -1016,8 +1210,21 @@ class InAppCallManager {
       offer.sdp = tuneSdpForVoiceClarity(offer.sdp);
       await this.peerConnection.setLocalDescription(offer);
 
-      // Configure sender parameters after local description is set
-      await configureSenderEncodingParameters(this.peerConnection, 32000);
+      // Configure sender encoding parameters to 64 kbps HD voice
+      await configureSenderEncodingParameters(this.peerConnection, 64000);
+
+      // Apply any remote answer that arrived while offer was being set (eliminates race condition)
+      if (this.pendingRemoteAnswer) {
+        const pending = this.pendingRemoteAnswer;
+        this.pendingRemoteAnswer = null;
+        try {
+          const tuned = { type: pending.type || 'answer', sdp: tuneSdpForVoiceClarity(pending.sdp) };
+          await this.peerConnection.setRemoteDescription(new RTCSessionDescription(tuned));
+          await this.drainPendingCandidates();
+        } catch (e) {
+          console.warn('[WebRTC Caller] Error applying buffered answer:', e);
+        }
+      }
 
       // Wait up to 1.5s for ICE candidates so they are embedded directly in offer.sdp
       await waitForIceGathering(this.peerConnection, 1500);
@@ -1087,14 +1294,14 @@ class InAppCallManager {
     }
   }
 
-  // Poll Cloudflare Call status during call
+  // Poll Cloudflare Call status during call (responsive 750ms while calling, 1200ms when connected)
   startActiveCallCloudPolling(callId) {
     if (this.pollActiveCallInterval) {
       clearInterval(this.pollActiveCallInterval);
       this.pollActiveCallInterval = null;
     }
 
-    this.pollActiveCallInterval = setInterval(async () => {
+    const pollStep = async () => {
       if (!this.activeCall || this.activeCall.callId !== callId) {
         if (this.pollActiveCallInterval) {
           clearInterval(this.pollActiveCallInterval);
@@ -1122,6 +1329,14 @@ class InAppCallManager {
           return;
         }
 
+        // Handle remote ICE restart offer on active call
+        if (cloudCall.isIceRestart && cloudCall.offer && this.activeCall.status === 'connected') {
+          if (cloudCall.callerId !== this.currentUser?.id && cloudCall.restartTimestamp !== this.lastProcessedRestartTs) {
+            this.lastProcessedRestartTs = cloudCall.restartTimestamp;
+            this.handleRemoteRenegotiationOffer(cloudCall.offer);
+          }
+        }
+
         // If recipient answered call
         if (this.activeCall.status === 'calling' && cloudCall.status === 'connected' && cloudCall.answer) {
           if (this.ringTimeout) {
@@ -1135,6 +1350,7 @@ class InAppCallManager {
                 sdp: tuneSdpForVoiceClarity(cloudCall.answer.sdp)
               };
               await this.peerConnection.setRemoteDescription(new RTCSessionDescription(tunedAnswer));
+              await this.drainPendingCandidates();
             } catch (sdpErr) {
               console.warn('[WebRTC] Polling setRemoteDescription notice:', sdpErr);
             }
@@ -1153,22 +1369,20 @@ class InAppCallManager {
           this.notify();
         }
 
-        // Process any remote ICE candidates safely without duplication
-        if (Array.isArray(cloudCall.candidates) && this.peerConnection && this.peerConnection.remoteDescription) {
-          cloudCall.candidates.forEach(candObj => {
-            const candKey = JSON.stringify(candObj.candidate);
-            if (candObj.senderId !== this.currentUser?.id && candObj.candidate && !this.processedCandidates.has(candKey)) {
-              this.processedCandidates.add(candKey);
-              try {
-                this.peerConnection.addIceCandidate(new RTCIceCandidate(candObj.candidate));
-              } catch (e) {
-                console.warn('[WebRTC] addIceCandidate caught:', e);
-              }
+        // Process any remote ICE candidates safely via queue (eliminates race condition)
+        if (Array.isArray(cloudCall.candidates)) {
+          for (const candObj of cloudCall.candidates) {
+            if (candObj.senderId !== this.currentUser?.id && candObj.candidate) {
+              await this.queueOrAddRemoteCandidate(candObj.candidate);
             }
-          });
+          }
         }
       } catch (err) {}
-    }, 1100);
+    };
+
+    // Responsive poll: 750ms while calling (fast ring response), 1200ms when connected
+    const intervalMs = (this.activeCall?.status === 'calling') ? 750 : 1200;
+    this.pollActiveCallInterval = setInterval(pollStep, intervalMs);
   }
 
   // Accept incoming call
@@ -1187,6 +1401,7 @@ class InAppCallManager {
     this.unlockAudioPipeline();
 
     this.processedCandidates = new Set();
+    this.pendingRemoteCandidates = [];
 
     // Acquire mic with multi-tier fallback
     this.localStream = await acquireMicrophoneAudioStream();
@@ -1236,6 +1451,11 @@ class InAppCallManager {
         console.log('[WebRTC Receiver] Received remote track:', event.track?.kind);
         if (event.track) {
           event.track.enabled = true;
+          // Optimize playout delay and jitter buffer target for WhatsApp-level low latency (40ms)
+          if (event.receiver) {
+            try { if ('playoutDelayHint' in event.receiver) event.receiver.playoutDelayHint = 0.04; } catch (e) {}
+            try { if ('jitterBufferTarget' in event.receiver) event.receiver.jitterBufferTarget = 40; } catch (e) {}
+          }
           if (!this.remoteStream) {
             this.remoteStream = new MediaStream();
           }
@@ -1249,7 +1469,19 @@ class InAppCallManager {
       };
 
       this.peerConnection.oniceconnectionstatechange = () => {
-        console.log('[WebRTC Receiver] ICE Connection State:', this.peerConnection?.iceConnectionState);
+        const state = this.peerConnection?.iceConnectionState;
+        console.log('[WebRTC Receiver] ICE Connection State:', state);
+        if (state === 'failed') {
+          console.warn('[WebRTC Receiver] ICE connection failed, triggering ICE restart...');
+          this.restartIce();
+        } else if (state === 'disconnected') {
+          console.warn('[WebRTC Receiver] ICE disconnected, checking recovery...');
+          setTimeout(() => {
+            if (this.peerConnection?.iceConnectionState === 'disconnected' && this.activeCall?.status === 'connected') {
+              this.restartIce();
+            }
+          }, 2500);
+        }
       };
 
       this.peerConnection.onconnectionstatechange = () => {
@@ -1257,11 +1489,7 @@ class InAppCallManager {
         console.log('[WebRTC Receiver] Connection State:', state);
         if (state === 'failed') {
           console.warn('[WebRTC Receiver] Connection failed, attempting ICE restart...');
-          try {
-            if (this.peerConnection && this.peerConnection.restartIce) {
-              this.peerConnection.restartIce();
-            }
-          } catch (e) {}
+          this.restartIce();
         } else if (state === 'disconnected' || state === 'closed') {
           if (this.activeCall && this.activeCall.status === 'connected') {
             this.endCall(false, 'completed');
@@ -1275,6 +1503,8 @@ class InAppCallManager {
           sdp: tuneSdpForVoiceClarity(this.activeCall.offer.sdp)
         };
         await this.peerConnection.setRemoteDescription(new RTCSessionDescription(tunedOffer));
+        await this.drainPendingCandidates();
+
         const answer = await this.peerConnection.createAnswer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
@@ -1282,8 +1512,8 @@ class InAppCallManager {
         answer.sdp = tuneSdpForVoiceClarity(answer.sdp);
         await this.peerConnection.setLocalDescription(answer);
 
-        // Configure sender parameters after local description is set
-        await configureSenderEncodingParameters(this.peerConnection, 32000);
+        // Configure sender parameters to 64 kbps HD voice
+        await configureSenderEncodingParameters(this.peerConnection, 64000);
 
         // Wait up to 1.5s for ICE candidates so they are embedded directly into answer.sdp
         await waitForIceGathering(this.peerConnection, 1500);

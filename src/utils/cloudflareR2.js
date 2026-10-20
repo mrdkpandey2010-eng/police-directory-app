@@ -669,6 +669,28 @@ export const sendCloudflareCallRing = async (callData) => {
   }
 };
 
+export const sendCloudflareIceRestart = async (callId, offer, callerId = null) => {
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl || !callId || !offer) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/ring`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callId,
+        callerId,
+        offer,
+        isIceRestart: true,
+        status: 'connected'
+      })
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[Call Signaling] ICE Restart send error:', err);
+    return false;
+  }
+};
+
 export const checkCloudflareIncomingCall = async (userId, pno = '', phone = '') => {
   const baseUrl = getWorkerBaseUrl();
   if (!baseUrl || (!userId && !pno && !phone)) return { active: false };
