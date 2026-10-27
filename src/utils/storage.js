@@ -478,6 +478,19 @@ export const deleteOffice = (officeIdOrName) => {
   return updated;
 };
 
+export const deleteOfficesBulk = (officeIdsOrNames) => {
+  const current = getStoredOffices();
+  const targetSet = new Set(officeIdsOrNames);
+  const updated = current.filter(o => {
+    if (typeof o === 'object') {
+      return !targetSet.has(o.id) && !targetSet.has(o.name);
+    }
+    return !targetSet.has(o);
+  });
+  saveOffices(updated);
+  return updated;
+};
+
 export const getOfficesForDistrict = (officesList, districtName) => {
   if (!Array.isArray(officesList)) return [];
   if (!districtName || districtName === 'सभी ज़िले (All Districts)' || districtName === 'सभी ज़िले') {
@@ -625,6 +638,14 @@ export const editDistrict = (oldDistName, newDistName) => {
 export const deleteDistrict = (distName) => {
   const current = getStoredDistricts();
   const updated = current.filter((d, i) => i === 0 || d !== distName);
+  saveDistricts(updated);
+  return updated;
+};
+
+export const deleteDistrictsBulk = (distNames) => {
+  const current = getStoredDistricts();
+  const targetSet = new Set(distNames);
+  const updated = current.filter((d, i) => i === 0 || !targetSet.has(d));
   saveDistricts(updated);
   return updated;
 };
@@ -1764,11 +1785,51 @@ export const resetCoAdminPassword = (coAdminId, newPassword = '1234') => {
   return updated;
 };
 
+// ---------------- PRE-EXCEL IMPORT BACKUP & REVERT (DATABASE ROLLBACK) ----------------
+const PRE_EXCEL_BACKUP_KEY = 'police_directory_pre_excel_backup_v1';
+
+export const savePreExcelBackup = (currentContacts, currentDistricts, currentOffices, filename = '') => {
+  try {
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      filename: filename || 'Excel Upload',
+      contactsCount: (currentContacts || []).length,
+      contacts: currentContacts || [],
+      districts: currentDistricts || getStoredDistricts(),
+      offices: currentOffices || getStoredOffices()
+    };
+    localStorage.setItem(PRE_EXCEL_BACKUP_KEY, JSON.stringify(backupData));
+    idbSet(PRE_EXCEL_BACKUP_KEY, backupData);
+    return backupData;
+  } catch (err) {
+    console.error('Failed to save pre-excel backup:', err);
+    return null;
+  }
+};
+
+export const getPreExcelBackup = () => {
+  try {
+    const saved = localStorage.getItem(PRE_EXCEL_BACKUP_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch (err) {
+    return null;
+  }
+};
+
+export const clearPreExcelBackup = () => {
+  try {
+    localStorage.removeItem(PRE_EXCEL_BACKUP_KEY);
+  } catch (e) {}
+};
+
 // ---------------- EXCEL BULK IMPORT (MATCHED WITH REGISTRATION PAGE) ----------------
 export const importContactsFromExcel = async (file, existingContacts, districtFilter = null, onProgress = null) => {
   const xlsxLib = XLSX;
 
   try {
+    // Automatically preserve a full rollback snapshot of the database before import
+    savePreExcelBackup(existingContacts, getStoredDistricts(), getStoredOffices(), file?.name);
+
     if (onProgress) {
       onProgress({
         step: 1,

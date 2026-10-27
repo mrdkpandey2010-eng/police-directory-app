@@ -4,7 +4,8 @@ import {
   XCircle, Edit3, Trash2, Clock, Users, Shield, KeyRound, Plus, 
   ShieldCheck, Settings, Power, UserCheck, Award, Building2, MapPin,
   FileText, PhoneCall, HardDrive, Eye, RefreshCw, Globe, Cloud, Database, AlertTriangle, Home,
-  Activity, Smartphone, Laptop, ExternalLink, Battery, Wifi, ShieldAlert, Cpu
+  Activity, Smartphone, Laptop, ExternalLink, Battery, Wifi, ShieldAlert, Cpu,
+  RotateCcw, CheckSquare
 } from 'lucide-react';
 import { 
   downloadSampleExcel, importContactsFromExcel, DEFAULT_TERMS,
@@ -16,7 +17,8 @@ import {
   editPolicyItem, deleteCustomPolicyItem,
   getStoredRegistrationLogs, updateOfficerDeviceAudit,
   getStoredRecycleBin, saveRecycleBinItem, permanentlyDeleteFromRecycleBin, clearRecycleBin,
-  getStoredAdminDeviceLockConfig, saveAdminDeviceLockConfig
+  getStoredAdminDeviceLockConfig, saveAdminDeviceLockConfig,
+  getPreExcelBackup
 } from '../utils/storage';
 import { syncAllContactsToFirestore } from '../utils/firebase';
 import { validateFileSize } from '../utils/imageCompressor';
@@ -76,7 +78,11 @@ export default function AdminPanel({
   isFirebaseConnected = false,
   onOpenFirebaseSetup,
   callingConfig = null,
-  onUpdateCallingConfig = null
+  onUpdateCallingConfig = null,
+  onBulkDeleteContacts = null,
+  onBulkDeleteOffices = null,
+  onBulkDeleteDistricts = null,
+  onRevertExcelImport = null
 }) {
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
@@ -85,6 +91,21 @@ export default function AdminPanel({
   const [activeTab, setActiveTab] = useState(initialTab || 'pending');
   const [masterSubTab, setMasterSubTab] = useState('posts'); // 'posts' | 'offices' | 'districts'
   const [adminStatusFilter, setAdminStatusFilter] = useState('active'); // 'active' | 'all' | 'inactive' | 'blocked'
+
+  // Multi-Selection State for Bulk Deletion (Super Admin Only)
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [selectedOfficeIds, setSelectedOfficeIds] = useState([]);
+  const [selectedDistrictNames, setSelectedDistrictNames] = useState([]);
+
+  // Pre-Excel Import Backup State for Rollback / Revert
+  const [preExcelBackup, setPreExcelBackup] = useState(() => getPreExcelBackup());
+  const [isRevertingExcel, setIsRevertingExcel] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setPreExcelBackup(getPreExcelBackup());
+    }
+  }, [isOpen, activeTab]);
 
   useEffect(() => {
     if (initialTab && isOpen) {
@@ -514,6 +535,7 @@ export default function AdminPanel({
         });
       }
       setExcelFile(null);
+      setPreExcelBackup(getPreExcelBackup());
     } catch (err) {
       console.error('Excel Import Error:', err);
       setImportProgress(null);
@@ -1347,10 +1369,72 @@ export default function AdminPanel({
                 </div>
               )}
 
+              {/* Multi-User Selection Bulk Delete Action Bar (Super Admin Only) */}
+              {isAdmin && selectedUserIds.length > 0 && (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(185, 28, 28, 0.3))',
+                  border: '1.5px solid #ef4444',
+                  padding: '0.65rem 1rem',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '1rem',
+                  flexWrap: 'wrap',
+                  boxShadow: '0 4px 15px rgba(239, 68, 68, 0.25)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fca5a5', fontWeight: 700, fontSize: '0.88rem' }}>
+                    <CheckSquare size={18} color="#ef4444" />
+                    <span>{selectedUserIds.length} कार्मिक चुने गए (Selected)</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setSelectedUserIds([])}
+                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+                    >
+                      चयन रद्द करें
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      onClick={() => {
+                        if (onBulkDeleteContacts) {
+                          onBulkDeleteContacts(selectedUserIds);
+                          setSelectedUserIds([]);
+                        }
+                      }}
+                      style={{ padding: '0.35rem 0.85rem', fontSize: '0.82rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Trash2 size={14} />
+                      चुने गए ({selectedUserIds.length}) कार्मिक हटाएं (Bulk Delete)
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="admin-table-wrapper">
                 <table className="admin-table">
                   <thead>
                     <tr>
+                      {isAdmin && (
+                        <th style={{ width: '42px', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={filteredAdminContacts.length > 0 && selectedUserIds.length === filteredAdminContacts.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedUserIds(filteredAdminContacts.map(c => c.id));
+                              } else {
+                                setSelectedUserIds([]);
+                              }
+                            }}
+                            title="सभी चुनें / हटाएं"
+                            style={{ cursor: 'pointer', accentColor: 'var(--khaki-primary)', transform: 'scale(1.15)' }}
+                          />
+                        </th>
+                      )}
                       <th>PNO</th>
                       <th>कर्मचारी का नाम</th>
                       <th>पद (Post)</th>
@@ -1366,9 +1450,24 @@ export default function AdminPanel({
                       const isActive = c.status === 'approved' || c.status === 'active';
                       const isInactive = c.status === 'inactive';
                       const isUserCoAdmin = Boolean(c.isCoAdmin || coAdmins.some(ca => ca.userId === c.id || ca.phone === c.phone));
+                      const isSelected = selectedUserIds.includes(c.id);
 
                       return (
-                        <tr key={c.id}>
+                        <tr key={c.id} style={isSelected ? { background: 'rgba(239, 68, 68, 0.12)' } : undefined}>
+                          {isAdmin && (
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  setSelectedUserIds(prev =>
+                                    prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id]
+                                  );
+                                }}
+                                style={{ cursor: 'pointer', accentColor: 'var(--khaki-primary)', transform: 'scale(1.15)' }}
+                              />
+                            </td>
+                          )}
                           <td style={{ fontWeight: 600, color: 'var(--gold-primary)', fontSize: '0.78rem' }}>
                             {c.pno}
                           </td>
@@ -1727,6 +1826,107 @@ export default function AdminPanel({
                       color: manualSyncMsg.includes('✅') ? '#6ee7b7' : '#fef08a'
                     }}>
                       {manualSyncMsg}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Excel Import Rollback / Revert Control Card (Super Admin Only) */}
+              {isAdmin && (
+                <div style={{
+                  background: preExcelBackup 
+                    ? 'linear-gradient(135deg, rgba(180, 83, 9, 0.2), rgba(15, 23, 42, 0.85))' 
+                    : 'rgba(15, 23, 42, 0.5)',
+                  border: preExcelBackup ? '1.5px solid #f59e0b' : '1px dashed rgba(255, 255, 255, 0.15)',
+                  borderRadius: '12px',
+                  padding: '1rem 1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '1rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: '1 1 320px' }}>
+                    <div style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '10px',
+                      background: preExcelBackup ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                      border: `1px solid ${preExcelBackup ? '#f59e0b' : 'rgba(255, 255, 255, 0.1)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <RotateCcw size={22} color={preExcelBackup ? '#fbbf24' : '#94a3b8'} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.94rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span>अंतिम एक्सेल आयात पूर्ववत करें (Rollback / Revert Database)</span>
+                        <span style={{
+                          fontSize: '0.7rem',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: preExcelBackup ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                          color: preExcelBackup ? '#fde68a' : '#94a3b8',
+                          border: `1px solid ${preExcelBackup ? '#f59e0b' : 'transparent'}`
+                        }}>
+                          {preExcelBackup ? '⚡ पूर्व स्नैपशॉट तैयार' : 'स्नैपशॉट प्रतीक्षारत'}
+                        </span>
+                      </div>
+                      {preExcelBackup ? (
+                        <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '4px', lineHeight: '1.4' }}>
+                          फ़ाइल: <strong style={{ color: '#fef08a' }}>{preExcelBackup.filename || 'अज्ञात'}</strong> • 
+                          समय: <strong style={{ color: '#93c5fd' }}>{new Date(preExcelBackup.timestamp).toLocaleString('hi-IN')}</strong> • 
+                          पूर्व संपर्क संख्या: <strong style={{ color: '#86efac' }}>{preExcelBackup.contactsCount ?? (preExcelBackup.contacts?.length || 0)}</strong>
+                          <div style={{ fontSize: '0.73rem', color: '#fca5a5', marginTop: '2px' }}>
+                            * यदि एक्सेल से गलत डेटा अपलोड हो गया हो, तो यह बटन डेटाबेस को इस फ़ाइल के अपलोड से पूर्व की मूल स्थिति में रिवर्ट कर देगा।
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px' }}>
+                          जैसे ही आप एक्सेल फ़ाइल अपलोड करेंगे, उससे पूर्व का संपूर्ण डेटाबेस स्नैपशॉट यहाँ स्वतः सुरक्षित हो जाएगा ताकि गलती होने पर रिवर्ट किया जा सके।
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {preExcelBackup && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        disabled={isRevertingExcel}
+                        onClick={async () => {
+                          if (onRevertExcelImport) {
+                            setIsRevertingExcel(true);
+                            try {
+                              const ok = await onRevertExcelImport();
+                              if (ok) {
+                                setPreExcelBackup(getPreExcelBackup());
+                              }
+                            } finally {
+                              setIsRevertingExcel(false);
+                            }
+                          }
+                        }}
+                        className="btn btn-warning"
+                        style={{
+                          background: 'linear-gradient(135deg, #d97706, #b45309)',
+                          border: '1px solid #f59e0b',
+                          color: '#fff',
+                          fontWeight: 700,
+                          padding: '8px 16px',
+                          fontSize: '0.84rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: isRevertingExcel ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 4px 12px rgba(217, 119, 6, 0.3)'
+                        }}
+                      >
+                        <RotateCcw size={15} style={isRevertingExcel ? { animation: 'spin 1s linear infinite' } : {}} />
+                        <span>{isRevertingExcel ? 'डेटाबेस रिवर्ट हो रहा है...' : '⏪ अंतिम डेटाबेस रिवर्ट करें (Rollback)'}</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -2280,7 +2480,13 @@ export default function AdminPanel({
               )}
 
               {/* SUB TAB: OFFICES (SUPER ADMIN VIEW) */}
-              {masterSubTab === 'offices' && (
+              {masterSubTab === 'offices' && (() => {
+                const displayedOffices = safeOffices.filter(o => {
+                  if (officeFilterDistrict === 'सभी ज़िले') return true;
+                  return typeof o === 'object' && o.district === officeFilterDistrict;
+                });
+
+                return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   {/* District Filter Bar */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', background: 'rgba(15,23,42,0.5)', padding: '0.75rem', borderRadius: '8px' }}>
@@ -2291,7 +2497,10 @@ export default function AdminPanel({
                         className="form-select"
                         style={{ width: '180px', padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
                         value={officeFilterDistrict}
-                        onChange={e => setOfficeFilterDistrict(e.target.value)}
+                        onChange={e => {
+                          setOfficeFilterDistrict(e.target.value);
+                          setSelectedOfficeIds([]);
+                        }}
                       >
                         <option value="सभी ज़िले">सभी ज़िले (All Districts)</option>
                         {safeDistricts.filter((_, idx) => idx > 0).map((d, i) => (
@@ -2300,10 +2509,76 @@ export default function AdminPanel({
                       </select>
                     </div>
 
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
-                      कुल थाने/शाखाएं: {safeOffices.length}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+                        कुल थाने/शाखाएं: {safeOffices.length}
+                      </span>
+                      {isAdmin && displayedOffices.length > 0 && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8rem', color: '#e2e8f0', background: 'rgba(255,255,255,0.06)', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                          <input
+                            type="checkbox"
+                            checked={displayedOffices.length > 0 && selectedOfficeIds.length === displayedOffices.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedOfficeIds(displayedOffices.map(o => typeof o === 'object' ? o.id : o));
+                              } else {
+                                setSelectedOfficeIds([]);
+                              }
+                            }}
+                            style={{ cursor: 'pointer', accentColor: 'var(--khaki-primary)' }}
+                          />
+                          <span>सभी चुनें (Select All)</span>
+                        </label>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Multi-Office Selection Bulk Delete Action Bar (Super Admin Only) */}
+                  {isAdmin && selectedOfficeIds.length > 0 && (
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(185, 28, 28, 0.3))',
+                      border: '1.5px solid #ef4444',
+                      padding: '0.65rem 1rem',
+                      borderRadius: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '1rem',
+                      flexWrap: 'wrap',
+                      boxShadow: '0 4px 15px rgba(239, 68, 68, 0.25)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fca5a5', fontWeight: 700, fontSize: '0.88rem' }}>
+                        <CheckSquare size={18} color="#ef4444" />
+                        <span>{selectedOfficeIds.length} कार्यालय/थाने चुने गए (Selected)</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => setSelectedOfficeIds([])}
+                          style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+                        >
+                          चयन रद्द करें
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          onClick={() => {
+                            if (window.confirm(`क्या आप वाकई चुने गए ${selectedOfficeIds.length} कार्यालयों/थानों को हटाना चाहते हैं?`)) {
+                              if (onBulkDeleteOffices) {
+                                onBulkDeleteOffices(selectedOfficeIds);
+                              }
+                              setSelectedOfficeIds([]);
+                            }
+                          }}
+                          style={{ padding: '0.35rem 0.85rem', fontSize: '0.82rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <Trash2 size={14} />
+                          चुने गए ({selectedOfficeIds.length}) कार्यालय/थाने हटाएं (Bulk Delete)
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Add Office Form with District Selector */}
                   <form onSubmit={handleAddNewOffice} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', background: 'rgba(15,23,42,0.6)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--glass-border-light)' }}>
@@ -2340,23 +2615,19 @@ export default function AdminPanel({
                         कोई कार्यालय/थाना दर्ज नहीं है। ऊपर दिए गए फ़ॉर्म से नया कार्यालय जोड़ें या एक्सेल फ़ाइल से कार्मिक सूची अपलोड करें।
                       </div>
                     ) : (
-                      safeOffices
-                        .filter(o => {
-                          if (officeFilterDistrict === 'सभी ज़िले') return true;
-                          return typeof o === 'object' && o.district === officeFilterDistrict;
-                        })
-                        .map((officeItem, idx) => {
+                      displayedOffices.map((officeItem, idx) => {
                         const oName = typeof officeItem === 'string' ? officeItem : officeItem.name;
                         const oDist = typeof officeItem === 'object' ? officeItem.district : 'लखनऊ';
                         const oId = typeof officeItem === 'object' ? officeItem.id : oName;
                         const isEditing = editingOffice?.id === oId;
+                        const isSelected = selectedOfficeIds.includes(oId);
 
                         return (
                           <div 
                             key={idx} 
                             style={{
-                              background: 'rgba(15, 23, 42, 0.75)',
-                              border: '1px solid rgba(229,184,66,0.25)',
+                              background: isSelected ? 'rgba(239, 68, 68, 0.15)' : 'rgba(15, 23, 42, 0.75)',
+                              border: isSelected ? '1.5px solid #ef4444' : '1px solid rgba(229,184,66,0.25)',
                               borderRadius: '8px',
                               padding: '0.65rem 0.85rem',
                               display: 'flex',
@@ -2397,9 +2668,21 @@ export default function AdminPanel({
                               </form>
                             ) : (
                               <>
-                                <div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-bright)' }}>{oName}</div>
-                                  <div style={{ fontSize: '0.72rem', color: 'var(--gold-primary)', marginTop: '2px' }}>📍 जनपद: {oDist}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {isAdmin && (
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        setSelectedOfficeIds(prev => prev.includes(oId) ? prev.filter(x => x !== oId) : [...prev, oId]);
+                                      }}
+                                      style={{ cursor: 'pointer', accentColor: 'var(--khaki-primary)', transform: 'scale(1.15)' }}
+                                    />
+                                  )}
+                                  <div>
+                                    <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-bright)' }}>{oName}</div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--gold-primary)', marginTop: '2px' }}>📍 जनपद: {oDist}</div>
+                                  </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '4px' }}>
                                   <button
@@ -2429,14 +2712,90 @@ export default function AdminPanel({
                             )}
                           </div>
                         );
-                      }))}
+                      })
+                    )}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* SUB TAB: DISTRICTS (SUPER ADMIN ONLY) */}
-              {masterSubTab === 'districts' && (
+              {masterSubTab === 'districts' && (() => {
+                const userDistricts = safeDistricts.filter((_, idx) => idx > 0);
+                return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', background: 'rgba(15,23,42,0.5)', padding: '0.75rem', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>
+                        कुल जनपद: <strong style={{ color: '#f8fafc' }}>{userDistricts.length}</strong>
+                      </span>
+                      {isAdmin && userDistricts.length > 0 && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8rem', color: '#e2e8f0', background: 'rgba(255,255,255,0.06)', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                          <input
+                            type="checkbox"
+                            checked={userDistricts.length > 0 && selectedDistrictNames.length === userDistricts.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedDistrictNames([...userDistricts]);
+                              } else {
+                                setSelectedDistrictNames([]);
+                              }
+                            }}
+                            style={{ cursor: 'pointer', accentColor: 'var(--khaki-primary)' }}
+                          />
+                          <span>सभी जनपद चुनें (Select All)</span>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Multi-District Selection Bulk Delete Action Bar (Super Admin Only) */}
+                  {isAdmin && selectedDistrictNames.length > 0 && (
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(185, 28, 28, 0.3))',
+                      border: '1.5px solid #ef4444',
+                      padding: '0.65rem 1rem',
+                      borderRadius: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '1rem',
+                      flexWrap: 'wrap',
+                      boxShadow: '0 4px 15px rgba(239, 68, 68, 0.25)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fca5a5', fontWeight: 700, fontSize: '0.88rem' }}>
+                        <CheckSquare size={18} color="#ef4444" />
+                        <span>{selectedDistrictNames.length} जनपद चुने गए (Selected)</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => setSelectedDistrictNames([])}
+                          style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+                        >
+                          चयन रद्द करें
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          onClick={() => {
+                            if (window.confirm(`क्या आप वाकई चुने गए ${selectedDistrictNames.length} जनपदों को हटाना चाहते हैं?`)) {
+                              if (onBulkDeleteDistricts) {
+                                onBulkDeleteDistricts(selectedDistrictNames);
+                              }
+                              setSelectedDistrictNames([]);
+                            }
+                          }}
+                          style={{ padding: '0.35rem 0.85rem', fontSize: '0.82rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <Trash2 size={14} />
+                          चुने गए ({selectedDistrictNames.length}) जनपद हटाएं (Bulk Delete)
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <form onSubmit={handleAddNewDistrict} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <input
                       type="text"
@@ -2464,80 +2823,95 @@ export default function AdminPanel({
                   </form>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.65rem' }}>
-                    {safeDistricts.filter((_, idx) => idx > 0).length === 0 ? (
+                    {userDistricts.length === 0 ? (
                       <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
                         कोई ज़िला दर्ज नहीं है। ऊपर दिए गए फ़ॉर्म से नया ज़िला जोड़ें या 'सभी 75 जनपद लोड करें' बटन दबाएं।
                       </div>
                     ) : (
-                      safeDistricts.filter((_, idx) => idx > 0).map((dist, idx) => {
-                      const isEditing = editingDistrict?.oldName === dist;
-                      return (
-                        <div 
-                          key={idx} 
-                          style={{
-                            background: 'rgba(15, 23, 42, 0.75)',
-                            border: '1px solid rgba(229,184,66,0.3)',
-                            borderRadius: '8px',
-                            padding: '0.65rem 0.85rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: '0.5rem'
-                          }}
-                        >
-                          {isEditing ? (
-                            <form onSubmit={handleSaveEditDistrict} style={{ display: 'flex', gap: '4px', width: '100%' }}>
-                              <input
-                                type="text"
-                                className="form-input"
-                                value={editingDistrict.newName}
-                                onChange={e => setEditingDistrict({ ...editingDistrict, newName: e.target.value })}
-                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.85rem', flex: 1 }}
-                                autoFocus
-                                required
-                              />
-                              <button type="submit" className="btn btn-primary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="सुरक्षित करें">
-                                <CheckCircle size={14} />
-                              </button>
-                              <button type="button" className="btn btn-secondary" onClick={() => setEditingDistrict(null)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="रद्द करें">
-                                <X size={14} />
-                              </button>
-                            </form>
-                          ) : (
-                            <>
-                              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-bright)' }}>{dist}</span>
-                              <div style={{ display: 'flex', gap: '4px' }}>
-                                <button
-                                  type="button"
-                                  className="action-btn"
-                                  style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)', padding: '4px 6px' }}
-                                  onClick={() => setEditingDistrict({ oldName: dist, newName: dist })}
-                                  title="ज़िला संशोधित करें"
-                                >
-                                  <Edit3 size={13} />
+                      userDistricts.map((dist, idx) => {
+                        const isEditing = editingDistrict?.oldName === dist;
+                        const isSelected = selectedDistrictNames.includes(dist);
+                        return (
+                          <div 
+                            key={idx} 
+                            style={{
+                              background: isSelected ? 'rgba(239, 68, 68, 0.15)' : 'rgba(15, 23, 42, 0.75)',
+                              border: isSelected ? '1.5px solid #ef4444' : '1px solid rgba(229,184,66,0.3)',
+                              borderRadius: '8px',
+                              padding: '0.65rem 0.85rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '0.5rem'
+                            }}
+                          >
+                            {isEditing ? (
+                              <form onSubmit={handleSaveEditDistrict} style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  value={editingDistrict.newName}
+                                  onChange={e => setEditingDistrict({ ...editingDistrict, newName: e.target.value })}
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.85rem', flex: 1 }}
+                                  autoFocus
+                                  required
+                                />
+                                <button type="submit" className="btn btn-primary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="सुरक्षित करें">
+                                  <CheckCircle size={14} />
                                 </button>
-                                <button
-                                  type="button"
-                                  className="action-btn"
-                                  style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)', padding: '4px 6px' }}
-                                  onClick={() => {
-                                    if (window.confirm(`क्या आप ज़िला "${dist}" को हटाना चाहते हैं?`)) {
-                                      onDeleteDistrict(dist);
-                                    }
-                                  }}
-                                  title="यह ज़िला हटाएं"
-                                >
-                                  <Trash2 size={13} />
+                                <button type="button" className="btn btn-secondary" onClick={() => setEditingDistrict(null)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} title="रद्द करें">
+                                  <X size={14} />
                                 </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      );
-                    }))}
+                              </form>
+                            ) : (
+                              <>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {isAdmin && (
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        setSelectedDistrictNames(prev => prev.includes(dist) ? prev.filter(x => x !== dist) : [...prev, dist]);
+                                      }}
+                                      style={{ cursor: 'pointer', accentColor: 'var(--khaki-primary)', transform: 'scale(1.15)' }}
+                                    />
+                                  )}
+                                  <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-bright)' }}>{dist}</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                  <button
+                                    type="button"
+                                    className="action-btn"
+                                    style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)', padding: '4px 6px' }}
+                                    onClick={() => setEditingDistrict({ oldName: dist, newName: dist })}
+                                    title="ज़िला संशोधित करें"
+                                  >
+                                    <Edit3 size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="action-btn"
+                                    style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)', padding: '4px 6px' }}
+                                    onClick={() => {
+                                      if (window.confirm(`क्या आप ज़िला "${dist}" को हटाना चाहते हैं?`)) {
+                                        onDeleteDistrict(dist);
+                                      }
+                                    }}
+                                    title="यह ज़िला हटाएं"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
-              )}
+                );
+              })()}
             </div>
           )}
 

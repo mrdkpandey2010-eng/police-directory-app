@@ -76,9 +76,13 @@ import {
   addOffice,
   editOffice,
   deleteOffice,
+  deleteOfficesBulk,
   addDistrict,
   editDistrict,
   deleteDistrict,
+  deleteDistrictsBulk,
+  getPreExcelBackup,
+  clearPreExcelBackup,
   loadAll75Districts,
   loadStandardPolicePosts,
   resetMasterDataToClean,
@@ -1407,6 +1411,42 @@ export default function App() {
     }
   };
 
+  // Handler: Bulk Delete Contacts (Super Admin Only)
+  const handleBulkDeleteContacts = (ids) => {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    if (currentUser?.role !== 'admin') {
+      alert('केवल सुपर एडमिन ही एक साथ मल्टीपल यूज़र्स को हटा सकते हैं।');
+      return;
+    }
+
+    const confirmMsg = `⚠️ क्या आप वाकई चुने गए ${ids.length} कार्मिकों को हटाना चाहते हैं?\n(यह सभी रिकॉर्ड्स सुरक्षित रूप से रीसायकल बिन में स्थानांतरित कर दिए जाएंगे)`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const targetOfficers = contacts.filter(c => ids.includes(c.id));
+    targetOfficers.forEach(officer => {
+      const recycledEntry = {
+        ...officer,
+        deletedAt: new Date().toISOString(),
+        deletedBy: 'Super Admin (मुख्यालय - Bulk Action)',
+        deletedByRole: 'superadmin',
+        deletionReason: 'सुपर एडमिन द्वारा बल्क डिलीट (Multi-user Delete)',
+        originalRegisteredDevice: officer.registeredDevice || officer.currentDevice || null
+      };
+      saveRecycleBinItem(recycledEntry);
+      saveRecycleBinItemToCloud(recycledEntry).catch(err => console.warn('Cloud recycle save warning:', err));
+    });
+
+    const updated = contacts.filter(c => !ids.includes(c.id));
+    saveContacts(updated);
+    setContacts(updated);
+
+    if (isFirebaseConfigured()) {
+      ids.forEach(id => deleteFirestoreContact(id));
+    }
+
+    showToast(`✅ कुल ${ids.length} कार्मिकों को सफलतापूर्वक हटाकर रीसायकल बिन में भेज दिया गया!`);
+  };
+
   // Handler: Password Reset (Admin & Co-Admin)
   const handleResetPassword = (userId, newPass) => {
     const updated = resetUserPassword(contacts, userId, newPass);
@@ -1565,6 +1605,22 @@ export default function App() {
     showToast(`कार्यालय/थाना सूची से हटाया गया।`);
   };
 
+  // Handler: Bulk Delete Offices (Super Admin Only)
+  const handleBulkDeleteOffices = (officeIdsOrNames) => {
+    if (!Array.isArray(officeIdsOrNames) || officeIdsOrNames.length === 0) return;
+    if (currentUser?.role !== 'admin') {
+      alert('केवल सुपर एडमिन ही एक साथ मल्टीपल कार्यालयों/थानों को हटा सकते हैं।');
+      return;
+    }
+
+    const updated = deleteOfficesBulk(officeIdsOrNames);
+    setOffices(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestoreOffices(updated);
+    }
+    showToast(`✅ कुल ${officeIdsOrNames.length} कार्यालय/थाने सूची से हटा दिए गए।`);
+  };
+
   const handleAddDistrict = (distName) => {
     const updated = addDistrict(distName);
     setDistricts(updated);
@@ -1593,6 +1649,69 @@ export default function App() {
       saveFirestoreDistricts(updated);
     }
     showToast(`ज़िला "${distName}" हटा दिया गया।`);
+  };
+
+  // Handler: Bulk Delete Districts (Super Admin Only)
+  const handleBulkDeleteDistricts = (districtNames) => {
+    if (!Array.isArray(districtNames) || districtNames.length === 0) return;
+    if (currentUser?.role !== 'admin') {
+      alert('केवल सुपर एडमिन ही एक साथ मल्टीपल जनपदों को हटा सकते हैं।');
+      return;
+    }
+
+    const updated = deleteDistrictsBulk(districtNames);
+    setDistricts(updated);
+    if (isFirebaseConfigured()) {
+      saveFirestoreDistricts(updated);
+    }
+    showToast(`✅ कुल ${districtNames.length} जनपद सूची से हटा दिए गए।`);
+  };
+
+  // Handler: Revert / Rollback Database to Pre-Excel Import State (Super Admin Only)
+  const handleRevertExcelImport = async () => {
+    if (currentUser?.role !== 'admin') {
+      alert('केवल सुपर एडमिन ही एक्सेल डेटाबेस को रिवर्ट कर सकते हैं।');
+      return;
+    }
+
+    const backup = getPreExcelBackup();
+    if (!backup || !Array.isArray(backup.contacts)) {
+      alert('कोई पूर्व एक्सेल बैकअप उपलब्ध नहीं है।');
+      return;
+    }
+
+    const confirmMsg = `⚠️ क्या आप वाकई एक्सेल आयात से पूर्व की स्थिति में डेटाबेस रिवर्ट करना चाहते हैं?\n(सुरक्षित रिकॉर्ड्स: ${backup.contactsCount} कार्मिक, समय: ${new Date(backup.timestamp).toLocaleString('hi-IN')})\n\nएक्सेल आयात के उपरांत किए गए सभी परिवर्तन हट जाएंगे।`;
+    if (!window.confirm(confirmMsg)) return;
+
+    // Restore contacts
+    saveContacts(backup.contacts);
+    setContacts(backup.contacts);
+
+    // Restore districts & offices if present
+    if (Array.isArray(backup.districts) && backup.districts.length > 0) {
+      saveDistricts(backup.districts);
+      setDistricts(backup.districts);
+    }
+    if (Array.isArray(backup.offices)) {
+      saveOffices(backup.offices);
+      setOffices(backup.offices);
+    }
+
+    // Sync to Cloudflare R2 / Firebase if connected
+    if (isFirebaseConfigured()) {
+      try {
+        await syncAllContactsToFirestore(backup.contacts);
+        await saveFirestoreMasterConfig({
+          districts: backup.districts || getStoredDistricts(),
+          posts: getStoredPosts(),
+          offices: backup.offices || getStoredOffices()
+        });
+      } catch (e) {
+        console.warn('Cloud sync on revert warning:', e);
+      }
+    }
+
+    showToast(`✅ डेटाबेस सफलतापूर्वक अंतिम एक्सेल आयात पूर्ववत (${backup.contactsCount} कार्मिक) बहाल कर दिया गया!`);
   };
 
   const handleLoadAllDistricts = () => {
@@ -2553,6 +2672,10 @@ export default function App() {
           onAddDistrict={handleAddDistrict}
           onEditDistrict={handleEditDistrict}
           onDeleteDistrict={handleDeleteDistrict}
+          onBulkDeleteContacts={handleBulkDeleteContacts}
+          onBulkDeleteOffices={handleBulkDeleteOffices}
+          onBulkDeleteDistricts={handleBulkDeleteDistricts}
+          onRevertExcelImport={handleRevertExcelImport}
           onLoadAllDistricts={handleLoadAllDistricts}
           onLoadStandardPosts={handleLoadStandardPosts}
           onResetMasterData={handleResetMasterData}
