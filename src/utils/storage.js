@@ -2366,6 +2366,155 @@ export const downloadSampleExcel = async () => {
   XLSX.writeFile(workbook, "UP_Police_Registration_Template.xlsx");
 };
 
+// ---------------- EXPORT ALL DATABASE DATA TO EXCEL (SUPER ADMIN & CO-ADMIN) ----------------
+export const exportAllDataToExcel = ({
+  contacts = [],
+  districts = [],
+  offices = [],
+  posts = [],
+  coAdmins = [],
+  fileName = null
+}) => {
+  const xlsxLib = XLSX;
+  const workbook = xlsxLib.utils.book_new();
+
+  // 1. Sheet 1: Contacts (कार्मिक संपर्क सूची)
+  const contactRows = (contacts || []).map((c, idx) => {
+    let statusText = 'Approved (सक्रिय)';
+    if (c.status === 'pending') statusText = 'Pending (लंबित)';
+    else if (c.status === 'blocked') statusText = 'Blocked (ब्लॉक)';
+    else if (c.status === 'inactive') statusText = 'Inactive (निष्क्रिय)';
+
+    let roleText = 'कर्मचारी (Officer)';
+    if (c.role === 'admin') roleText = 'सुपर एडमिन (Super Admin)';
+    else if (c.role === 'co_admin') roleText = 'ज़िला सह-व्यवस्थापक (Co-Admin)';
+
+    let createdDate = '';
+    if (c.createdAt) {
+      try {
+        createdDate = new Date(c.createdAt).toLocaleDateString('hi-IN');
+      } catch (e) {
+        createdDate = String(c.createdAt);
+      }
+    }
+
+    return {
+      "क्र.सं. (S.No.)": idx + 1,
+      "PNO (पीएनओ नंबर)": c.pno || '',
+      "Name (कर्मचारी का नाम)": c.name || '',
+      "Post (पदनाम)": c.post || '',
+      "District (जनपद)": c.district || '',
+      "Office (कार्यालय/थाना)": c.office || '',
+      "Phone (मोबाइल नंबर)": c.phone || '',
+      "WhatsApp (व्हाट्सएप नंबर)": c.whatsapp || c.phone || '',
+      "Email (ईमेल आईडी)": c.email || '',
+      "Status (स्वीकृति स्थिति)": statusText,
+      "Hide_Phone (मोबाइल नंबर छुपाएं)": c.isPhoneHidden ? 'Yes (गोपनीय)' : 'No (सार्वजनिक)',
+      "Role (भूमिका)": roleText,
+      "Registration_Date (पंजीकरण दिनांक)": createdDate,
+      "Remarks (टिप्पणी / रिमार्क्स)": c.registrationNotes || ''
+    };
+  });
+
+  const contactsSheet = xlsxLib.utils.json_to_sheet(contactRows.length > 0 ? contactRows : [
+    {
+      "क्र.सं. (S.No.)": 1,
+      "PNO (पीएनओ नंबर)": "",
+      "Name (कर्मचारी का नाम)": "कोई कार्मिक डेटा उपलब्ध नहीं",
+      "Post (पदनाम)": "",
+      "District (जनपद)": "",
+      "Office (कार्यालय/थाना)": "",
+      "Phone (मोबाइल नंबर)": "",
+      "WhatsApp (व्हाट्सएप नंबर)": "",
+      "Email (ईमेल आईडी)": "",
+      "Status (स्वीकृति स्थिति)": "",
+      "Hide_Phone (मोबाइल नंबर छुपाएं)": "",
+      "Role (भूमिका)": "",
+      "Registration_Date (पंजीकरण दिनांक)": "",
+      "Remarks (टिप्पणी / रिमार्क्स)": ""
+    }
+  ]);
+
+  contactsSheet['!cols'] = [
+    { wch: 14 }, // S.No
+    { wch: 18 }, // PNO
+    { wch: 25 }, // Name
+    { wch: 30 }, // Post
+    { wch: 20 }, // District
+    { wch: 28 }, // Office
+    { wch: 16 }, // Phone
+    { wch: 16 }, // WhatsApp
+    { wch: 28 }, // Email
+    { wch: 22 }, // Status
+    { wch: 25 }, // Hide_Phone
+    { wch: 24 }, // Role
+    { wch: 22 }, // Reg Date
+    { wch: 32 }  // Remarks
+  ];
+
+  xlsxLib.utils.book_append_sheet(workbook, contactsSheet, "कार्मिक_संपर्क_सूची");
+
+  // 2. Sheet 2: Districts (जनपद सूची)
+  const safeDistList = (districts && districts.length > 0 ? districts : getStoredDistricts())
+    .filter((d, i) => i > 0 && d !== 'सभी ज़िले' && d !== 'सभी ज़िले (All Districts)');
+  const districtRows = safeDistList.map((d, idx) => ({
+    "क्र.सं. (S.No.)": idx + 1,
+    "जनपद का नाम (District Name)": typeof d === 'object' ? (d.name || '') : d
+  }));
+  const districtsSheet = xlsxLib.utils.json_to_sheet(districtRows);
+  districtsSheet['!cols'] = [{ wch: 14 }, { wch: 32 }];
+  xlsxLib.utils.book_append_sheet(workbook, districtsSheet, "जनपद_सूची");
+
+  // 3. Sheet 3: Offices (थाना एवं कार्यालय सूची)
+  const safeOfficesList = offices && offices.length > 0 ? offices : getStoredOffices();
+  const officeRows = safeOfficesList.map((o, idx) => {
+    const oName = typeof o === 'object' ? o.name : o;
+    const oDist = typeof o === 'object' ? (o.district || '') : '';
+    return {
+      "क्र.सं. (S.No.)": idx + 1,
+      "कार्यालय/थाना (Office/Police Station)": oName,
+      "संबंधित जनपद (District)": oDist
+    };
+  });
+  const officesSheet = xlsxLib.utils.json_to_sheet(officeRows);
+  officesSheet['!cols'] = [{ wch: 14 }, { wch: 35 }, { wch: 25 }];
+  xlsxLib.utils.book_append_sheet(workbook, officesSheet, "थाना_व_कार्यालय");
+
+  // 4. Sheet 4: Posts (मानक पदनाम)
+  const safePostsList = (posts && posts.length > 0 ? posts : getStoredPosts())
+    .filter(p => p !== 'सभी पद' && p !== 'सभी पद (All Posts)');
+  const postRows = safePostsList.map((p, idx) => ({
+    "क्र.सं. (S.No.)": idx + 1,
+    "मानक पदनाम (Designation/Rank)": p
+  }));
+  const postsSheet = xlsxLib.utils.json_to_sheet(postRows);
+  postsSheet['!cols'] = [{ wch: 14 }, { wch: 38 }];
+  xlsxLib.utils.book_append_sheet(workbook, postsSheet, "मानक_पदनाम");
+
+  // 5. Sheet 5: Co-Admins (सह-व्यवस्थापक)
+  const safeCoAdminsList = coAdmins && coAdmins.length > 0 ? coAdmins : getStoredCoAdmins();
+  if (safeCoAdminsList.length > 0) {
+    const coAdminRows = safeCoAdminsList.map((ca, idx) => ({
+      "क्र.सं. (S.No.)": idx + 1,
+      "नाम (Name)": ca.name || '',
+      "यूज़रनेम (Username)": ca.username || '',
+      "जनपद (District)": ca.district || '',
+      "मोबाइल नंबर (Phone)": ca.phone || '',
+      "स्थिति (Status)": ca.status === 'inactive' ? 'Inactive' : 'Active'
+    }));
+    const coAdminSheet = xlsxLib.utils.json_to_sheet(coAdminRows);
+    coAdminSheet['!cols'] = [{ wch: 14 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 15 }];
+    xlsxLib.utils.book_append_sheet(workbook, coAdminSheet, "सह_व्यवस्थापक");
+  }
+
+  // Generate File Name
+  const dateStr = new Date().toISOString().split('T')[0];
+  const finalFileName = fileName || `UP_Police_Full_Database_${dateStr}.xlsx`;
+
+  xlsxLib.writeFile(workbook, finalFileName);
+  return true;
+};
+
 // ---------------- CALL LOGS (In-App Voice Calling Audit Trail) ----------------
 const CALL_LOGS_KEY = 'police_directory_call_logs_v1';
 

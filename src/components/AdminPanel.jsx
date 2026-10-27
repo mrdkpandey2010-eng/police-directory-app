@@ -18,7 +18,7 @@ import {
   getStoredRegistrationLogs, updateOfficerDeviceAudit,
   getStoredRecycleBin, saveRecycleBinItem, permanentlyDeleteFromRecycleBin, clearRecycleBin,
   getStoredAdminDeviceLockConfig, saveAdminDeviceLockConfig,
-  getPreExcelBackup
+  getPreExcelBackup, exportAllDataToExcel
 } from '../utils/storage';
 import { syncAllContactsToFirestore } from '../utils/firebase';
 import { validateFileSize } from '../utils/imageCompressor';
@@ -1360,6 +1360,41 @@ export default function AdminPanel({
                 >
                   🔴 ब्लॉक्ड (Blocked) ({blockedList.length})
                 </button>
+
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      exportAllDataToExcel({
+                        contacts: scopedContacts,
+                        districts,
+                        offices,
+                        posts,
+                        coAdmins: isAdmin ? coAdmins : [],
+                        fileName: isAdmin 
+                          ? `UP_Police_Full_Database_${new Date().toISOString().split('T')[0]}.xlsx` 
+                          : `UP_Police_${myDistrict}_Data_${new Date().toISOString().split('T')[0]}.xlsx`
+                      });
+                    }}
+                    className="btn btn-secondary"
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      color: '#34d399',
+                      fontSize: '0.76rem',
+                      padding: '3px 10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                    title="संपूर्ण डेटाबेस एक्सेल (.xlsx) में डाउनलोड करें"
+                  >
+                    <Download size={13} />
+                    <span>📥 एक्सेल में डाउनलोड करें</span>
+                  </button>
+                </div>
               </div>
 
               {resetSuccessNotice && (
@@ -1931,6 +1966,97 @@ export default function AdminPanel({
                   )}
                 </div>
               )}
+
+              {/* EXPORT FULL DATABASE TO EXCEL CARD (SUPER ADMIN & CO-ADMIN) */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(15, 23, 42, 0.9))',
+                border: '1.5px solid rgba(16, 185, 129, 0.5)',
+                borderRadius: '12px',
+                padding: '1rem 1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '1rem',
+                boxShadow: '0 4px 16px rgba(16, 185, 129, 0.15)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: '1 1 320px' }}>
+                  <div style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '10px',
+                    background: 'rgba(16, 185, 129, 0.25)',
+                    border: '1.5px solid #10b981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <FileSpreadsheet size={24} color="#34d399" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.96rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span>संपूर्ण डेटाबेस एक्सेल (.xlsx) में डाउनलोड करें</span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: 'rgba(16, 185, 129, 0.25)',
+                        color: '#6ee7b7',
+                        border: '1px solid #10b981',
+                        fontWeight: 700
+                      }}>
+                        {isAdmin ? '👑 सुपर एडमिन - ऑल यूपी डेटाबेस' : `📍 ${myDistrict} डेटा`}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '4px', lineHeight: '1.4' }}>
+                      {isAdmin ? (
+                        <>
+                          डेटाबेस के कुल <strong style={{ color: '#fde047' }}>{contacts.length}</strong> कार्मिकों का संपूर्ण रिकॉर्ड (PNO, नाम, पद, थाना, मोबाइल, व्हाट्सएप, स्थिति आदि) + उ.प्र. के सभी 75 जनपद, थाने एवं मानक पदों को एक ही Excel वर्कबुक में डाउनलोड करें।
+                        </>
+                      ) : (
+                        <>
+                          {myDistrict} के कुल <strong style={{ color: '#fde047' }}>{contacts.filter(c => c.district === myDistrict).length}</strong> कार्मिकों एवं थानों की सूची एक्सेल शीट में डाउनलोड करें।
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const exportList = isCoAdmin ? contacts.filter(c => c.district === myDistrict) : contacts;
+                    exportAllDataToExcel({
+                      contacts: exportList,
+                      districts,
+                      offices: isCoAdmin ? offices.filter(o => typeof o === 'object' && o.district === myDistrict) : offices,
+                      posts,
+                      coAdmins: isAdmin ? coAdmins : [],
+                      fileName: isAdmin 
+                        ? `UP_Police_Full_Database_${new Date().toISOString().split('T')[0]}.xlsx` 
+                        : `UP_Police_${myDistrict}_Database_${new Date().toISOString().split('T')[0]}.xlsx`
+                    });
+                  }}
+                  className="btn btn-primary"
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    border: '1px solid #34d399',
+                    color: '#fff',
+                    fontWeight: 700,
+                    padding: '9px 18px',
+                    fontSize: '0.86rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.35)'
+                  }}
+                >
+                  <Download size={16} />
+                  <span>📥 संपूर्ण डेटा एक्सेल में डाउनलोड करें (.xlsx)</span>
+                </button>
+              </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', background: 'rgba(15,23,42,0.6)', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid rgba(196,151,86,0.3)' }}>
                 <div>
