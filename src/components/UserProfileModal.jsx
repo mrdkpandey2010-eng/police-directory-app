@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, User, Phone, MapPin, Building2, KeyRound, Save, AlertCircle, 
-  CheckCircle2, ShieldCheck, Camera, Upload, ArrowRightLeft, Clock, Send
+  CheckCircle2, ShieldCheck, Camera, Upload, ArrowRightLeft, Clock, Send, Lock
 } from 'lucide-react';
 import { OFFICES } from '../data/mockContacts';
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
@@ -45,8 +45,21 @@ export default function UserProfileModal({
     office: user?.office || '',
     phone: user?.phone || '',
     whatsapp: user?.whatsapp || user?.phone || '',
-    email: user?.email || ''
+    email: user?.email || '',
+    isPhoneHidden: Boolean(user?.isPhoneHidden)
   });
+
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        office: user.office || '',
+        phone: user.phone || '',
+        whatsapp: user.whatsapp || user.phone || '',
+        email: user.email || '',
+        isPhoneHidden: Boolean(user.isPhoneHidden)
+      });
+    }
+  }, [user]);
 
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
@@ -135,7 +148,11 @@ export default function UserProfileModal({
     }
 
     const finalOffice = transliterateText((formData.office || '').trim());
-    onUpdateProfileRequest(user.id, { ...formData, office: finalOffice });
+    onUpdateProfileRequest(user.id, { 
+      ...formData, 
+      office: finalOffice,
+      isPhoneHidden: Boolean(formData.isPhoneHidden)
+    });
     setNotice({ 
       type: 'success', 
       text: 'आपकी प्रोफ़ाइल अपडेट का अनुरोध सबमिट हो गया है! यह आपके ज़िला Co-Admin या Admin के अनुमोदन (Approval) के बाद अपडेट होगी।' 
@@ -514,6 +531,43 @@ export default function UserProfileModal({
                 value={formData.email}
                 onChange={e => setFormData({ ...formData, email: e.target.value })}
               />
+            </div>
+
+            {/* Privacy: Hide Phone Number Choice (NO / YES) */}
+            <div className="form-group" style={{
+              background: 'rgba(15, 23, 42, 0.6)',
+              border: '1px solid rgba(196, 151, 86, 0.25)',
+              padding: '0.75rem 0.85rem',
+              borderRadius: '8px'
+            }}>
+              <label className="form-label" style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--khaki-light)', fontSize: '0.8rem', fontWeight: 600 }}>
+                <Lock size={14} color="var(--khaki-primary)" />
+                <span>फोन नंबर छिपाएं (Hide Phone Number):</span>
+              </label>
+              <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', marginTop: '4px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', color: !formData.isPhoneHidden ? '#34d399' : '#cbd5e1' }}>
+                  <input
+                    type="radio"
+                    name="profileIsPhoneHidden"
+                    value="no"
+                    checked={!formData.isPhoneHidden}
+                    onChange={() => setFormData(prev => ({ ...prev, isPhoneHidden: false }))}
+                    style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                  />
+                  <span>🟢 <strong>NO (सार्वजनिक)</strong> — सभी जनपदों के यूज़र्स सीधे देख सकेंगे</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', color: formData.isPhoneHidden ? '#f59e0b' : '#cbd5e1' }}>
+                  <input
+                    type="radio"
+                    name="profileIsPhoneHidden"
+                    value="yes"
+                    checked={Boolean(formData.isPhoneHidden)}
+                    onChange={() => setFormData(prev => ({ ...prev, isPhoneHidden: true }))}
+                    style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                  />
+                  <span>🔒 <strong>YES (छिपाएं)</strong> — गोपनीय रहेगा (केवल अनुमति मिलने पर दिखेगा)</span>
+                </label>
+              </div>
             </div>
 
             <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>

@@ -2618,6 +2618,13 @@ export const savePhonePermissions = (perms) => {
 };
 
 export const requestPhonePermission = (requester, targetOfficer) => {
+  if (!targetOfficer) return { success: false, message: 'अमान्य अधिकारी' };
+
+  // If target officer chose NO at registration, the phone number is already public to all users
+  if (!isPhoneExplicitlyHidden(targetOfficer)) {
+    return { success: true, message: 'यह फोन नंबर पहले से सार्वजनिक है। अनुमति की आवश्यकता नहीं है।' };
+  }
+
   const current = getStoredPhonePermissions();
   // Check if an existing request is already there
   const existing = current.find(p => p.requesterId === requester.id && p.targetId === targetOfficer.id);
@@ -2667,44 +2674,51 @@ export const respondPhonePermission = (requestId, newStatus) => {
   return updated;
 };
 
+// Helper to check if an officer explicitly chose to hide their phone number (YES)
+export const isPhoneExplicitlyHidden = (targetOfficer) => {
+  if (!targetOfficer) return false;
+  const val = targetOfficer.isPhoneHidden;
+  if (val === true || val === 1 || val === '1') return true;
+  if (typeof val === 'string') {
+    const s = val.trim().toLowerCase();
+    return s === 'true' || s === 'yes' || s === 'हाँ' || s === 'यस' || s === 'hide' || s === 'छुप';
+  }
+  return false;
+};
+
 export const canViewPhoneNumber = (viewer, targetOfficer, permissions = []) => {
-  if (!viewer || !targetOfficer) return false;
+  if (!targetOfficer) return false;
+
+  // RULE 1: If registration opted for NO (not hidden), keep it 100% PUBLIC across ALL districts.
+  // Any user, regardless of what district they belong to, can directly view the number.
+  // No request is needed ("रिक्वेस्ट की जरूरत नही होगी")!
+  const isHidden = isPhoneExplicitlyHidden(targetOfficer);
+  if (!isHidden) {
+    return true;
+  }
+
+  // RULE 2: If the officer EXPLICITLY chose YES to hide their phone number (गोपनीय नंबर):
+  if (!viewer) return false;
 
   // Super Admin can always view all numbers
   if (viewer.role === 'admin') return true;
 
   // Viewing self
   if (viewer.id === targetOfficer.id) return true;
+  if (viewer.pno && targetOfficer.pno && String(viewer.pno).trim().toLowerCase() === String(targetOfficer.pno).trim().toLowerCase()) return true;
 
   // Co-Admin can always view all numbers in their assigned district
-  if (viewer.role === 'co_admin' && viewer.district === targetOfficer.district) return true;
+  if (viewer.role === 'co_admin' && viewer.district && targetOfficer.district && viewer.district === targetOfficer.district) return true;
 
-  // STRICT CROSS-DISTRICT RULE:
-  // If the viewer is from a DIFFERENT district, the number is STRICTLY HIDDEN
-  // It is ONLY visible if the target officer has approved their permission request
-  if (viewer.district && targetOfficer.district && viewer.district !== targetOfficer.district) {
-    const hasApprovedPerm = (permissions || []).some(p => 
-      p.requesterId === viewer.id && 
-      p.targetId === targetOfficer.id && 
-      p.status === 'approved'
-    );
-    return hasApprovedPerm;
-  }
-
-  // SAME DISTRICT RULE:
-  // If user has explicitly hidden their phone, check if approved permission exists
-  if (targetOfficer.isPhoneHidden) {
-    const hasApprovedPerm = (permissions || []).some(p => 
-      p.requesterId === viewer.id && 
-      p.targetId === targetOfficer.id && 
-      p.status === 'approved'
-    );
-    return hasApprovedPerm;
-  }
-
-  // Same district peer viewing allowed by default
-  return true;
+  // Check if approved permission exists
+  const hasApprovedPerm = (permissions || []).some(p => 
+    p.requesterId === viewer.id && 
+    p.targetId === targetOfficer.id && 
+    p.status === 'approved'
+  );
+  return Boolean(hasApprovedPerm);
 };
+
 
 // ---------------- 2FA FOR ADMIN PANEL ----------------
 const TWO_FACTOR_KEY = 'police_directory_2fa_config_v1';

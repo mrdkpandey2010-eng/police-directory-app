@@ -776,6 +776,44 @@ export default function AuthGateway({
                 />
               </div>
 
+              {/* Privacy: Hide Phone Number Choice (NO / YES) */}
+              <div className="form-group" style={{
+                gridColumn: '1 / -1',
+                background: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid rgba(196, 151, 86, 0.25)',
+                padding: '0.75rem 0.85rem',
+                borderRadius: '8px'
+              }}>
+                <label className="form-label" style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--khaki-light)', fontSize: '0.8rem', fontWeight: 600 }}>
+                  <Lock size={14} color="var(--khaki-primary)" />
+                  <span>फोन नंबर छिपाएं (Hide Phone Number):</span>
+                </label>
+                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', marginTop: '4px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', color: !regForm.isPhoneHidden ? '#34d399' : '#cbd5e1' }}>
+                    <input
+                      type="radio"
+                      name="authIsPhoneHidden"
+                      value="no"
+                      checked={!regForm.isPhoneHidden}
+                      onChange={() => setRegForm(prev => ({ ...prev, isPhoneHidden: false }))}
+                      style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                    />
+                    <span>🟢 <strong>NO (सार्वजनिक)</strong> — सभी जनपदों के यूज़र्स सीधे देख सकेंगे (डिफ़ॉल्ट)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', color: regForm.isPhoneHidden ? '#f59e0b' : '#cbd5e1' }}>
+                    <input
+                      type="radio"
+                      name="authIsPhoneHidden"
+                      value="yes"
+                      checked={Boolean(regForm.isPhoneHidden)}
+                      onChange={() => setRegForm(prev => ({ ...prev, isPhoneHidden: true }))}
+                      style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                    />
+                    <span>🔒 <strong>YES (छिपाएं)</strong> — गोपनीय रहेगा (केवल अनुमति अनुरोध स्वीकृत होने पर दिखेगा)</span>
+                  </label>
+                </div>
+              </div>
+
               {/* Mandatory Uniform Photo */}
               <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                 <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload } from 'lucide-react';
+import { X, UserPlus, AlertTriangle, CheckCircle2, Camera, Upload, Lock } from 'lucide-react';
 import { validateFileSize, compressImage } from '../utils/imageCompressor';
 import { ALL_UP_DISTRICTS, STANDARD_POLICE_POSTS } from '../data/mockContacts';
 import { captureFullDeviceTelemetry } from '../utils/deviceTelemetry';
@@ -492,23 +492,41 @@ export default function RegistrationModal({
                 />
               </div>
 
-              {/* Privacy: Hide Phone Number Toggle */}
+              {/* Privacy: Hide Phone Number Option (NO / YES) */}
               <div className="form-group full-width" style={{
                 background: 'rgba(15, 23, 42, 0.6)',
                 border: '1px solid rgba(196, 151, 86, 0.25)',
-                padding: '0.6rem 0.85rem',
+                padding: '0.75rem 0.85rem',
                 borderRadius: '8px'
               }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--khaki-light)' }}>
-                  <input
-                    type="checkbox"
-                    name="isPhoneHidden"
-                    checked={formData.isPhoneHidden}
-                    onChange={e => setFormData({ ...formData, isPhoneHidden: e.target.checked })}
-                    style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
-                  />
-                  <span>🔒 <strong>नंबर गोपनीयता:</strong> मेरा मोबाइल नंबर अन्य सामान्य यूज़र्स से छिपाएं (अनुमति मिलने पर ही दिखेगा)</span>
+                <label className="form-label" style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--khaki-light)', fontSize: '0.8rem', fontWeight: 600 }}>
+                  <Lock size={14} color="var(--khaki-primary)" />
+                  <span>फोन नंबर छिपाएं (Hide Phone Number):</span>
                 </label>
+                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', marginTop: '4px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', color: !formData.isPhoneHidden ? '#34d399' : '#cbd5e1' }}>
+                    <input
+                      type="radio"
+                      name="isPhoneHidden"
+                      value="no"
+                      checked={!formData.isPhoneHidden}
+                      onChange={() => setFormData({ ...formData, isPhoneHidden: false })}
+                      style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                    />
+                    <span>🟢 <strong>NO (सार्वजनिक)</strong> — सभी जनपदों के यूज़र्स सीधे देख सकेंगे (डिफ़ॉल्ट)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', color: formData.isPhoneHidden ? '#f59e0b' : '#cbd5e1' }}>
+                    <input
+                      type="radio"
+                      name="isPhoneHidden"
+                      value="yes"
+                      checked={Boolean(formData.isPhoneHidden)}
+                      onChange={() => setFormData({ ...formData, isPhoneHidden: true })}
+                      style={{ accentColor: 'var(--khaki-primary)', cursor: 'pointer' }}
+                    />
+                    <span>🔒 <strong>YES (छिपाएं)</strong> — गोपनीय रहेगा (केवल अनुमति अनुरोध स्वीकृत होने पर दिखेगा)</span>
+                  </label>
+                </div>
               </div>
 
               {/* Mandatory Policy Agreement Checkbox */}
