@@ -131,7 +131,7 @@ export default function Admin2FAModal({ isOpen, onClose, onSuccess, currentUser 
             lineHeight: 1.5,
             color: '#fef3c7'
           }}>
-            <strong>सुरक्षा प्रोटोकॉल:</strong> एडमिनिस्ट्रेटिव नियंत्रण कक्ष में प्रवेश हेतु Two-Factor Authentication अनिवार्य है। कृपया पंजीकृत सुरक्षा पिन या नीचे जनरेटेड त्वरित शासकीय पासकोड भरें।
+            <strong>सुपर एडमिन 2FA सुरक्षा प्रवेश:</strong> किसी अलग ID या पासवर्ड की आवश्यकता नहीं है। नीचे दिए गए <strong>'यह OTP भरें'</strong> बटन पर क्लिक करें (या मास्टर पिन <code>1234</code> भरें) और सत्यापन पर क्लिक करके तुरंत कंट्रोल पैनल खोलें।
           </div>
 
           {/* Dynamic OTP generator box for instant high security verification */}

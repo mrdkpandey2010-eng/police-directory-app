@@ -1,4 +1,4 @@
-import { saveCallLog, addNotification } from './storage';
+import { saveCallLog, addNotification, getStoredCallingConfig } from './storage';
 import { addFirestoreNotification } from './firebase';
 import { showSystemCallNotification, showSystemMissedCallNotification } from './notifications';
 import { 
@@ -952,6 +952,8 @@ class InAppCallManager {
     // Check Cloudflare Edge KV for incoming call every 1.0 second (near-zero notification delay)
     this.pollIncomingInterval = setInterval(async () => {
       if (this.activeCall) return; // Already on a call or ringing
+      const callingCfg = getStoredCallingConfig();
+      if (callingCfg && callingCfg.inAppCallingEnabled === false) return; // Calling disabled by Super Admin
       try {
         const res = await checkCloudflareIncomingCall(
           this.currentUser.id,
@@ -1058,6 +1060,15 @@ class InAppCallManager {
 
   // Start outgoing call
   async startCall(caller, receiver) {
+    const callingCfg = getStoredCallingConfig();
+    if (callingCfg && callingCfg.inAppCallingEnabled === false) {
+      console.warn('[WebRTC] In-app voice calling is disabled by Super Admin.');
+      if (typeof window !== 'undefined') {
+        alert('⚠️ एडमिनिस्ट्रेटर द्वारा इन-ऐप वॉइस कॉलिंग सेवा बंद कर दी गई है।');
+      }
+      return;
+    }
+
     const callId = `call_${caller.id}_${receiver.id}_${Date.now()}`;
     
     // Initial State: Checking network and online presence

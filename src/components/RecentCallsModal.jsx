@@ -5,7 +5,7 @@ import {
   UserCheck, ShieldCheck, Building2, Mail
 } from 'lucide-react';
 import { callManager } from '../utils/webrtc';
-import { getStoredContacts } from '../utils/storage';
+import { getStoredContacts, getStoredCallingConfig } from '../utils/storage';
 
 export default function RecentCallsModal({
   isOpen,
@@ -14,6 +14,7 @@ export default function RecentCallsModal({
   callLogs = [],
   contacts = [],
   presenceMap = {},
+  callingConfig = null,
   onDeleteCall,
   onClearAllCalls,
   onStartCall,
@@ -22,6 +23,27 @@ export default function RecentCallsModal({
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'missed'
   const [confirmClear, setConfirmClear] = useState(false);
   const [selectedOfficerCard, setSelectedOfficerCard] = useState(null);
+
+  const handleExecuteCall = (targetParty) => {
+    if (!targetParty) return;
+    const effectiveCalling = callingConfig || getStoredCallingConfig();
+    if (effectiveCalling && effectiveCalling.inAppCallingEnabled === false) {
+      const raw = (targetParty?.phone || targetParty?.mobile || '').replace(/\D/g, '');
+      if (raw && raw.length >= 10) {
+        const clean = raw.length === 10 ? `+91${raw}` : `+${raw}`;
+        window.location.href = `tel:${clean}`;
+        return;
+      }
+      alert('⚠️ एडमिनिस्ट्रेटर द्वारा इन-ऐप वॉइस कॉलिंग सेवा बंद कर दी गई है। कृपया सीधे मोबाइल नंबर पर कॉल करें।');
+      return;
+    }
+    onClose();
+    if (onStartCall) {
+      onStartCall(targetParty);
+    } else {
+      callManager.startCall(currentUser, targetParty);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -507,14 +529,7 @@ export default function RecentCallsModal({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                     {/* 1. Quick Call Back button */}
                     <button
-                      onClick={() => {
-                        onClose();
-                        if (onStartCall) {
-                          onStartCall(otherParty);
-                        } else {
-                          callManager.startCall(currentUser, otherParty);
-                        }
-                      }}
+                      onClick={() => handleExecuteCall(otherParty)}
                       style={{
                         background: 'linear-gradient(135deg, #059669, #10b981)',
                         border: 'none',
@@ -893,12 +908,7 @@ export default function RecentCallsModal({
                   onClick={() => {
                     const target = selectedOfficerCard;
                     setSelectedOfficerCard(null);
-                    onClose();
-                    if (onStartCall) {
-                      onStartCall(target);
-                    } else {
-                      callManager.startCall(currentUser, target);
-                    }
+                    handleExecuteCall(target);
                   }}
                   style={{
                     flex: 1,

@@ -74,7 +74,9 @@ export default function AdminPanel({
   onApproveDistrictTransfer,
   onRejectDistrictTransfer,
   isFirebaseConnected = false,
-  onOpenFirebaseSetup
+  onOpenFirebaseSetup,
+  callingConfig = null,
+  onUpdateCallingConfig = null
 }) {
   const isAdmin = currentUser?.role === 'admin';
   const isCoAdmin = currentUser?.role === 'co_admin';
@@ -2953,6 +2955,192 @@ export default function AdminPanel({
           {/* TAB: CALL LOGS (Super Admin Only) */}
           {isAdmin && activeTab === 'call_logs' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* MASTER CALLING SERVICE CONTROLS */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(14, 30, 60, 0.9) 0%, rgba(8, 16, 34, 0.98) 100%)',
+                border: '2px solid var(--khaki-primary, #c49756)',
+                borderRadius: '12px',
+                padding: '1.25rem',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem',
+                  borderBottom: '1px solid rgba(196,151,86,0.3)',
+                  paddingBottom: '0.75rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{
+                      background: 'rgba(196,151,86,0.2)',
+                      padding: '8px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--khaki-primary, #c49756)'
+                    }}>
+                      <PhoneCall size={22} color="var(--khaki-light, #dfb97e)" />
+                    </div>
+                    <div>
+                      <h4 style={{ margin: 0, color: 'var(--khaki-light, #dfb97e)', fontSize: '1.05rem', fontWeight: 800 }}>
+                        कॉलिंग सेवाएं केंद्रीय नियंत्रण (Calling Services Master Control)
+                      </h4>
+                      <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                        समस्त पुलिस कार्मिकों हेतु इन-ऐप एवं मोबाइल कॉलिंग सुविधाओं का प्रशासकीय प्रबंधन
+                      </span>
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '4px 10px',
+                    borderRadius: '20px',
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    color: '#93c5fd',
+                    border: '1px solid rgba(59, 130, 246, 0.4)'
+                  }}>
+                    👑 Super Admin Access
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '1rem' }}>
+                  {/* 1. IN-APP INTERNET CALLING SWITCH */}
+                  <div style={{
+                    background: callingConfig?.inAppCallingEnabled !== false ? 'rgba(34, 197, 94, 0.08)' : 'rgba(239, 68, 68, 0.1)',
+                    border: `1.5px solid ${callingConfig?.inAppCallingEnabled !== false ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                    borderRadius: '10px',
+                    padding: '1rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: '0.85rem'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <strong style={{ fontSize: '0.92rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Wifi size={16} color={callingConfig?.inAppCallingEnabled !== false ? '#4ade80' : '#f87171'} />
+                          1. इन-ऐप वॉइस कॉलिंग (In-App Call)
+                        </strong>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: callingConfig?.inAppCallingEnabled !== false ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.25)',
+                          color: callingConfig?.inAppCallingEnabled !== false ? '#4ade80' : '#fca5a5',
+                          border: `1px solid ${callingConfig?.inAppCallingEnabled !== false ? '#22c55e' : '#ef4444'}`
+                        }}>
+                          {callingConfig?.inAppCallingEnabled !== false ? '🟢 सक्रिय (Enabled)' : '🔴 बंद / निष्क्रिय (Disabled)'}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.78rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+                        यह फीचर ऐप के भीतर सीधे इंटरनेट द्वारा सुरक्षित <strong>HD वॉइस कॉलिंग</strong> की सुविधा देता है। यदि आप इसे बंद (Disable) कर देते हैं, तो सभी यूज़र्स के लिए इन-ऐप कॉल का बटन हट जाएगा तथा कोई भी इन-ऐप कॉल नहीं कर पाएगा।
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isCurrentlyActive = callingConfig?.inAppCallingEnabled !== false;
+                        const nextState = !isCurrentlyActive;
+                        const msg = nextState
+                          ? 'क्या आप समस्त यूज़र्स के लिए इन-ऐप वॉइस कॉलिंग सेवा पुनः सक्रिय (Enable) करना चाहते हैं?'
+                          : 'क्या आप समस्त यूज़र्स के लिए इन-ऐप वॉइस कॉलिंग सेवा बंद (Disable) करना चाहते हैं?';
+                        if (window.confirm(msg)) {
+                          if (typeof onUpdateCallingConfig === 'function') {
+                            onUpdateCallingConfig({
+                              ...callingConfig,
+                              inAppCallingEnabled: nextState
+                            });
+                          }
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.65rem 1rem',
+                        borderRadius: '8px',
+                        fontWeight: 800,
+                        fontSize: '0.84rem',
+                        cursor: 'pointer',
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        transition: 'all 0.15s ease',
+                        background: callingConfig?.inAppCallingEnabled !== false
+                          ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                          : 'linear-gradient(135deg, #16a34a, #15803d)',
+                        color: '#fff',
+                        boxShadow: callingConfig?.inAppCallingEnabled !== false
+                          ? '0 4px 14px rgba(239, 68, 68, 0.35)'
+                          : '0 4px 14px rgba(34, 197, 94, 0.35)'
+                      }}
+                    >
+                      <Power size={15} />
+                      <span>
+                        {callingConfig?.inAppCallingEnabled !== false
+                          ? 'समस्त यूज़र्स के लिए इन-ऐप कॉलिंग बंद करें'
+                          : 'समस्त यूज़र्स के लिए इन-ऐप कॉलिंग चालू करें'}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* 2. DIRECT PHONE / SIM CALLING STATUS */}
+                  <div style={{
+                    background: 'rgba(59, 130, 246, 0.08)',
+                    border: '1.5px solid rgba(59, 130, 246, 0.4)',
+                    borderRadius: '10px',
+                    padding: '1rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: '0.85rem'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <strong style={{ fontSize: '0.92rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Smartphone size={16} color="#60a5fa" />
+                          2. डायरेक्ट फोन कॉलिंग (Phone Call)
+                        </strong>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: 'rgba(59, 130, 246, 0.2)',
+                          color: '#93c5fd',
+                          border: '1px solid #3b82f6'
+                        }}>
+                          🟢 सभी यूज़र्स के पास उपलब्ध
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.78rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+                        यह विकल्प डिवाइस के मूल फोन डायलर (SIM) के माध्यम से सीधे कॉल करता है। शासकीय सेवा निरंतरता हेतु यह विकल्प <strong>सभी पुलिस कार्मिकों के पास अनिवार्य रूप से उपलब्ध</strong> रहता है।
+                      </p>
+                    </div>
+
+                    <div style={{
+                      background: 'rgba(15, 23, 42, 0.75)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      borderRadius: '6px',
+                      padding: '0.55rem 0.85rem',
+                      fontSize: '0.78rem',
+                      color: '#93c5fd',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <CheckCircle size={15} color="#60a5fa" />
+                      <span>शासकीय प्रोटोकॉल: डायरेक्ट फोन कॉलिंग विकल्प सभी यूज़र्स के पास स्थायी रूप से उपलब्ध है।</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div style={{
                 background: 'rgba(30, 58, 138, 0.25)',
                 border: '1px solid rgba(196, 151, 86, 0.3)',

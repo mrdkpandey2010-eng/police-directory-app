@@ -2841,3 +2841,43 @@ export const addUserDeletedChatIdLocal = (userId, chatId) => {
     }
   }
 };
+
+// ---------------- CALLING SERVICES CONFIGURATION (SUPER ADMIN MASTER SWITCH) ----------------
+const CALLING_CONFIG_KEY = 'police_directory_calling_config_v1';
+
+export const DEFAULT_CALLING_CONFIG = {
+  inAppCallingEnabled: true,
+  phoneCallingEnabled: true,
+  updatedAt: new Date().toISOString()
+};
+
+export const getStoredCallingConfig = () => {
+  try {
+    const raw = localStorage.getItem(CALLING_CONFIG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        inAppCallingEnabled: parsed.inAppCallingEnabled !== false,
+        phoneCallingEnabled: parsed.phoneCallingEnabled !== false,
+        updatedAt: parsed.updatedAt || new Date().toISOString()
+      };
+    }
+  } catch (e) {}
+  return { ...DEFAULT_CALLING_CONFIG };
+};
+
+export const saveCallingConfig = (config) => {
+  try {
+    const safeConfig = {
+      inAppCallingEnabled: config?.inAppCallingEnabled !== false,
+      phoneCallingEnabled: config?.phoneCallingEnabled !== false,
+      updatedAt: new Date().toISOString()
+    };
+    localStorage.setItem(CALLING_CONFIG_KEY, JSON.stringify(safeConfig));
+    idbSet(CALLING_CONFIG_KEY, safeConfig);
+    return safeConfig;
+  } catch (e) {
+    return { ...DEFAULT_CALLING_CONFIG };
+  }
+};
+

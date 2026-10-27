@@ -36,6 +36,8 @@ export {
   saveCloudflareCoAdmins as saveFirestoreCoAdmins,
   saveCloudflareTerms as saveFirestoreTerms,
   saveCloudflarePolicies as saveFirestorePolicies,
+  saveCloudflareCallingConfig,
+  saveCloudflareCallingConfig as saveFirestoreCallingConfig,
   deleteCloudflareChat as deleteFirestoreChat,
   markCloudflareChatAsRead as markFirestoreChatAsRead,
   syncAllChatsToCloudflare as syncAllChatsToFirestore,

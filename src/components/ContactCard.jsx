@@ -3,7 +3,7 @@ import {
   Phone, MessageSquare, MapPin, Building2, Copy, Check, Mail, Edit3, 
   Lock, Unlock, Trash2, Power, ShieldCheck, PhoneCall, KeyRound, EyeOff, Send, X
 } from 'lucide-react';
-import { canViewPhoneNumber, requestPhonePermission } from '../utils/storage';
+import { canViewPhoneNumber, requestPhonePermission, getStoredCallingConfig } from '../utils/storage';
 import { callManager } from '../utils/webrtc';
 import { resolveBilingualField } from '../utils/bilingual';
 
@@ -12,6 +12,7 @@ export default function ContactCard({
   currentUser,
   permissions = [],
   presenceMap = {},
+  callingConfig = null,
   onEdit, 
   onToggleBlock, 
   onToggleActive,
@@ -47,6 +48,11 @@ export default function ContactCard({
 
   const isAdmin = currentUser?.role === 'admin';
   const isActive = contact.status === 'approved' || contact.status === 'active';
+
+  // Calling settings (Super Admin Master Controls)
+  const effectiveCallingConfig = callingConfig || getStoredCallingConfig();
+  const isInAppCallingActive = effectiveCallingConfig?.inAppCallingEnabled !== false;
+  const isDirectPhoneCallingActive = effectiveCallingConfig?.phoneCallingEnabled !== false;
 
   // Format clean phone for tel link if visible
   const rawPhone = (contact.phone || '').replace(/\D/g, '');
@@ -531,36 +537,40 @@ export default function ContactCard({
               {/* Action Buttons: Native In-App Voice Call, Message Box, and Direct Call */}
               <div className="card-actions" style={{
                 display: 'grid',
-                gridTemplateColumns: isPhoneVisible ? '1.15fr 1fr 1.15fr' : '1.3fr 1.2fr',
+                gridTemplateColumns: isInAppCallingActive 
+                  ? (isPhoneVisible ? '1.15fr 1fr 1.15fr' : '1.3fr 1.2fr')
+                  : (isPhoneVisible ? '1.2fr 1fr' : '1fr'),
                 gap: '0.35rem'
               }}>
-                {/* Button 1: Native In-App P2P Voice Call */}
-                <button
-                  type="button"
-                  onClick={handleStartInAppCall}
-                  className="btn btn-call"
-                  title={displayLanguage === 'en' ? `Make in-app secure voice call to ${resolvedName} (Max 5 mins)` : `${resolvedName} को इन-ऐप सुरक्षित वॉइस कॉल करें (अधिकतम 05 मिनट)`}
-                  style={{
-                    padding: '0.45rem 0.35rem',
-                    fontSize: '0.78rem',
-                    background: 'linear-gradient(135deg, #15803d, #166534)',
-                    color: '#fff',
-                    border: '1px solid rgba(34,197,94,0.4)',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '5px',
-                    cursor: 'pointer',
-                    fontWeight: 700
-                  }}
-                >
-                  <PhoneCall size={13} />
-                  <span>{displayLanguage === 'en' ? 'In-App Call' : 'इन-ऐप कॉल'}</span>
-                </button>
+                {/* Button 1: Native In-App P2P Voice Call (Shown when enabled) */}
+                {isInAppCallingActive && (
+                  <button
+                    type="button"
+                    onClick={handleStartInAppCall}
+                    className="btn btn-call"
+                    title={displayLanguage === 'en' ? `Make in-app secure voice call to ${resolvedName} (Max 5 mins)` : `${resolvedName} को इन-ऐप सुरक्षित वॉइस कॉल करें (अधिकतम 05 मिनट)`}
+                    style={{
+                      padding: '0.45rem 0.35rem',
+                      fontSize: '0.78rem',
+                      background: 'linear-gradient(135deg, #15803d, #166534)',
+                      color: '#fff',
+                      border: '1px solid rgba(34,197,94,0.4)',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                      cursor: 'pointer',
+                      fontWeight: 700
+                    }}
+                  >
+                    <PhoneCall size={13} />
+                    <span>{displayLanguage === 'en' ? 'In-App Call' : 'इन-ऐप कॉल'}</span>
+                  </button>
+                )}
 
-                {/* Button 2: Direct Phone Call */}
-                {isPhoneVisible && (
+                {/* Button 2: Direct Phone Call (Available for all users) */}
+                {isPhoneVisible && isDirectPhoneCallingActive && (
                   <a 
                     href={`tel:${cleanPhone}`} 
                     className="btn btn-secondary" 

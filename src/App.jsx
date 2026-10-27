@@ -54,6 +54,8 @@ import {
   getStoredContacts, 
   loadContactsFromPermanentStorage,
   saveContacts,
+  getStoredCallingConfig,
+  saveCallingConfig,
   getStoredCoAdmins,
   saveCoAdmins,
   getStoredNotifications,
@@ -185,6 +187,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [terms, setTerms] = useState(DEFAULT_TERMS);
   const [policies, setPolicies] = useState(DEFAULT_POLICIES);
+  const [callingConfig, setCallingConfig] = useState(() => getStoredCallingConfig());
 
   // Dynamic Master Configuration Lists
   const [posts, setPosts] = useState([]);
@@ -644,7 +647,8 @@ export default function App() {
       offices: getStoredOffices(),
       coAdmins: getStoredCoAdmins(),
       terms: getStoredTerms(),
-      policies: getStoredPolicies()
+      policies: getStoredPolicies(),
+      callingConfig: getStoredCallingConfig()
     });
 
     const unsubscribe = subscribeToFirestoreMasterConfig((cloudConfig) => {
@@ -688,6 +692,12 @@ export default function App() {
       if (Array.isArray(cloudConfig.policies) && cloudConfig.policies.length > 0) {
         setPolicies(cloudConfig.policies);
         savePolicies(cloudConfig.policies);
+      }
+
+      // 7. Sync Calling Configuration across all devices (Super Admin Master Switch)
+      if (cloudConfig.callingConfig && typeof cloudConfig.callingConfig === 'object') {
+        const saved = saveCallingConfig(cloudConfig.callingConfig);
+        setCallingConfig(saved);
       }
     }, (err) => {
       console.warn('Firestore master_config sync notice:', err);
@@ -1869,6 +1879,16 @@ export default function App() {
     showToast('🗑️ कस्टम लिंक हटा दिया गया!');
   };
 
+  const handleUpdateCallingConfig = async (newConfig) => {
+    const saved = saveCallingConfig(newConfig);
+    setCallingConfig(saved);
+    await saveFirestoreMasterConfig({ callingConfig: saved });
+    showToast(saved.inAppCallingEnabled 
+      ? '✅ इन-ऐप वॉइस कॉलिंग सेवा समस्त यूज़र्स हेतु सक्रिय (Enabled) कर दी गई है।' 
+      : '⚠️ इन-ऐप वॉइस कॉलिंग सेवा समस्त यूज़र्स हेतु बंद (Disabled) कर दी गई है।'
+    );
+  };
+
   // Demo Data Reset
   const handleResetData = () => {
     if (window.confirm('क्या आप डिफ़ॉल्ट पुलिस संपर्क, Co-Admins, सूचनाएं, चैट एवं ग्रुप्स रीसेट करना चाहते हैं?')) {
@@ -2381,6 +2401,7 @@ export default function App() {
         currentUser={currentUser}
         permissions={phonePermissions}
         presenceMap={presenceMap}
+        callingConfig={callingConfig}
         onEditContact={handleStartEdit}
         onToggleBlockContact={handleToggleBlock}
         onToggleActiveContact={handleToggleUserActive}
@@ -2449,6 +2470,7 @@ export default function App() {
           setIsRegisterModalOpen(true);
         }}
         onOpenPolicy={() => handleOpenPolicy('disclaimer')}
+        onOpenAdmin={handleOpenAdminPanel}
         contacts={contacts}
         coAdmins={coAdmins}
       />
@@ -2536,6 +2558,8 @@ export default function App() {
           onResetMasterData={handleResetMasterData}
           isFirebaseConnected={isFirebaseConnected}
           onOpenFirebaseSetup={() => setIsFirebaseSetupOpen(true)}
+          callingConfig={callingConfig}
+          onUpdateCallingConfig={handleUpdateCallingConfig}
         />
       </ErrorBoundary>
 
@@ -2597,6 +2621,7 @@ export default function App() {
         callLogs={callLogs}
         contacts={contacts}
         presenceMap={presenceMap}
+        callingConfig={callingConfig}
         onDeleteCall={(callId) => {
           const updated = deleteCallLog(callId);
           setCallLogs(updated);

@@ -11,6 +11,7 @@ export default function LoginModal({
   onLoginSuccess, 
   onOpenRegister,
   onOpenPolicy,
+  onOpenAdmin = null,
   contacts = [], 
   coAdmins = []
 }) {
@@ -341,6 +342,37 @@ export default function LoginModal({
               </div>
             )}
           </form>
+        )}
+
+        {/* Quick Super Admin 2FA Access Button */}
+        {typeof onOpenAdmin === 'function' && (
+          <div style={{ marginTop: '0.85rem', display: 'flex', justifyContent: 'center' }}>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenAdmin('pending');
+              }}
+              style={{
+                background: 'rgba(196, 151, 86, 0.1)',
+                border: '1px solid rgba(196, 151, 86, 0.35)',
+                borderRadius: '8px',
+                color: 'var(--khaki-light, #dfb97e)',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                padding: '6px 14px',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease'
+              }}
+              title="सुपर एडमिन 2FA डायरेक्ट प्रवेश (किसी पूर्व ID/पासवर्ड की आवश्यकता नहीं)"
+            >
+              <Shield size={13} color="var(--khaki-primary, #c49756)" />
+              <span>👑 सुपर एडमिन 2FA त्वरित प्रवेश</span>
+            </button>
+          </div>
         )}
 
         {/* Subdued Footer Informational Hyperlinks (Discreet/Subdued until mouse hover or touch) */}

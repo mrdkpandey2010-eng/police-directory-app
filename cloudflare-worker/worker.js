@@ -203,7 +203,7 @@ export default {
           try { masterCfg = masterStr ? JSON.parse(masterStr) : {}; } catch (e) {}
 
           // 1. Check Headquarters Master Admin
-          const adminPnoList = ['ADMIN001', 'UPP-ADMIN', '999999999'];
+          const adminPnoList = ['ADMIN001', 'UPP-ADMIN', '999999999', 'ADMIN', 'SUPERADMIN', 'SUPER_ADMIN', '1234'];
           if (masterCfg.adminPno) adminPnoList.push(String(masterCfg.adminPno).toUpperCase());
           if (masterCfg.masterPno) adminPnoList.push(String(masterCfg.masterPno).toUpperCase());
 
